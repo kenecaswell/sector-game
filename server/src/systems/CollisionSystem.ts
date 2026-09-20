@@ -1,5 +1,6 @@
 import type { GameState } from '../state/GameState';
-import { TILE_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
+import { PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
+import { hexIndex, isValidHex, pixelToHex } from '../hex';
 import type { Broadcast } from './Broadcast';
 import type { TilesClaimedEvent } from '../types/shared';
 
@@ -13,13 +14,14 @@ function checkProjectilePlayerCollision(
   return dist < PROJECTILE_RADIUS + PLAYER_RADIUS;
 }
 
+// A structure fills its whole hex, so a projectile hits it exactly when the
+// projectile is inside that hex.
 function checkProjectileStructureCollision(
   proj: { x: number; y: number },
   structure: { tileX: number; tileY: number }
 ): boolean {
-  const sx = structure.tileX * TILE_SIZE;
-  const sy = structure.tileY * TILE_SIZE;
-  return proj.x > sx && proj.x < sx + TILE_SIZE && proj.y > sy && proj.y < sy + TILE_SIZE;
+  const { col, row } = pixelToHex(proj.x, proj.y);
+  return col === structure.tileX && row === structure.tileY;
 }
 
 function claimTile(
@@ -27,10 +29,11 @@ function claimTile(
   player: { id: string; x: number; y: number; tilesOwned: number },
   claimed: TilesClaimedEvent['tiles']
 ): void {
-  const tileX = Math.floor(player.x / TILE_SIZE);
-  const tileY = Math.floor(player.y / TILE_SIZE);
-  const idx = tileY * state.mapWidth + tileX;
-  const tile = state.tiles[idx];
+  const { col: tileX, row: tileY } = pixelToHex(player.x, player.y);
+  // Map corners/edges aren't fully covered by hexes, so a player can be
+  // standing over no tile at all.
+  if (!isValidHex(tileX, tileY, state.mapWidth, state.mapHeight)) return;
+  const tile = state.tiles[hexIndex(tileX, tileY, state.mapWidth)];
   if (!tile || tile.ownerId === player.id) return;
 
   if (tile.ownerId !== '') {

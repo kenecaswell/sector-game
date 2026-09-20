@@ -85,7 +85,7 @@ export function GameScreen() {
 
       {isTouchDevice() && (
         <MobileJoystick
-          onChange={(dir) => getScene()?.sendInputIfChanged(dir, performance.now())}
+          onChange={(dir) => getScene()?.setJoystick(dir)}
         />
       )}
     </div>

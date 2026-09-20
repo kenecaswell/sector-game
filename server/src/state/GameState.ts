@@ -5,6 +5,9 @@ export class Player extends Schema {
   @type('string') name: string = '';
   @type('number') x: number = 0;
   @type('number') y: number = 0;
+  @type('number') vx: number = 0; // px/sec — synced so clients can extrapolate smoothly between ticks
+  @type('number') vy: number = 0;
+  @type('number') angle: number = 0; // facing/aim direction in radians (world space)
   @type('number') health: number = 100;
   @type('number') ammo: number = 30;
   @type('number') tilesOwned: number = 0;

@@ -21,8 +21,9 @@
 13. [Destructible Structures](#destructible-structures)
 14. [Testing Multiplayer Locally](#testing-multiplayer-locally)
 15. [Build Tooling](#build-tooling)
-16. [Planned Features](#planned-features)
-17. [Decisions Log](#decisions-log)
+16. [Current Status & Known Issues](#current-status--known-issues)
+17. [Planned Features](#planned-features)
+18. [Decisions Log](#decisions-log)
 
 ---
 
@@ -30,20 +31,25 @@
 
 | Layer | Technology | Rationale |
 |---|---|---|
-| Server runtime | Node.js | Battle-tested, large ecosystem |
-| Server framework | Colyseus (`colyseus` ^0.16.5, `@colyseus/schema` ^3.0.76) | Built-in rooms, delta sync, reconnection |
-| Server language | TypeScript | Shared types with client |
-| Client framework | React 18 | Component-based UI shell (menus, lobby) |
-| Client language | TypeScript | Type safety, shared types with server |
-| Game rendering | Phaser 3 | 2D canvas, tile grid, particles, animations |
+| Server runtime | Node.js **≥ 20 (developed on 24.21)** | Battle-tested, large ecosystem. TypeScript 6 and the current toolchain will not run on old Node — a shell defaulting to Node 13 fails `tsc` with `SyntaxError: Unexpected token '?'`. Run `nvm use 24` before building. |
+| Server framework | Colyseus — exact pins: `colyseus` 0.16.5, `@colyseus/core` 0.16.26, `@colyseus/schema` 3.0.76, `@colyseus/ws-transport` 0.16.5 | Built-in rooms, delta sync, reconnection. **All four are pinned without `^`** — see the pinning note below. |
+| Server language | TypeScript (`~6.0.2`) | Shared types with client |
+| Client framework | React 19 (`^19.2.8`) | Component-based UI shell (menus, lobby) |
+| Client language | TypeScript (`~6.0.2`) | Type safety, shared types with server |
+| Game rendering | Phaser 4 (`^4.2.1`) | 2D canvas, tile grid, particles, animations. (Earlier drafts of this doc said Phaser 3 / React 18 — the scaffold actually installed the newer majors.) |
+| Client networking | `colyseus.js` `^0.16.22` | The only published client line; bundles `@colyseus/schema` 3.0.76 |
 | Bundler (client only) | Vite | Fast HMR, zero-config TS + React. **Not used server-side** — the server builds with plain `tsc` and runs dev with `ts-node-dev`; Vite is a browser-facing dev server/bundler and doesn't apply to a Node backend. |
 | Linting | ESLint 10 (flat config) + Prettier | Code quality and formatting, same toolchain shape for client and server |
 | WebSocket protocol | Colyseus protocol (over ws) | Handles framing, delta compression |
 
-> **Verified 2026-09-19, end-to-end:** client and server both build, lint, format-check, and boot cleanly against the dependency versions above, and a live client (`colyseus.js@0.16.22`) has successfully joined the server, decoded full state, sent inputs, received `inputAck`/broadcast messages, and observed reactive state changes. This required two rounds of correction from an earlier draft of this doc — see the Decisions Log for the full story:
+> **Verified 2026-09-19, end-to-end:** client and server both build, lint, format-check, and boot cleanly against the dependency versions above, and a live client (`colyseus.js@0.16.22`) has successfully joined the server, decoded full state, sent inputs, received `inputAck`/broadcast messages, and observed reactive state changes. This required several rounds of correction from an earlier draft of this doc — see the Decisions Log for the full story (items 3–5 were found later, on 2026-09-20, when the app was first run in a real browser):
 >
 > 1. **The server was briefly on `colyseus@^0.18` / `@colyseus/schema@^5.0`, and no compatible client exists for that line.** `colyseus.js` (the published npm client) tops out at `0.16.22`, which bundles `@colyseus/schema@3.0.76`. A direct `curl` comparison of the two versions' `/matchmake/joinOrCreate/GameRoom` HTTP responses confirmed a genuine, previously-undocumented wire-protocol break: 0.18 returns a flat `{name, sessionId, roomId, processId}`, while the 0.16.x client expects a nested `{room: {...}, sessionId}` — this is **not** just a schema-decoding concern (which is reflection-based and more forgiving across minor versions), it's the matchmaking handshake itself. **Fix:** downgraded the server to `colyseus@0.16.5` + `@colyseus/schema@^3.0.76`, matching the only published client exactly. Do not bump either side independently without re-running a live join/decode test.
 > 2. **After the downgrade, the server crashed on every client join** with `TypeError: Cannot read properties of undefined (reading 'Symbol(Symbol.metadata)')` inside `@colyseus/schema`'s encoder. Root cause: `tsconfig.json`'s `target: "ES2022"` makes TypeScript default `useDefineForClassFields` to `true`, which compiles class-field initializers (`id = '';` etc.) to `Object.defineProperty` semantics in the constructor. That silently **overwrites** the accessor that `@colyseus/schema`'s legacy `@type()` decorator installs on the prototype — the classic "class fields + legacy decorators" footgun. **Fix:** added `"useDefineForClassFields": false` to the server's `tsconfig.json` (see [Build Tooling](#build-tooling)) so field initializers compile to plain constructor assignments instead, letting the decorator's accessor actually run.
+>
+> 3. **`@colyseus/core` is only a *peer* dependency and must be pinned too (found 2026-09-20).** `colyseus` and `@colyseus/ws-transport` (both 0.16.x) declare `@colyseus/core` as a peer, so nothing forces a compatible version. An unpinned install resolved it to `0.18.14`, which broke `tsc` (`Room<RoomOptions>` generics and the `onLeave(client, code?: number)` signature changed in 0.17). It is now pinned to `0.16.26` alongside the other three packages, with `package-lock.json` regenerated from a clean install. After any dependency change, run `rm -rf node_modules && npm ci && npm run build` in `server/`.
+> 4. **The committed `server/tsconfig.json` was missing `useDefineForClassFields: false` until 2026-09-20**, even though this doc described that fix as applied (item 2 above). The symptom was exactly the `Symbol.metadata` crash: the server logged it on every client join and never sent state, so the client sat on "connecting" forever. It is now in the file. If that crash ever reappears, check `tsconfig.json` first.
+> 5. **`server/src/index.ts` had drifted back to the 0.18-style API** (`new Server({ express: (app) => … })` + `gameServer.listen()`), which does not exist in 0.16.5 and produced four `tsc` errors. Restored to the explicit `http.createServer` + `WebSocketTransport` form shown under [Server Entry Point](#server-entry-point-indexts), including the `Encoder.BUFFER_SIZE` bump.
 >
 > Where this doc's now-abandoned 0.18 draft assumed a different Colyseus API (`new Server({ server: httpServer })`, `Room<{ state: GameState }>`, and split `onDrop`/`onReconnect`/`onLeave(client, code)` hooks), everything below reflects the 0.16.5 API actually running and verified.
 
@@ -64,10 +70,11 @@
 │  ┌────────────────────▼─────────────────────┐   │
 │  │       GameScreen (React component)       │   │
 │  │  ┌────────────────────────────────────┐  │   │
-│  │  │         Phaser 3 Instance          │  │   │
+│  │  │         Phaser 4 Instance          │  │   │
 │  │  │  GameScene: renders state, inputs  │  │   │
-│  │  │  UIScene: overlays, health bars    │  │   │
 │  │  └────────────────────────────────────┘  │   │
+│  │  React overlays: HUD, Leaderboard,       │   │
+│  │  MobileJoystick, Build button            │   │
 │  └──────────────────────────────────────────┘   │
 └──────────────────┬──────────────────────────────┘
                    │ WebSocket (Colyseus protocol)
@@ -158,9 +165,14 @@
 │   ├── .prettierignore
 │   └── package.json
 │
-└── docs/
-    └── technical-blueprint.md      # This document
+├── docs/
+│   ├── technical-blueprint.md      # This document
+│   └── session-handoff.md          # Status/pointer doc for picking the project up in a fresh session
+├── CLAUDE.md                       # Working preferences for Claude Code (notably: the user runs their own git commands)
+└── dev-notes.md                    # Scratch list of open ideas/questions — see Current Status & Known Issues
 ```
+
+The repo is under git (`main`). Note there are two `package.json`/`node_modules` trees (`server/`, `client/`) and no root workspace — run installs and scripts inside each folder.
 
 ---
 
@@ -558,6 +570,8 @@ The client's networking code is built and has been exercised end-to-end against 
 - **`src/types/shared.ts`** — hand-copied mirror of `server/src/types/shared.ts` (the client/server message contract). Keep both files in sync by hand; there's no shared package between the two yet.
 - **`src/types/gameState.ts`** — plain TypeScript interfaces (`PlayerState`, `TileState`, `ProjectileState`, `StructureState`, `GameStateShape`, etc.) describing the shape of the decoded root state, typed as `ReadonlyMap`/`readonly T[]` rather than importing the server's schema classes. `colyseus.js` decodes `@colyseus/schema` state by **reflection** at connect time, so the client never needs the server's actual `Schema` subclasses — these interfaces exist purely for TypeScript, and the real decoded `MapSchema`/`ArraySchema` instances satisfy them structurally at runtime.
 - **`src/net/GameConnection.ts`** — a thin wrapper around `colyseus.js`'s `Client`/`Room`: `connectToGame(handlers)` joins (or rejoins via a `sessionStorage`-persisted `reconnectionToken`) the `GameRoom` and wires up discrete server→client message handlers; `sendInput`/`sendShoot`/`sendPlaceStructure`/`sendStartGame` are typed send helpers; `leaveGame`/`clearReconnectionToken`/`isNormalClose` support a clean, consented leave. High-frequency gameplay state (positions, tile ownership) is **not** modeled as discrete messages — it's plain Colyseus state, read directly off `room.state` by the Phaser layer's render loop — see [Client — Phaser Game](#client--phaser-game).
+- **`src/main.tsx` must wrap `<App />` in `<GameProvider>`.** `useGameConnection()` throws if there's no provider above it, and because `App` calls it on its very first render, omitting the wrapper produces a completely blank page (React unmounts the tree; the only trace is an uncaught `useGameConnection must be used within a GameProvider` in the console). This was the cause of the "dev server runs but no UI" report on 2026-09-20.
+- **Wait for the first state before publishing the room.** `client.joinOrCreate()` resolves when the join handshake completes, but the server's initial full-state message is decoded a moment *after* that — so right after the promise resolves, `room.state.phase` is still `undefined`. `GameContext.connect()` therefore checks `room.state?.phase` and, if it's missing, awaits `room.onStateChange.once(...)` before calling `setRoom`/`setStatus('connected')` or reading any state. Consumers (lobby, `GameScreen`, HUD) can rely on `room.state` being fully populated whenever `status === 'connected'`. (Earlier smoke-test scripts worked only because they awaited a state change explicitly.)
 - **`src/context/GameContext.tsx`** — a React context (`GameProvider` / `useGameConnection()`) that owns the connection lifecycle: `status` (`idle` / `connecting` / `connected` / `reconnecting` / `error`), the current `room`, `sessionId`, `phase`/`phaseEndsAt` (kept in React state via the `phaseChanged` message, since phase changes are low-frequency and worth a re-render), a `players` array kept in sync via `getStateCallbacks(room)` reactive `onAdd`/`onRemove`/`onChange` callbacks (also low-frequency — a HUD/lobby list, not a per-tick render), and `gameOver`. It automatically retries via the reconnection token on an unexpected drop (any `onLeave` code other than `1000`, the consented-leave code), with a fixed retry delay — not implemented yet: a max-attempts cutoff or backoff, worth adding before this ships. `connect()`/`leave()` are exposed for a lobby screen to call, and `input`/`shoot`/`placeStructure`/`startGame` are the typed action dispatchers.
 
 ### Screen routing — implemented 2026-09-20
@@ -584,7 +598,7 @@ return <LobbyList />;                                        // phase === 'lobby
 
 ## Client — Phaser Game
 
-**Implemented and verified 2026-09-20** (build + typecheck + lint clean; the underlying game-state decode/message path is the same one covered by the live smoke tests under [Testing Multiplayer Locally](#testing-multiplayer-locally)). This deviates from the original sketch in a few ways worth calling out:
+**Implemented 2026-09-20; lobby → claiming → movement/tile-claiming verified in a real browser the same day** (see [Real-browser pass](#real-browser-pass--2026-09-20-first-one); combat, structures, and mobile controls are still unexercised there). Build + typecheck + lint are clean. This deviates from the original sketch in a few ways worth calling out:
 
 - **No `PreloadScene` or `UIScene`.** Every entity (player, projectile, structure, tile) renders as a plain Phaser primitive (`add.circle`/`add.rectangle`/a shared `Graphics` for the tile grid) rather than a sprite, so there's nothing to preload. The HUD and leaderboard are a **React overlay** (`GameScreen`, `HUD.tsx`, `Leaderboard.tsx`), not a Phaser `UIScene` — they're driven by state that's already reactive on the React side (`GameContext`'s `players`/`phase`), so re-implementing that reactivity inside Phaser would be pure duplication. `GameScene` owns only the parts of the screen that need per-frame, direct-state-read rendering: the map, players, projectiles, and structures.
 - **A single scene (`GameScene`) does it all** — tile rendering, entity rendering, camera follow, and input — rather than splitting responsibilities the original sketch proposed (`TileRenderer`/`PlayerRenderer`/`ProjectileRenderer`/`StructureRenderer`/`InputHandler` as separate files). Splitting those out is a reasonable follow-up once the scene grows, but wasn't necessary for a working first version.
@@ -842,6 +856,17 @@ With the version mismatch resolved (see [Tech Stack](#tech-stack)), a real `coly
 
 This was a throwaway script (not checked into the client), but the same coverage should be re-run as a real test (or extended into one) any time either side's Colyseus/schema version changes, given how easy it is for a client/server pairing to silently break (see the two Tech Stack incidents this session).
 
+### Real-browser pass — 2026-09-20 (first one)
+
+Until this date the Phaser view had only been verified by typecheck/lint/headless scripts. Driving the Vite dev server (`vite`, port 5173 by default) against the live server in a browser confirmed:
+- Lobby lists the joined player ("Player 1 (you)"); **Start Game** moves to `claiming` and the phase countdown ticks down.
+- `GameScreen` renders: tile grid, the local player's circle centered on screen, HUD (phase/health/ammo/tiles/credits) top-left, leaderboard top-right.
+- Keyboard movement claims tiles: `tilesOwned` went 1 → 28 during a short run, tiles are drawn in the player's color, and `credits` incremented on the 10s payout.
+
+Not yet exercised in a browser: combat phase, shooting, structure placement/destruction, the mobile joystick and Build button, reconnection after a dropped socket or refresh, multiple simultaneous players, the `results`/game-over screen.
+
+Debugging tips learned the hard way: (1) a blank page means check the browser console first — it was an uncaught provider error, not a build problem; (2) a page stuck on "connecting" with a successful `POST /matchmake/joinOrCreate/GameRoom` (200) in the network tab means the server failed while sending state — read the **server** log; (3) `EADDRINUSE` on 2567 means another server instance (often a `ts-node-dev` you forgot about) is already running; `ts-node-dev --respawn` also restarts itself on any file change, including `tsconfig.json`, so the port can briefly go down mid-session.
+
 ### Multiple Browser Instances
 - Open the game in multiple browser windows or profiles
 - Chrome regular window + Chrome Incognito = 2 isolated sessions
@@ -892,6 +917,8 @@ Bots are the most valuable local test tool now that client/server compatibility 
 
 ### Setup Commands
 
+> **Use Node 24** (`nvm use 24`; an `.nvmrc`/`"engines"` field is not set up yet). The repo was developed against v24.21.0.
+
 ```bash
 # Client
 cd client
@@ -904,7 +931,8 @@ npm install --save-dev eslint @eslint/js typescript-eslint globals \
 # Server
 cd server
 npm init -y
-npm install colyseus@0.16.5 @colyseus/schema@^3.0.76 @colyseus/ws-transport@^0.16.5 express cors
+npm install --save-exact colyseus@0.16.5 @colyseus/core@0.16.26 @colyseus/schema@3.0.76 @colyseus/ws-transport@0.16.5
+npm install express cors
 npm install --save-dev typescript@~6.0.2 @types/node @types/express @types/cors ts-node-dev \
   eslint @eslint/js typescript-eslint globals \
   prettier eslint-config-prettier
@@ -912,7 +940,7 @@ npm install --save-dev typescript@~6.0.2 @types/node @types/express @types/cors 
 
 > `typescript-eslint` currently requires TypeScript `<6.1.0` as a peer dependency — pin `typescript@~6.0.2` explicitly on both client and server if `npm install` resolves a newer TypeScript 7.x and the peer-dependency install fails.
 >
-> **Pin `colyseus`/`@colyseus/schema` to the versions above explicitly** (`npm install colyseus` unpinned will resolve to a newer line, e.g. 0.18, that has no published compatible `colyseus.js` client — see the Tech Stack compatibility note). `npm install colyseus.js` on the client resolves to `0.16.22`, which is the verified-compatible pairing for these server versions.
+> **Pin all four Colyseus packages (`colyseus`, `@colyseus/core`, `@colyseus/schema`, `@colyseus/ws-transport`) to exact versions** — no `^`. `npm install colyseus` unpinned resolves to a newer line, e.g. 0.18, that has no published compatible `colyseus.js` client, and `@colyseus/core` is only a peer dependency, so nothing else constrains it (see the Tech Stack compatibility note, items 1 and 3). `npm install colyseus.js` on the client resolves to `0.16.22`, which is the verified-compatible pairing for these server versions.
 
 ### Client `package.json` Scripts
 ```json
@@ -1048,6 +1076,34 @@ The server's `tsconfig.json` needs a few settings beyond the client's, driven by
 
 ---
 
+## Current Status & Known Issues
+
+_As of 2026-09-20._ Server builds and lints clean (`tsc`, `eslint`) and boots; the client typechecks and lints clean and renders in a browser. Prettier `format:check` currently flags ~15 server files (pre-existing, cosmetic — `npm run format` fixes it).
+
+### Working (browser- or script-verified)
+Join/lobby, host + `startGame`, phase timers, movement, tile claiming (batched broadcast), credits payout, HUD, leaderboard, reconnection token flow (script-verified), projectile/structure/phase server logic (script-verified).
+
+### Implemented but not yet exercised in a real browser
+Combat phase and shooting, structure placement (Build button) and destruction, mobile joystick, reconnect after refresh/drop, multi-player sessions, results screen.
+
+### Known bugs / rough edges
+- **Layout overflow:** the game page shows both horizontal and vertical scrollbars and the leaderboard is clipped at the right edge — the Phaser canvas and/or overlay container is larger than the viewport. Likely `#root`/`App.css` (Vite template styles: `#center`, body margins) interacting with `Phaser.Scale.RESIZE`. Not investigated.
+- **Possibly odd movement path:** in the automated browser run, holding `d` produced a wandering trail (turns up/left) instead of a straight line right. May be an artifact of synthetic key events (stuck/repeated keys) rather than a real input bug — needs a manual check with a physical keyboard before treating as a bug.
+- **Ammo never regenerates** (30 shots for the whole match) — see PvP Shooting.
+- **No reconnect retry cap/backoff** in `GameContext`.
+- **Client bundle ~1.7MB** (Phaser) — Vite chunk-size warning, no code-splitting yet.
+- **Mobile:** no dedicated fire button; no responsive tuning for phone-width screens.
+- **`playerDisconnected`/`playerReconnected`/`gameOver` server events are not wired**, though the client has handlers for them; `results` phase currently does nothing but wait out its timer.
+- **Contested tile claims** resolve by player join order, not input `seq`.
+- **`GameScene.ts`** (~250 lines) is a candidate to split once it grows.
+- **Node version is not enforced** (no `.nvmrc` / `engines`) — see Tech Stack.
+
+### Open questions and ideas (from `dev-notes.md`)
+1. **Should the project move off Colyseus?** Raised because of the repeated client/server compatibility problems (see Tech Stack items 1–5). Not decided. Considerations: the published `colyseus.js` client tops out at 0.16.22, so the server is stuck on the 0.16 line with exact pins; the pain so far has been version/config drift rather than fundamental design limits, and everything is now working and verified on the pinned versions. Alternatives (raw `ws` + own delta sync, or another framework) would mean re-implementing rooms, delta-compressed state sync, and reconnection.
+2. **Starting positions:** players should start in a line on the right side of the map to simulate "going west". Today every player spawns at the exact map center (`GameRoom.onJoin`, and `CombatSystem` respawns to center). Needs a spawn-slot scheme for up to 10 players and a decision on whether respawns also use it. Not implemented.
+
+---
+
 ## Planned Features
 
 Captured 2026-09-20 as design ideas; the Phaser game view work session that followed (also 2026-09-20) implemented several of them along the way. Status is marked per item below — see the Decisions Log for what changed and why.
@@ -1101,8 +1157,8 @@ Captured 2026-09-20 as design ideas; the Phaser game view work session that foll
 | Server framework | Colyseus | raw `ws`, uWebSockets.js | Built-in delta sync, reconnection, room management |
 | Server runtime | Node.js | Deno, Bun | Most mature; best ecosystem for Colyseus |
 | Server scaling | Single Node instance | Redis pub/sub, multi-instance | Sufficient at target player count (≤10/room) |
-| Client rendering | Phaser 3 | Three.js, plain Canvas | 2D-optimized, tile grid support, particle effects |
-| Client UI framework | React 18 | Lit.js, vanilla JS | Familiarity goal; good component model for lobby/menus |
+| Client rendering | Phaser (v4.2.1 installed; earlier drafts said 3) | Three.js, plain Canvas | 2D-optimized, tile grid support, particle effects |
+| Client UI framework | React (v19 installed; earlier drafts said 18) | Lit.js, vanilla JS | Familiarity goal; good component model for lobby/menus |
 | Client bundler | Vite (client only) | Webpack, Parcel | Fast HMR, zero-config TS+React, modern standard. Server does **not** use Vite — plain `tsc` build + `ts-node-dev` for hot reload, since Vite targets browser bundling |
 | Transport protocol | WebSockets (via Colyseus) | WebRTC, SSE, polling | Right latency profile; server-authoritative; P2P not needed at this scale |
 | Collision detection | Home-rolled distance/AABB | Rapier, Planck.js, P2.js | Sufficient complexity; physics engine is overkill for this game type |
@@ -1128,3 +1184,9 @@ Captured 2026-09-20 as design ideas; the Phaser game view work session that foll
 | Mobile movement input | A hand-built drag joystick (`MobileJoystick.tsx`, plain pointer events, no external dependency) | A Phaser plugin (e.g. `phaser3-rex-plugins`'s virtual joystick), as the original plan suggested | Avoids a new dependency for a fairly small amount of pointer-event math, and keeps the control as a React component consistent with the rest of the UI overlay (HUD, leaderboard, build button) rather than mixing input-handling styles between Phaser and React |
 | Structure/tile rendering | Plain Phaser primitives (`add.circle`/`add.rectangle`/a shared `Graphics`) | Sprite-based rendering with a `PreloadScene` loading art assets, as the original sketch proposed | No art assets exist yet; primitives need no preloading and are enough to validate the networking/rendering pipeline. Swapping in real sprites later is a `GameScene` change only, not an architecture change |
 | Credits payout scope | Every player earns 1 credit per tile they individually own, during `claiming`/`combat` only | Payouts continuing into `results`, or scoped only to `combat` | Matches the request's "based on number of tiles they control" without over-scoping into phases where tile ownership isn't changing meaningfully or the match is already decided; open questions about team-pooled credits remain in Planned Features #2 |
+| Pinning `@colyseus/core` | Exact-pin all four Colyseus packages (`colyseus` 0.16.5, `@colyseus/core` 0.16.26, `@colyseus/schema` 3.0.76, `@colyseus/ws-transport` 0.16.5), no `^` | Leave `@colyseus/core` to resolve as a peer dependency | It is only a peer of `colyseus`/`ws-transport`, so an unpinned install resolved it to 0.18.14, whose `Room` generics and `onLeave` signature are incompatible with 0.16 and broke `tsc`. Exact pins plus a lockfile regenerated from a clean install prevent silent drift (2026-09-20) |
+| Publishing the room to React | `GameContext.connect()` waits for the first state (`onStateChange.once`) before `setRoom`/`setStatus('connected')` | Publish the room as soon as `joinOrCreate` resolves and null-check `state` everywhere | The join promise resolves before the initial full-state message is decoded, so `room.state.phase` is undefined at that moment. Waiting once at the boundary lets every consumer assume populated state |
+| `<GameProvider>` placement | Wrap `<App />` in `main.tsx` | Provide the context lower in the tree, or make `useGameConnection()` tolerate a missing provider | `App` itself consumes the context, so the provider must sit above it. Missing it gave a fully blank page with only a console error; the hook's throw is intentional, since it surfaces the mistake immediately |
+| Version-drift guardrails | Document exact pins and the "run a real client against a real server" check; `.nvmrc`/`engines` not yet added | Trust isolated build/lint passes | Three of the five compatibility bugs to date (the matchmake protocol mismatch, the `useDefineForClassFields` encode crash, and that setting missing from the committed `tsconfig.json`) passed every per-side build/lint check and surfaced only when a real client joined a real server; the other two (`@colyseus/core` peer drift, `index.ts` on the 0.18 API) were caught by `tsc`. Separately, a Node 13 default shell can't run TS 6 at all |
+| Whether to leave Colyseus | **Undecided** — staying on pinned 0.16.x for now | Raw `ws` + custom sync; another framework | Raised in `dev-notes.md` because of the compatibility churn. Everything works and is verified on the pinned versions, and replacing rooms/delta sync/reconnection is a large cost; revisit if the 0.16 line's lack of updates or a needed feature becomes a real blocker |
+| Git workflow | The user runs all git commands; Claude edits files and asks the user to commit | Claude commits/pushes | Stated preference in `CLAUDE.md` — the user wants to review what's being committed |

@@ -6,7 +6,12 @@ export type GamePhase = 'lobby' | 'claiming' | 'combat' | 'results';
 
 // Client -> Server
 export interface InputMessage {
+  // Desired movement direction in world space. Magnitude 0..1 is honored
+  // (analog joystick), anything longer is clamped to 1 server-side.
   dir: { x: number; y: number };
+  // Where the player is facing/aiming, radians in world space. Optional so
+  // older clients that only send `dir` still work.
+  angle?: number;
   seq: number;
 }
 

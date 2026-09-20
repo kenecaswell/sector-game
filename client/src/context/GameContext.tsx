@@ -29,7 +29,7 @@ interface GameContextValue {
   gameOver: GameOverEvent | null;
   connect: () => void;
   leave: () => void;
-  input: (dir: { x: number; y: number }) => void;
+  input: (dir: { x: number; y: number }, angle?: number) => void;
   shoot: (angle: number) => void;
   placeStructure: (tileX: number, tileY: number) => void;
   startGame: () => void;
@@ -149,9 +149,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const input = useCallback(
-    (dir: { x: number; y: number }) => {
+    (dir: { x: number; y: number }, angle?: number) => {
       if (!room) return;
-      sendInput(room, dir, ++seqRef.current);
+      sendInput(room, dir, ++seqRef.current, angle);
     },
     [room]
   );

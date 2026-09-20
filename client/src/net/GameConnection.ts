@@ -121,8 +121,13 @@ export function isNormalClose(code: number): boolean {
   return code === NORMAL_CLOSE_CODE;
 }
 
-export function sendInput(room: GameRoom, dir: { x: number; y: number }, seq: number): void {
-  room.send<InputMessage>('input', { dir, seq });
+export function sendInput(
+  room: GameRoom,
+  dir: { x: number; y: number },
+  seq: number,
+  angle?: number
+): void {
+  room.send<InputMessage>('input', { dir, angle, seq });
 }
 
 export function sendShoot(room: GameRoom, angle: number, seq: number): void {

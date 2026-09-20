@@ -5,10 +5,10 @@ import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
 import { EconomySystem } from '../systems/EconomySystem';
+import { hexIndex, isValidHex, mapPixelSize } from '../hex';
 import type { Broadcast } from '../systems/Broadcast';
 import {
   TICK_RATE,
-  TILE_SIZE,
   RECONNECT_WINDOW_SECONDS,
   CREDIT_PAYOUT_INTERVAL_MS,
 } from '../constants';
@@ -67,8 +67,9 @@ export class GameRoom extends Room<GameState> {
     player.id = client.sessionId;
     player.name = `Player ${this.state.players.size + 1}`;
     player.color = PLAYER_COLORS[this.state.players.size % PLAYER_COLORS.length];
-    player.x = (this.state.mapWidth * TILE_SIZE) / 2;
-    player.y = (this.state.mapHeight * TILE_SIZE) / 2;
+    const { width, height } = mapPixelSize(this.state.mapWidth, this.state.mapHeight);
+    player.x = width / 2;
+    player.y = height / 2;
 
     this.state.players.set(client.sessionId, player);
 
@@ -127,11 +128,13 @@ export class GameRoom extends Room<GameState> {
 
     // Clamp so a buggy/malicious client can't send an oversized direction
     // vector and move faster than PLAYER_SPEED.
-    const dir = {
-      x: Math.max(-1, Math.min(1, msg.dir?.x ?? 0)),
-      y: Math.max(-1, Math.min(1, msg.dir?.y ?? 0)),
-    };
-    this.playerInputs.set(client.sessionId, { dir, seq: msg.seq });
+    const clampAxis = (value: unknown): number =>
+      typeof value === 'number' && Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
+    const dir = { x: clampAxis(msg.dir?.x), y: clampAxis(msg.dir?.y) };
+    this.playerInputs.set(client.sessionId, { dir, seq: msg.seq, receivedAt: Date.now() });
+
+    // Facing is cosmetic (other players' clients draw it), so just sanitize it.
+    if (typeof msg.angle === 'number' && Number.isFinite(msg.angle)) player.angle = msg.angle;
 
     // Echo the processed seq back to this client only, so it can discard
     // confirmed predicted moves during client-side reconciliation.
@@ -160,8 +163,9 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.connected || this.state.phase.phase !== 'combat') return;
 
-    const idx = msg.tileY * this.state.mapWidth + msg.tileX;
-    const tile = this.state.tiles[idx];
+    // Validate first — an out-of-range column would otherwise wrap onto another row.
+    if (!isValidHex(msg.tileX, msg.tileY, this.state.mapWidth, this.state.mapHeight)) return;
+    const tile = this.state.tiles[hexIndex(msg.tileX, msg.tileY, this.state.mapWidth)];
     if (!tile || tile.ownerId !== client.sessionId) return; // must place on a tile you own
 
     let occupied = false;

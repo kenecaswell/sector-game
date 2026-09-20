@@ -8,10 +8,10 @@ interface MobileJoystickProps {
 }
 
 /**
- * Drag-based virtual joystick for touch devices. Produces the same
- * `{x, y}` direction vector (each axis clamped to [-1, 1]) that the desktop
- * keyboard input does — see GameScene.pollKeyboard — so it plugs into the
- * exact same `onInput`/`sendInput` path with no server-side changes needed.
+ * Drag-based virtual joystick for touch devices. Reports the raw on-screen
+ * stick deflection (each axis clamped to [-1, 1]); GameScene converts it to a
+ * world-space direction (undoing the isometric squash) and sends it through
+ * the same `onInput`/`sendInput` path the keyboard uses.
  */
 export function MobileJoystick({ onChange }: MobileJoystickProps) {
   const baseRef = useRef<HTMLDivElement>(null);

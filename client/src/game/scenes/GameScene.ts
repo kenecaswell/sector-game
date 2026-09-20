@@ -2,27 +2,77 @@ import Phaser from 'phaser';
 import { getStateCallbacks, type GameRoom } from '../../net/GameConnection';
 import type { PlayerState, ProjectileState, StructureState } from '../../types/gameState';
 import {
-  PLAYER_RADIUS,
-  PROJECTILE_RADIUS,
-  POSITION_LERP_FACTOR,
-  TILE_SIZE,
-  TILE_GRID_LINE_COLOR,
-  UNCLAIMED_TILE_COLOR,
+    BACKGROUND_COLOR,
+    BODY_LIFT,
+    CLAIM_BLEND,
+    EXTRAPOLATION_S,
+    HEX_DEPTH,
+    HEX_OUTLINE_COLOR,
+    HEX_SIDE_COLOR,
+    HEX_SIDE_DARK_COLOR,
+    HEX_SIZE,
+    HEX_TOP_COLOR,
+    INPUT_KEEPALIVE_MS,
+    INPUT_SEND_INTERVAL_MS,
+    ISO_SQUASH,
+    MOVE_RELATIVE_TO_AIM,
+    PLAYER_RADIUS,
+    PROJECTILE_RADIUS,
+    SMOOTHING_RATE,
+    SNAP_DISTANCE,
+    STRUCTURE_LIFT,
 } from '../constants';
+import {
+    hexCenter,
+    hexCorners,
+    hexIndex,
+    isValidHex,
+    mapPixelSize,
+    pixelToHex,
+    project,
+    unproject,
+    type Point,
+} from '../hex';
 
 export interface GameSceneCallbacks {
-  onInput: (dir: { x: number; y: number }) => void;
-  onShoot: (angle: number) => void;
-  onPlaceStructure: (tileX: number, tileY: number) => void;
+    onInput: (dir: { x: number; y: number }, angle: number) => void;
+    onShoot: (angle: number) => void;
+    onPlaceStructure: (tileX: number, tileY: number) => void;
 }
 
 export interface GameSceneInitData {
-  room: GameRoom;
-  sessionId: string;
-  callbacks: GameSceneCallbacks;
+    room: GameRoom;
+    sessionId: string;
+    callbacks: GameSceneCallbacks;
 }
 
+// A rendered entity remembers its smoothed *world* (top-down) position; the
+// Phaser object itself sits at the projected screen position.
+interface PlayerView {
+    container: Phaser.GameObjects.Container;
+    nose: Phaser.GameObjects.Arc;
+    wx: number;
+    wy: number;
+}
+
+interface ProjectileView {
+    sprite: Phaser.GameObjects.Arc;
+    wx: number;
+    wy: number;
+}
+
+const AIM_MIN_DISTANCE = 6; // world px — closer than this to the player, keep the previous aim
+
 /**
+ * Renders the room's state in an isometric view of a hex map.
+ *
+ * Coordinate spaces (see game/hex.ts):
+ *  - world:  top-down, what the server simulates and what state.x/y mean.
+ *  - scene:  what Phaser draws — world with y squashed by ISO_SQUASH.
+ * Anything read from the server is world-space and gets `project`ed before it
+ * touches a Phaser object; anything read from the pointer/joystick gets
+ * `unproject`ed before it goes to the server.
+ *
  * Reads room.state directly every frame for high-frequency gameplay data
  * (positions, tile ownership) rather than routing it through React —
  * see docs/technical-blueprint.md "Client — React Shell". Only entity
@@ -30,221 +80,480 @@ export interface GameSceneInitData {
  * that's naturally event-driven rather than per-frame.
  */
 export class GameScene extends Phaser.Scene {
-  private room!: GameRoom;
-  private sessionId = '';
-  private callbacks!: GameSceneCallbacks;
+    private room!: GameRoom;
+    private sessionId = '';
+    private callbacks!: GameSceneCallbacks;
 
-  private tileGraphics!: Phaser.GameObjects.Graphics;
-  private playerSprites = new Map<string, Phaser.GameObjects.Arc>();
-  private projectileSprites = new Map<string, Phaser.GameObjects.Arc>();
-  private structureSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+    private baseGraphics!: Phaser.GameObjects.Graphics; // static hex terrain, drawn once
+    private claimGraphics!: Phaser.GameObjects.Graphics; // ownership tint, redrawn when dirty
+    private hoverGraphics!: Phaser.GameObjects.Graphics; // outline of the hex under the cursor
+    // Corner points as Vector2s because Graphics.fillPoints/strokePoints are typed for them.
+    private hexCornerCache: Phaser.Math.Vector2[][] = [];
+    private claimsDirty = true;
 
-  private cursorKeys!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private wasdKeys!: {
-    W: Phaser.Input.Keyboard.Key;
-    A: Phaser.Input.Keyboard.Key;
-    S: Phaser.Input.Keyboard.Key;
-    D: Phaser.Input.Keyboard.Key;
-  };
-  private buildMode = false;
-  private lastInputSentAt = 0;
-  private lastSentDir = { x: 0, y: 0 };
+    private playerViews = new Map<string, PlayerView>();
+    private projectileViews = new Map<string, ProjectileView>();
+    private structureSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  constructor() {
-    super('GameScene');
-  }
+    private cursorKeys!: Phaser.Types.Input.Keyboard.CursorKeys;
+    private wasdKeys!: {
+        W: Phaser.Input.Keyboard.Key;
+        A: Phaser.Input.Keyboard.Key;
+        S: Phaser.Input.Keyboard.Key;
+        D: Phaser.Input.Keyboard.Key;
+    };
+    private buildMode = false;
 
-  init(data: GameSceneInitData): void {
-    this.room = data.room;
-    this.sessionId = data.sessionId;
-    this.callbacks = data.callbacks;
-    this.buildMode = false;
-  }
+    private aimAngle = 0; // world-space radians; where "forward" points
+    private joystick = { x: 0, y: 0 }; // raw screen-space stick deflection, each axis -1..1
 
-  create(): void {
-    const { mapWidth, mapHeight } = this.room.state;
-    const worldWidth = mapWidth * TILE_SIZE;
-    const worldHeight = mapHeight * TILE_SIZE;
+    private lastInputSentAt = 0;
+    private lastSentDir = { x: 0, y: 0 };
+    private lastSentAngle = 0;
 
-    this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
-    this.cameras.main.setBackgroundColor(0x1a1a2e);
-
-    this.tileGraphics = this.add.graphics();
-    this.drawTiles();
-
-    const $ = getStateCallbacks(this.room);
-
-    $(this.room.state).players.onAdd((player) => this.addPlayerSprite(player));
-    $(this.room.state).players.onRemove((_player, sessionId) => this.removePlayerSprite(sessionId));
-
-    $(this.room.state).projectiles.onAdd((projectile) => this.addProjectileSprite(projectile));
-    $(this.room.state).projectiles.onRemove((_projectile, id) => this.removeProjectileSprite(id));
-
-    $(this.room.state).structures.onAdd((structure) => this.addStructureSprite(structure));
-    $(this.room.state).structures.onRemove((_structure, id) => this.removeStructureSprite(id));
-
-    // Existing entities at scene-create time (server sends full state on join,
-    // and onAdd only fires for changes *after* the callback is registered).
-    this.room.state.players.forEach((player) => this.addPlayerSprite(player));
-    this.room.state.projectiles.forEach((projectile) => this.addProjectileSprite(projectile));
-    this.room.state.structures.forEach((structure) => this.addStructureSprite(structure));
-
-    this.room.onMessage('tilesClaimed', () => this.drawTiles());
-
-    if (this.input.keyboard) {
-      this.cursorKeys = this.input.keyboard.createCursorKeys();
-      const keys = this.input.keyboard.addKeys('W,A,S,D') as Record<
-        string,
-        Phaser.Input.Keyboard.Key
-      >;
-      this.wasdKeys = { W: keys.W, A: keys.A, S: keys.S, D: keys.D };
+    constructor() {
+        super('GameScene');
     }
 
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) =>
-      this.handlePointerDown(pointer)
-    );
-  }
-
-  update(time: number): void {
-    this.pollKeyboard(time);
-    this.lerpEntityPositions();
-  }
-
-  /** Toggled by the React "Build" button so the next tap places a structure instead of shooting. */
-  setBuildMode(active: boolean): void {
-    this.buildMode = active;
-  }
-
-  private pollKeyboard(time: number): void {
-    if (!this.cursorKeys) return;
-
-    const dir = { x: 0, y: 0 };
-    if (this.cursorKeys.left.isDown || this.wasdKeys?.A.isDown) dir.x -= 1;
-    if (this.cursorKeys.right.isDown || this.wasdKeys?.D.isDown) dir.x += 1;
-    if (this.cursorKeys.up.isDown || this.wasdKeys?.W.isDown) dir.y -= 1;
-    if (this.cursorKeys.down.isDown || this.wasdKeys?.S.isDown) dir.y += 1;
-
-    this.sendInputIfChanged(dir, time);
-  }
-
-  /** Also called by the mobile virtual joystick overlay via the scene's public API. */
-  sendInputIfChanged(dir: { x: number; y: number }, time: number): void {
-    const changed = dir.x !== this.lastSentDir.x || dir.y !== this.lastSentDir.y;
-    const dueForResend = time - this.lastInputSentAt > 250; // keep-alive so the server doesn't stall on a dropped packet
-    if (!changed && !dueForResend) return;
-
-    this.lastSentDir = dir;
-    this.lastInputSentAt = time;
-    this.callbacks.onInput(dir);
-  }
-
-  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
-    const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    const tileX = Math.floor(world.x / TILE_SIZE);
-    const tileY = Math.floor(world.y / TILE_SIZE);
-
-    if (this.buildMode) {
-      this.callbacks.onPlaceStructure(tileX, tileY);
-      this.buildMode = false;
-      return;
+    init(data: GameSceneInitData): void {
+        this.room = data.room;
+        this.sessionId = data.sessionId;
+        this.callbacks = data.callbacks;
+        this.buildMode = false;
+        this.claimsDirty = true;
+        this.hexCornerCache = [];
+        this.playerViews.clear();
+        this.projectileViews.clear();
+        this.structureSprites.clear();
+        this.joystick = { x: 0, y: 0 };
     }
 
-    const me = this.room.state.players.get(this.sessionId);
-    if (!me) return;
-    const angle = Math.atan2(world.y - me.y, world.x - me.x);
-    this.callbacks.onShoot(angle);
-  }
+    create(): void {
+        const { mapWidth, mapHeight } = this.room.state;
+        const world = mapPixelSize(mapWidth, mapHeight);
 
-  private drawTiles(): void {
-    const { tiles, mapWidth, mapHeight, players } = this.room.state;
-    this.tileGraphics.clear();
+        this.cameras.main.setBounds(0, 0, world.width, world.height * ISO_SQUASH + HEX_DEPTH);
+        this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
 
-    for (let y = 0; y < mapHeight; y++) {
-      for (let x = 0; x < mapWidth; x++) {
-        const tile = tiles[y * mapWidth + x];
-        const color = tile?.ownerId
-          ? this.colorForOwner(tile.ownerId, players)
-          : UNCLAIMED_TILE_COLOR;
-        this.tileGraphics.fillStyle(color, tile?.ownerId ? 0.55 : 1);
-        this.tileGraphics.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-      }
+        this.baseGraphics = this.add.graphics().setDepth(-3);
+        this.claimGraphics = this.add.graphics().setDepth(-2);
+        this.hoverGraphics = this.add.graphics().setDepth(-1);
+        this.buildHexCornerCache();
+        this.drawBase();
+
+        const $ = getStateCallbacks(this.room);
+
+        $(this.room.state).players.onAdd((player) => this.addPlayerView(player));
+        $(this.room.state).players.onRemove((_player, sessionId) => {
+            this.removePlayerView(sessionId);
+            this.claimsDirty = true; // a departing player's tiles are released without a tilesClaimed event
+        });
+
+        $(this.room.state).projectiles.onAdd((projectile) => this.addProjectileView(projectile));
+        $(this.room.state).projectiles.onRemove((_projectile, id) => this.removeProjectileView(id));
+
+        $(this.room.state).structures.onAdd((structure) => this.addStructureSprite(structure));
+        $(this.room.state).structures.onRemove((_structure, id) => this.removeStructureSprite(id));
+
+        // Existing entities at scene-create time (server sends full state on join,
+        // and onAdd only fires for changes *after* the callback is registered).
+        this.room.state.players.forEach((player) => this.addPlayerView(player));
+        this.room.state.projectiles.forEach((projectile) => this.addProjectileView(projectile));
+        this.room.state.structures.forEach((structure) => this.addStructureSprite(structure));
+
+        const stopListeningForClaims = this.room.onMessage('tilesClaimed', () => {
+            this.claimsDirty = true;
+        });
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => stopListeningForClaims());
+
+        if (this.input.keyboard) {
+            this.cursorKeys = this.input.keyboard.createCursorKeys();
+            const keys = this.input.keyboard.addKeys('W,A,S,D') as Record<
+                string,
+                Phaser.Input.Keyboard.Key
+            >;
+            this.wasdKeys = { W: keys.W, A: keys.A, S: keys.S, D: keys.D };
+        }
+
+        this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) =>
+            this.handlePointerDown(pointer)
+        );
     }
 
-    this.tileGraphics.lineStyle(1, TILE_GRID_LINE_COLOR, 0.3);
-    for (let x = 0; x <= mapWidth; x++) {
-      this.tileGraphics.lineBetween(x * TILE_SIZE, 0, x * TILE_SIZE, mapHeight * TILE_SIZE);
+    update(time: number, delta: number): void {
+        const dt = delta / 1000;
+
+        this.updateAim();
+        this.pollInput(time);
+        this.updateEntities(dt);
+
+        if (this.claimsDirty) {
+            this.claimsDirty = false;
+            this.drawClaims();
+        }
+        this.drawHover();
     }
-    for (let y = 0; y <= mapHeight; y++) {
-      this.tileGraphics.lineBetween(0, y * TILE_SIZE, mapWidth * TILE_SIZE, y * TILE_SIZE);
+
+    /** Toggled by the React "Build" button so the next tap places a structure instead of shooting. */
+    setBuildMode(active: boolean): void {
+        this.buildMode = active;
     }
-  }
 
-  private colorForOwner(ownerId: string, players: ReadonlyMap<string, PlayerState>): number {
-    const owner = players.get(ownerId);
-    return owner ? Phaser.Display.Color.HexStringToColor(owner.color).color : UNCLAIMED_TILE_COLOR;
-  }
+    /**
+     * Called by the mobile virtual joystick overlay. `dir` is the stick
+     * deflection in *screen* space (each axis -1..1); the scene converts it to a
+     * world-space direction so the character walks where the stick points on screen.
+     */
+    setJoystick(dir: { x: number; y: number }): void {
+        this.joystick = dir;
+    }
 
-  private addPlayerSprite(player: PlayerState): void {
-    if (this.playerSprites.has(player.id)) return;
-    const color = Phaser.Display.Color.HexStringToColor(player.color || '#ffffff').color;
-    const isSelf = player.id === this.sessionId;
-    const circle = this.add.circle(player.x, player.y, PLAYER_RADIUS, color);
-    circle.setStrokeStyle(isSelf ? 3 : 1, 0xffffff, isSelf ? 1 : 0.6);
-    this.playerSprites.set(player.id, circle);
+    // --- Input -------------------------------------------------------------
 
-    if (isSelf) this.cameras.main.startFollow(circle, true, 0.15, 0.15);
-  }
+    /** Points `aimAngle` from the local player toward the mouse (desktop only). */
+    private updateAim(): void {
+        const pointer = this.input.activePointer;
+        if (pointer.wasTouch) return; // touch aims from the joystick / tap targets instead
 
-  private removePlayerSprite(sessionId: string): void {
-    this.playerSprites.get(sessionId)?.destroy();
-    this.playerSprites.delete(sessionId);
-  }
+        const me = this.playerViews.get(this.sessionId);
+        if (!me) return;
 
-  private addProjectileSprite(projectile: ProjectileState): void {
-    if (this.projectileSprites.has(projectile.id)) return;
-    const circle = this.add.circle(projectile.x, projectile.y, PROJECTILE_RADIUS, 0xffe066);
-    this.projectileSprites.set(projectile.id, circle);
-  }
+        const target = this.pointerToWorld(pointer);
+        const dx = target.x - me.wx;
+        const dy = target.y - me.wy;
+        if (Math.hypot(dx, dy) < AIM_MIN_DISTANCE) return;
+        this.aimAngle = Math.atan2(dy, dx);
+    }
 
-  private removeProjectileSprite(id: string): void {
-    this.projectileSprites.get(id)?.destroy();
-    this.projectileSprites.delete(id);
-  }
+    private pollInput(time: number): void {
+        let dir: { x: number; y: number };
 
-  private addStructureSprite(structure: StructureState): void {
-    if (this.structureSprites.has(structure.id)) return;
-    const owner = this.room.state.players.get(structure.ownerId);
-    const color = owner ? Phaser.Display.Color.HexStringToColor(owner.color).color : 0xffffff;
-    const rect = this.add.rectangle(
-      structure.tileX * TILE_SIZE + TILE_SIZE / 2,
-      structure.tileY * TILE_SIZE + TILE_SIZE / 2,
-      TILE_SIZE * 0.7,
-      TILE_SIZE * 0.7,
-      color
-    );
-    rect.setStrokeStyle(2, 0x000000, 0.5);
-    this.structureSprites.set(structure.id, rect);
-  }
+        if (this.joystick.x !== 0 || this.joystick.y !== 0) {
+            dir = this.joystickToWorld(this.joystick);
+            if (dir.x !== 0 || dir.y !== 0) this.aimAngle = Math.atan2(dir.y, dir.x);
+        } else {
+            dir = this.keyboardToWorld();
+        }
 
-  private removeStructureSprite(id: string): void {
-    this.structureSprites.get(id)?.destroy();
-    this.structureSprites.delete(id);
-  }
+        this.sendInputIfChanged(dir, this.aimAngle, time);
+    }
 
-  private lerpEntityPositions(): void {
-    this.room.state.players.forEach((player, id) => {
-      const sprite = this.playerSprites.get(id);
-      if (!sprite) return;
-      sprite.x = Phaser.Math.Linear(sprite.x, player.x, POSITION_LERP_FACTOR);
-      sprite.y = Phaser.Math.Linear(sprite.y, player.y, POSITION_LERP_FACTOR);
-      sprite.setVisible(player.connected || id === this.sessionId);
-    });
+    /**
+     * WASD/arrows -> world-space direction. With MOVE_RELATIVE_TO_AIM, "forward"
+     * is wherever the mouse points and A/D strafe, so movement can go at any
+     * angle. Otherwise keys map to fixed on-screen directions.
+     */
+    private keyboardToWorld(): { x: number; y: number } {
+        if (!this.cursorKeys) return { x: 0, y: 0 };
 
-    this.room.state.projectiles.forEach((projectile, id) => {
-      const sprite = this.projectileSprites.get(id);
-      if (!sprite) return;
-      sprite.x = projectile.x;
-      sprite.y = projectile.y;
-    });
-  }
+        let forward = 0;
+        let right = 0;
+        if (this.cursorKeys.up.isDown || this.wasdKeys?.W.isDown) forward += 1;
+        if (this.cursorKeys.down.isDown || this.wasdKeys?.S.isDown) forward -= 1;
+        if (this.cursorKeys.right.isDown || this.wasdKeys?.D.isDown) right += 1;
+        if (this.cursorKeys.left.isDown || this.wasdKeys?.A.isDown) right -= 1;
+        if (forward === 0 && right === 0) return { x: 0, y: 0 };
+
+        let x: number;
+        let y: number;
+        if (MOVE_RELATIVE_TO_AIM) {
+            const fx = Math.cos(this.aimAngle);
+            const fy = Math.sin(this.aimAngle);
+            // "Right" of forward: rotate +90° in y-down space (clockwise on screen).
+            x = fx * forward + -fy * right;
+            y = fy * forward + fx * right;
+        } else {
+            ({ x, y } = this.screenVectorToWorld(right, -forward));
+        }
+
+        const length = Math.hypot(x, y);
+        return length > 0 ? { x: x / length, y: y / length } : { x: 0, y: 0 };
+    }
+
+    private joystickToWorld(stick: { x: number; y: number }): { x: number; y: number } {
+        const strength = Math.min(1, Math.hypot(stick.x, stick.y)); // keep analog speed control
+        const world = this.screenVectorToWorld(stick.x, stick.y);
+        return { x: world.x * strength, y: world.y * strength };
+    }
+
+    /** Converts an on-screen direction to a unit world direction (vertical is un-squashed). */
+    private screenVectorToWorld(sx: number, sy: number): { x: number; y: number } {
+        const world = unproject(sx, sy);
+        const length = Math.hypot(world.x, world.y);
+        return length > 0 ? { x: world.x / length, y: world.y / length } : { x: 0, y: 0 };
+    }
+
+    private sendInputIfChanged(dir: { x: number; y: number }, angle: number, time: number): void {
+        const elapsed = time - this.lastInputSentAt;
+        if (elapsed < INPUT_SEND_INTERVAL_MS) return;
+
+        const dirChanged =
+            Math.abs(dir.x - this.lastSentDir.x) > 0.02 ||
+            Math.abs(dir.y - this.lastSentDir.y) > 0.02;
+        const angleChanged = Math.abs(angle - this.lastSentAngle) > 0.03;
+        if (!dirChanged && !angleChanged && elapsed < INPUT_KEEPALIVE_MS) return;
+
+        this.lastSentDir = dir;
+        this.lastSentAngle = angle;
+        this.lastInputSentAt = time;
+        this.callbacks.onInput(dir, angle);
+    }
+
+    private handlePointerDown(pointer: Phaser.Input.Pointer): void {
+        const target = this.pointerToWorld(pointer);
+
+        if (this.buildMode) {
+            const { col, row } = pixelToHex(target.x, target.y);
+            this.callbacks.onPlaceStructure(col, row);
+            this.buildMode = false;
+            return;
+        }
+
+        const me = this.playerViews.get(this.sessionId);
+        if (!me) return;
+        this.callbacks.onShoot(Math.atan2(target.y - me.wy, target.x - me.wx));
+    }
+
+    /** Pointer -> world (top-down) coordinates, accounting for camera scroll and the iso squash. */
+    private pointerToWorld(pointer: Phaser.Input.Pointer): Point {
+        const scenePoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        return unproject(scenePoint.x, scenePoint.y);
+    }
+
+    // --- Terrain -----------------------------------------------------------
+
+    private buildHexCornerCache(): void {
+        const { mapWidth, mapHeight } = this.room.state;
+        for (let row = 0; row < mapHeight; row++) {
+            for (let col = 0; col < mapWidth; col++) {
+                this.hexCornerCache[hexIndex(col, row, mapWidth)] = hexCorners(col, row).map(
+                    (corner) => new Phaser.Math.Vector2(corner.x, corner.y)
+                );
+            }
+        }
+    }
+
+    /**
+     * Draws every hex once: cliff faces first, then the top, tiles sorted from
+     * back (top of screen) to front so a nearer tile's top covers the face of
+     * the tile behind it. Claim tints are a separate layer (drawClaims), so this
+     * never has to be redrawn.
+     */
+    private drawBase(): void {
+        const { mapWidth, mapHeight } = this.room.state;
+        const g = this.baseGraphics;
+        g.clear();
+
+        const order: Array<{ col: number; row: number; y: number }> = [];
+        for (let row = 0; row < mapHeight; row++) {
+            for (let col = 0; col < mapWidth; col++) {
+                order.push({ col, row, y: hexCenter(col, row).y });
+            }
+        }
+        order.sort((a, b) => a.y - b.y || a.col - b.col);
+
+        for (const { col, row } of order) {
+            const corners = this.hexCornerCache[hexIndex(col, row, mapWidth)];
+
+            // Only the three lower edges (right, bottom, left) show a cliff face.
+            for (let i = 0; i < 3; i++) {
+                const a = corners[i];
+                const b = corners[i + 1];
+                g.fillStyle(i === 1 ? HEX_SIDE_DARK_COLOR : HEX_SIDE_COLOR, 1);
+                g.fillPoints(
+                    [
+                        a,
+                        b,
+                        new Phaser.Math.Vector2(b.x, b.y + HEX_DEPTH),
+                        new Phaser.Math.Vector2(a.x, a.y + HEX_DEPTH),
+                    ],
+                    true
+                );
+            }
+
+            g.fillStyle(HEX_TOP_COLOR, 1);
+            g.fillPoints(corners, true);
+            g.lineStyle(1, HEX_OUTLINE_COLOR, 0.6);
+            g.strokePoints(corners, true);
+        }
+    }
+
+    /** Tints the top face of every claimed hex with its owner's color. */
+    private drawClaims(): void {
+        const { tiles, players } = this.room.state;
+        const g = this.claimGraphics;
+        g.clear();
+
+        for (let i = 0; i < tiles.length; i++) {
+            const ownerId = tiles[i]?.ownerId;
+            if (!ownerId) continue;
+            const owner = players.get(ownerId);
+            if (!owner) continue;
+
+            const ownerColor = Phaser.Display.Color.HexStringToColor(
+                owner.color || '#ffffff'
+            ).color;
+            g.fillStyle(blendColors(HEX_TOP_COLOR, ownerColor, CLAIM_BLEND), 1);
+            g.fillPoints(this.hexCornerCache[i], true);
+        }
+    }
+
+    /** Outlines the hex under the mouse — also a visual check that pointer picking matches the drawn grid. */
+    private drawHover(): void {
+        const pointer = this.input.activePointer;
+        const g = this.hoverGraphics;
+        g.clear();
+        if (pointer.wasTouch) return;
+
+        const { mapWidth, mapHeight } = this.room.state;
+        const target = this.pointerToWorld(pointer);
+        const { col, row } = pixelToHex(target.x, target.y);
+        if (!isValidHex(col, row, mapWidth, mapHeight)) return;
+
+        g.lineStyle(2, this.buildMode ? 0xf1c40f : 0xffffff, this.buildMode ? 0.9 : 0.35);
+        g.strokePoints(this.hexCornerCache[hexIndex(col, row, mapWidth)], true);
+    }
+
+    // --- Entities ----------------------------------------------------------
+
+    private addPlayerView(player: PlayerState): void {
+        if (this.playerViews.has(player.id)) return;
+
+        const color = Phaser.Display.Color.HexStringToColor(player.color || '#ffffff').color;
+        const isSelf = player.id === this.sessionId;
+
+        const shadow = this.add.ellipse(
+            0,
+            0,
+            PLAYER_RADIUS * 2,
+            PLAYER_RADIUS * 2 * ISO_SQUASH,
+            0x000000,
+            0.35
+        );
+        const body = this.add.circle(0, -BODY_LIFT, PLAYER_RADIUS, color);
+        body.setStrokeStyle(isSelf ? 3 : 1, 0xffffff, isSelf ? 1 : 0.6);
+        const nose = this.add.circle(0, -BODY_LIFT, 4, 0xffffff);
+
+        const start = project(player.x, player.y);
+        const container = this.add.container(start.x, start.y, [shadow, body, nose]);
+        container.setDepth(start.y);
+
+        this.playerViews.set(player.id, { container, nose, wx: player.x, wy: player.y });
+        if (isSelf) this.cameras.main.startFollow(container, true, 0.15, 0.15);
+    }
+
+    private removePlayerView(sessionId: string): void {
+        this.playerViews.get(sessionId)?.container.destroy();
+        this.playerViews.delete(sessionId);
+    }
+
+    private addProjectileView(projectile: ProjectileState): void {
+        if (this.projectileViews.has(projectile.id)) return;
+        const start = project(projectile.x, projectile.y);
+        const sprite = this.add.circle(start.x, start.y - BODY_LIFT, PROJECTILE_RADIUS, 0xffe066);
+        sprite.setDepth(start.y);
+        this.projectileViews.set(projectile.id, { sprite, wx: projectile.x, wy: projectile.y });
+    }
+
+    private removeProjectileView(id: string): void {
+        this.projectileViews.get(id)?.sprite.destroy();
+        this.projectileViews.delete(id);
+    }
+
+    private addStructureSprite(structure: StructureState): void {
+        if (this.structureSprites.has(structure.id)) return;
+        const owner = this.room.state.players.get(structure.ownerId);
+        const color = owner ? Phaser.Display.Color.HexStringToColor(owner.color).color : 0xffffff;
+
+        const center = hexCenter(structure.tileX, structure.tileY);
+        const at = project(center.x, center.y);
+        const rect = this.add.rectangle(
+            at.x,
+            at.y - STRUCTURE_LIFT,
+            HEX_SIZE * 0.8,
+            HEX_SIZE * 0.7,
+            color
+        );
+        rect.setStrokeStyle(2, 0x000000, 0.5);
+        rect.setDepth(at.y);
+        this.structureSprites.set(structure.id, rect);
+    }
+
+    private removeStructureSprite(id: string): void {
+        this.structureSprites.get(id)?.destroy();
+        this.structureSprites.delete(id);
+    }
+
+    /**
+     * Eases every entity's drawn position toward the server's latest state.
+     * The server updates at 20Hz; chasing that with exponential smoothing
+     * (frame-rate independent) plus a small velocity extrapolation keeps motion
+     * fluid at any frame rate instead of stepping tick by tick.
+     */
+    private updateEntities(dt: number): void {
+        const smoothing = 1 - Math.exp(-SMOOTHING_RATE * dt);
+
+        this.room.state.players.forEach((player, id) => {
+            const view = this.playerViews.get(id);
+            if (!view) return;
+
+            this.chase(
+                view,
+                player.x + player.vx * EXTRAPOLATION_S,
+                player.y + player.vy * EXTRAPOLATION_S,
+                smoothing
+            );
+
+            const at = project(view.wx, view.wy);
+            view.container.setPosition(at.x, at.y).setDepth(at.y);
+            view.container.setVisible(player.connected || id === this.sessionId);
+
+            // Your own facing is drawn from local input so it never lags the mouse.
+            const facing = id === this.sessionId ? this.aimAngle : player.angle;
+            view.nose.setPosition(
+                Math.cos(facing) * PLAYER_RADIUS * 0.85,
+                Math.sin(facing) * PLAYER_RADIUS * 0.85 * ISO_SQUASH - BODY_LIFT
+            );
+        });
+
+        this.room.state.projectiles.forEach((projectile, id) => {
+            const view = this.projectileViews.get(id);
+            if (!view) return;
+
+            const lead = EXTRAPOLATION_S * projectile.speed;
+            this.chase(
+                view,
+                projectile.x + Math.cos(projectile.angle) * lead,
+                projectile.y + Math.sin(projectile.angle) * lead,
+                smoothing
+            );
+
+            const at = project(view.wx, view.wy);
+            view.sprite.setPosition(at.x, at.y - BODY_LIFT).setDepth(at.y);
+        });
+    }
+
+    private chase(
+        view: { wx: number; wy: number },
+        targetX: number,
+        targetY: number,
+        smoothing: number
+    ): void {
+        if (Math.hypot(targetX - view.wx, targetY - view.wy) > SNAP_DISTANCE) {
+            view.wx = targetX; // respawn/teleport — don't glide across the map
+            view.wy = targetY;
+            return;
+        }
+        view.wx += (targetX - view.wx) * smoothing;
+        view.wy += (targetY - view.wy) * smoothing;
+    }
+}
+
+function blendColors(from: number, to: number, amount: number): number {
+    const channel = (shift: number) => {
+        const a = (from >> shift) & 0xff;
+        const b = (to >> shift) & 0xff;
+        return Math.round(a + (b - a) * amount);
+    };
+    return (channel(16) << 16) | (channel(8) << 8) | channel(0);
 }

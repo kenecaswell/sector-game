@@ -1,7 +1,8 @@
 import type { GameState, Player } from '../state/GameState';
 import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
-import { PROJECTILE_LIFETIME_MS, PROJECTILE_DAMAGE, TILE_SIZE } from '../constants';
+import { PROJECTILE_LIFETIME_MS, PROJECTILE_DAMAGE } from '../constants';
+import { mapPixelSize } from '../hex';
 import type { Broadcast } from './Broadcast';
 import type { PlayerHitEvent } from '../types/shared';
 
@@ -10,8 +11,11 @@ function respawnPlayer(state: GameState, player: Player): void {
   // at the map center with full health rather than being eliminated.
   // Kills and tilesOwned are untouched.
   player.health = 100;
-  player.x = (state.mapWidth * TILE_SIZE) / 2;
-  player.y = (state.mapHeight * TILE_SIZE) / 2;
+  const { width, height } = mapPixelSize(state.mapWidth, state.mapHeight);
+  player.x = width / 2;
+  player.y = height / 2;
+  player.vx = 0;
+  player.vy = 0;
 }
 
 /**
@@ -22,6 +26,7 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
   if (state.phase.phase !== 'combat') return;
 
   const now = Date.now();
+  const { width, height } = mapPixelSize(state.mapWidth, state.mapHeight);
   const toRemove = new Set<string>();
 
   state.projectiles.forEach((proj, id) => {
@@ -55,11 +60,7 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
       StructureSystem.applyDamage(state, structure.id, PROJECTILE_DAMAGE, broadcast);
     });
 
-    const outOfBounds =
-      proj.x < 0 ||
-      proj.y < 0 ||
-      proj.x > state.mapWidth * TILE_SIZE ||
-      proj.y > state.mapHeight * TILE_SIZE;
+    const outOfBounds = proj.x < 0 || proj.y < 0 || proj.x > width || proj.y > height;
     const expired = now - proj.spawnedAt > PROJECTILE_LIFETIME_MS;
     if (outOfBounds || expired) toRemove.add(id);
   });

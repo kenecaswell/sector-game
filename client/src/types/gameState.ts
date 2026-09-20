@@ -14,6 +14,9 @@ export interface PlayerState {
   name: string;
   x: number;
   y: number;
+  vx: number;
+  vy: number;
+  angle: number;
   health: number;
   ammo: number;
   tilesOwned: number;
