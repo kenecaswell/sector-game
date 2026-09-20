@@ -81,7 +81,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       },
       onGameOver: (event) => setGameOver(event),
     })
-      .then((joinedRoom) => {
+      .then(async (joinedRoom) => {
+        // The join handshake resolves before the server's initial full-state
+        // message has been decoded, so `state.phase` is undefined until the
+        // first state change fires. Wait for it so nothing downstream sees a
+        // half-populated state.
+        if (!joinedRoom.state?.phase) {
+          await new Promise<void>((resolve) => joinedRoom.onStateChange.once(() => resolve()));
+        }
+
         setRoom(joinedRoom);
         setStatus('connected');
         setGameOver(null);
