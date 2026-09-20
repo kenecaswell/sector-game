@@ -1,5 +1,5 @@
 import type { GameState } from '../state/GameState';
-import { INPUT_STALE_MS, PLAYER_ACCEL, PLAYER_SPEED } from '../constants';
+import { INPUT_STALE_MS, PLAYER_ACCEL, PLAYER_SPEED, SCREEN_Y_SCALE } from '../constants';
 import { mapPixelSize } from '../hex';
 
 export interface PlayerInput {
@@ -17,6 +17,11 @@ const INPUT_DEADZONE = 0.05;
  * scales speed, which lets an analog joystick walk slowly. Because the same
  * acceleration limit applies when speeding up, stopping, and changing
  * direction, motion is smooth rather than snapping between headings.
+ *
+ * Speed and acceleration are measured on-screen (see SCREEN_Y_SCALE): the input
+ * vector's length is taken with y scaled down, so a full-strength vector pointing
+ * up the screen has a larger world-y component than one pointing sideways has
+ * world-x, and both look equally fast. Longer vectors are clamped to that limit.
  *
  * Players with no input keep decelerating to a stop. Does not touch tile
  * ownership or collisions — see CollisionSystem for that.
@@ -37,12 +42,12 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
         const fresh = input !== undefined && now - input.receivedAt <= INPUT_STALE_MS;
         let dx = fresh ? input.dir.x : 0;
         let dy = fresh ? input.dir.y : 0;
-        const magnitude = Math.hypot(dx, dy);
+        const magnitude = Math.hypot(dx, dy * SCREEN_Y_SCALE);
         if (magnitude < INPUT_DEADZONE) {
             dx = 0;
             dy = 0;
         } else if (magnitude > 1) {
-            // Diagonals (and oversized vectors) must not be faster than top speed.
+            // Diagonals (and oversized vectors) must not be faster than top speed on screen.
             dx /= magnitude;
             dy /= magnitude;
         }
@@ -51,14 +56,15 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
         const targetVy = dy * PLAYER_SPEED;
         const deltaVx = targetVx - player.vx;
         const deltaVy = targetVy - player.vy;
-        const deltaLength = Math.hypot(deltaVx, deltaVy);
+        const deltaLength = Math.hypot(deltaVx, deltaVy * SCREEN_Y_SCALE);
 
         if (deltaLength <= maxVelocityChange) {
             player.vx = targetVx;
             player.vy = targetVy;
         } else {
-            player.vx += (deltaVx / deltaLength) * maxVelocityChange;
-            player.vy += (deltaVy / deltaLength) * maxVelocityChange;
+            const scale = maxVelocityChange / deltaLength;
+            player.vx += deltaVx * scale;
+            player.vy += deltaVy * scale;
         }
 
         const nextX = player.x + player.vx * dt;

@@ -11,6 +11,7 @@ import {
   TICK_RATE,
   RECONNECT_WINDOW_SECONDS,
   CREDIT_PAYOUT_INTERVAL_MS,
+  SCREEN_Y_SCALE,
 } from '../constants';
 import type {
   InputMessage,
@@ -73,12 +74,18 @@ export class GameRoom extends Room<GameState> {
 
     this.state.players.set(client.sessionId, player);
 
-    if (this.hostId === null) this.hostId = client.sessionId;
+    // First joiner becomes host; a newcomer also takes over if the recorded
+    // host is disconnected (they were kept only in case they reconnect).
+    this.reassignHostIfNeeded();
   }
 
   async onLeave(client: Client, consented: boolean): Promise<void> {
     const player = this.state.players.get(client.sessionId);
     if (player) player.connected = false;
+
+    // Don't wait out the reconnect window: a disconnected host can't send
+    // startGame, so hand the role to someone who can.
+    this.reassignHostIfNeeded();
 
     if (consented) {
       this.cleanupPlayer(client.sessionId);
@@ -108,10 +115,22 @@ export class GameRoom extends Room<GameState> {
     this.state.players.delete(sessionId);
     this.playerInputs.delete(sessionId);
 
-    if (this.hostId === sessionId) {
-      const next = Array.from(this.state.players.values()).find((p) => p.connected);
-      this.hostId = next ? next.id : null;
-    }
+    if (this.hostId === sessionId) this.hostId = null;
+    this.reassignHostIfNeeded();
+  }
+
+  /**
+   * Ensures the host is a connected player whenever one exists. If the current
+   * host is connected, nothing changes. If not, the first connected player (join
+   * order) takes over. If nobody is connected, a disconnected host is kept so
+   * they get the role back by reconnecting — but the next player to join takes it.
+   */
+  private reassignHostIfNeeded(): void {
+    const host = this.hostId === null ? undefined : this.state.players.get(this.hostId);
+    if (host?.connected) return;
+
+    const next = Array.from(this.state.players.values()).find((p) => p.connected);
+    if (next) this.hostId = next.id;
   }
 
   private tick(dt: number): void {
@@ -128,9 +147,16 @@ export class GameRoom extends Room<GameState> {
 
     // Clamp so a buggy/malicious client can't send an oversized direction
     // vector and move faster than PLAYER_SPEED.
-    const clampAxis = (value: unknown): number =>
-      typeof value === 'number' && Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
-    const dir = { x: clampAxis(msg.dir?.x), y: clampAxis(msg.dir?.y) };
+    // World-y may legitimately reach 1 / SCREEN_Y_SCALE (full speed straight up/down the screen);
+    // MovementSystem clamps the vector's on-screen length, so this only rejects absurd values.
+    const clampAxis = (value: unknown, limit: number): number =>
+      typeof value === 'number' && Number.isFinite(value)
+        ? Math.max(-limit, Math.min(limit, value))
+        : 0;
+    const dir = {
+      x: clampAxis(msg.dir?.x, 1),
+      y: clampAxis(msg.dir?.y, 1 / SCREEN_Y_SCALE),
+    };
     this.playerInputs.set(client.sessionId, { dir, seq: msg.seq, receivedAt: Date.now() });
 
     // Facing is cosmetic (other players' clients draw it), so just sanitize it.

@@ -6,7 +6,13 @@ export const TICK_RATE = 20; // Hz
 export const HEX_SIZE = 32; // hex circumradius in pixels (flat-top; see hex.ts)
 export const RECONNECT_WINDOW_SECONDS = 180; // 3 minutes
 
-export const PLAYER_SPEED = 200; // pixels/sec, top speed
+// The client draws the world with y squashed by this factor (its ISO_SQUASH — keep them equal).
+// Player speed and acceleration are measured on-screen, i.e. 1 world px of y counts as this much
+// as 1 world px of x, so moving straight up the screen is as fast as moving sideways. Set to 1
+// for speed that is uniform in world space instead (vertical then looks ~40% slower on screen).
+export const SCREEN_Y_SCALE = 0.6;
+
+export const PLAYER_SPEED = 200; // pixels/sec, top on-screen speed (see SCREEN_Y_SCALE)
 // If a client sends nothing for this long (tab backgrounded, connection stalled), its last
 // input is discarded and the player coasts to a stop instead of running on forever. The client
 // re-sends its input at least every 250ms while active, so this leaves generous margin.

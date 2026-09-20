@@ -193,8 +193,8 @@ WebSocket via Colyseus protocol. Colyseus handles:
 
 **Client → Server (inputs only, never state):**
 ```typescript
-// Player movement input. `dir` is a WORLD-space (top-down) vector; magnitude 0..1 sets speed
-// (analog joystick), longer vectors are clamped. `angle` (optional) is the facing/aim in radians.
+// Player movement input. `dir` is a WORLD-space (top-down) vector; its on-screen length —
+// hypot(x, y * SCREEN_Y_SCALE) — of 0..1 sets speed (analog joystick), longer vectors are clamped. `angle` (optional) is the facing/aim in radians.
 // Send at most every 50ms, and at least every 250ms while active — the server discards input older than 750ms.
 { type: "input", dir: { x: number, y: number }, angle?: number, seq: number }
 
@@ -304,12 +304,16 @@ export class GameRoom extends Room<GameState> {
     player.y = height / 2;
     this.state.players.set(client.sessionId, player);
 
-    if (this.hostId === null) this.hostId = client.sessionId; // first joiner is host
+    // First joiner becomes host; a newcomer also takes over if the recorded host is disconnected.
+    this.reassignHostIfNeeded();
   }
 
   async onLeave(client: Client, consented: boolean): Promise<void> {
     const player = this.state.players.get(client.sessionId);
     if (player) player.connected = false;
+
+    // Don't wait out the reconnect window: a disconnected host can't send startGame.
+    this.reassignHostIfNeeded();
 
     if (consented) {
       this.cleanupPlayer(client.sessionId);
@@ -339,10 +343,17 @@ export class GameRoom extends Room<GameState> {
     this.state.players.delete(sessionId);
     this.playerInputs.delete(sessionId);
 
-    if (this.hostId === sessionId) {
-      const next = Array.from(this.state.players.values()).find((p) => p.connected);
-      this.hostId = next ? next.id : null; // promote the next connected player
-    }
+    if (this.hostId === sessionId) this.hostId = null;
+    this.reassignHostIfNeeded();
+  }
+
+  // Ensures the host is a connected player whenever one exists. If nobody is connected, a
+  // disconnected host is kept so they regain the role by reconnecting — but the next joiner takes it.
+  private reassignHostIfNeeded(): void {
+    const host = this.hostId === null ? undefined : this.state.players.get(this.hostId);
+    if (host?.connected) return;
+    const next = Array.from(this.state.players.values()).find((p) => p.connected);
+    if (next) this.hostId = next.id;
   }
 
   private tick(dt: number): void {
@@ -497,7 +508,7 @@ export class Projectile extends Schema {
   @type('number')  x: number = 0;
   @type('number')  y: number = 0;
   @type('number')  angle: number = 0;
-  @type('number')  speed: number = 400;    // pixels/sec
+  @type('number')  speed: number = 400;    // on-screen pixels/sec (see SCREEN_Y_SCALE)
   @type('number')  spawnedAt: number = 0;  // server timestamp ms, for lifetime expiry
 }
 
@@ -569,23 +580,24 @@ Known limitation: the map's pixel bounds are a rectangle, but the hex edge is ja
 | `results` | Game over | 15s, then room disposed (no scoring/gameOver logic yet — see Networking Layer note) |
 
 - Server owns all timers. `endsAt` is a server epoch timestamp (ms); client uses this for display countdown and corrects any local drift.
-- `lobby` has no timer — the first player to join becomes `hostId`, and only that client's `startGame` message advances the phase. If the host is removed, `GameRoom.cleanupPlayer` promotes the next connected player — **but that only runs once the host's 3-minute reconnect window expires (or on a consented leave), not at the moment of disconnect** (see Current Status: known bug).
+- `lobby` has no timer — the first player to join becomes `hostId`, and only that client's `startGame` message advances the phase. If the host disconnects, `GameRoom.reassignHostIfNeeded` immediately promotes the first connected player (join order) — it doesn't wait for the reconnect window. If nobody else is connected the disconnected host is kept, so they get the role back by reconnecting; the next player to join takes it instead. A host who reconnects after being replaced does not get it back.
 - Phase transitions broadcast a `phaseChanged` message with the new phase and `endsAt`.
 
 ### Movement
 
 Movement is continuous, at **any angle**, and eased rather than snapping between headings.
 
-- **Server (`MovementSystem`)**: each tick, the target velocity is `dir × PLAYER_SPEED` (`dir` clamped to length ≤ 1, with a small deadzone; magnitude scales speed, so an analog joystick can walk slowly). Actual velocity moves toward the target by at most `PLAYER_ACCEL × dt` (1200 px/s²) — the *same* limit applies when speeding up, stopping, and turning, so a full reverse takes a fraction of a second instead of flipping instantly. Then `position += velocity × dt`, clamped to the map rectangle (velocity is zeroed on the axis that hit the edge). `vx`/`vy` are synced so clients can extrapolate. Verified with a script: ramp to 200 px/s in ~4 ticks, headings ease from 45° to −73° over ~5 ticks, and a stop takes ~4 ticks.
+- **Server (`MovementSystem`)**: each tick, the target velocity is `dir × PLAYER_SPEED`, where `dir`'s length is measured **on-screen** — `hypot(dir.x, dir.y × SCREEN_Y_SCALE)`, clamped to ≤ 1 with a small deadzone; magnitude scales speed, so an analog joystick can walk slowly. `SCREEN_Y_SCALE` (0.6, `server/src/constants.ts`) must equal the client's `ISO_SQUASH`. The effect: a full push straight up the screen is a world vector of length 1/0.6 ≈ 1.67 (≈ 333 world px/s) yet looks exactly as fast as one sideways (200 px/s), and the cap is an ellipse in world space, so a cheating client can't exceed top speed in any direction. `GameRoom.handleInput` accordingly allows world-y up to `1 / SCREEN_Y_SCALE`. Set `SCREEN_Y_SCALE = 1` for plain world-uniform speed. This (and projectile speed in `CombatSystem`) is where the server knows about the view's tilt — a deliberate tradeoff: it means the same on-screen speed for everyone at the cost of moving farther in world units vertically (crossing the map top-to-bottom, 3,575 world px, takes about 10.7s vs 15.4s left-to-right). Actual velocity moves toward the target by at most `PLAYER_ACCEL × dt` (1200 px/s²) — the *same* limit applies when speeding up, stopping, and turning, so a full reverse takes a fraction of a second instead of flipping instantly. Then `position += velocity × dt`, clamped to the map rectangle (velocity is zeroed on the axis that hit the edge). `vx`/`vy` are synced so clients can extrapolate. Verified with a script: ramp to 200 px/s in ~4 ticks, headings ease from 45° to −73° over ~5 ticks, and a stop takes ~4 ticks.
 - **Input is a world-space vector plus a facing angle**, so the server is agnostic to how the client derived it. The server keeps only the *latest* input per player (overwrite, not a queue).
 - **Stale input is dropped.** If no input arrives for `INPUT_STALE_MS` (750ms) the player is treated as pressing nothing and coasts to a stop. Without this, a client that goes silent — a backgrounded browser tab pauses Phaser's loop, or the connection stalls — leaves the player running in their last direction indefinitely (found and fixed 2026-09-20). Clients therefore re-send at least every 250ms while active.
-- **Desktop controls (client)**: the mouse *aims*; "forward" is toward the cursor. `W`/`S` move toward/away from it, `A`/`D` strafe (twin-stick style). `MOVE_RELATIVE_TO_AIM = false` in `client/src/game/constants.ts` switches to fixed screen-direction WASD with the mouse only aiming. **Mobile**: the joystick gives an on-screen vector that is `unproject`ed to world space, so the character moves where the stick points on screen; facing follows the movement direction.
+- **Desktop controls (client)**: `W`/`A`/`S`/`D` (or arrows) move in fixed **on-screen** directions — up, left, down, right, combined and normalized so diagonals aren't faster — and the mouse only *aims* and shoots. The alternative, `MOVE_RELATIVE_TO_AIM = true` in `client/src/game/constants.ts` ("forward" is toward the cursor, `A`/`D` strafe), was the first prototype's default and was dropped: the camera follows the player while the cursor stays fixed on screen, so the cursor's world position keeps running away as you approach it, and strafing orbits it — it plays like chasing the mouse. Pressing keys in screen space is also what the iso view suggests naturally. Speed is uniform in *screen* space (`UNIFORM_SCREEN_SPEED = true`, see the Server bullet above), so up/down feels as fast as sideways; set the flag to `false` for the physically-uniform-on-the-ground alternative, where straight up/down looks ~40% slower. **Mobile**: the joystick gives an on-screen vector that is `unproject`ed to world space, so the character moves where the stick points on screen; facing follows the movement direction.
 - **Smoothness on the client**: see [Client — Phaser Game](#client--phaser-game) — rendered positions chase server state with frame-rate-independent smoothing plus a little velocity extrapolation. There is **no client-side prediction yet**, so your own input still takes about one round trip plus a server tick to show up (imperceptible on localhost, noticeable at 100ms+ latency). Prediction with reconciliation is the next step for latency hiding.
 
 ### PvP Shooting
 - Client sends `shoot` message with an angle; server rejects it outside the `combat` phase or if the player is out of `ammo`
 - Server spawns a `Projectile` in state at the shooter's current position, decrementing `ammo` by 1 — **there is currently no ammo regeneration or reload**, so a player can run out permanently within a match; add a regen tick or pickup mechanic before this ships
 - `CombatSystem` advances all projectiles each tick, checks collision against players and structures, and removes projectiles on hit, out-of-bounds, or after `PROJECTILE_LIFETIME_MS` (tracked via `Projectile.spawnedAt`, not wall-clock elapsed time inferred from ticks)
+- **Projectile speed is on-screen, like player movement.** A projectile's `speed` (400) is measured with world y scaled by `SCREEN_Y_SCALE`, so a shot fired up or down the screen moves ~667 world px/s vertically and looks exactly as fast as one fired sideways (400 world px/s). `CombatSystem` divides the heading `(cos, sin)` by its on-screen length `hypot(cos, sin × SCREEN_Y_SCALE)`; the client mirrors this in `projectileWorldVelocity` to extrapolate between ticks. Side effects: vertical shots travel farther in world units over their 2s lifetime (about 1,333 vs 800 px), and they cover ~33 world px per tick vs 20 sideways — see the swept hit test under [Collision Detection](#collision-detection).
 - On a killing blow, the shooter's `kills` increments and the target **respawns** (full health, repositioned to map center) rather than being eliminated — this is a territory-claiming game, not a deathmatch, so matches don't end early from PvP alone
 - Server broadcasts `playerHit` on every hit (not just kills); client should use this to play a hit effect
 
@@ -679,7 +691,7 @@ export function createPhaserGame(
 - **Entity views and depth**: each entity remembers its smoothed *world* position (`wx`, `wy`); the Phaser object sits at `project(wx, wy)` with `setDepth(projectedY)` so things lower on screen draw in front. A player is a `Container` of a flattened shadow ellipse, a body circle lifted `BODY_LIFT` px off the ground, and a small "nose" dot on the facing direction (your own from local input so it never lags the mouse; others' from the synced `angle`). Projectiles float at body height; structures are boxes raised `STRUCTURE_LIFT`.
 - **Smoothing**: `update()` reads `room.state` directly every frame (not through React) and moves each entity's world position toward `serverPosition + velocity × EXTRAPOLATION_S` by `1 − exp(−SMOOTHING_RATE × dt)` — exponential smoothing that's frame-rate independent, unlike the old fixed per-frame lerp. Jumps larger than `SNAP_DISTANCE` (a respawn) teleport instead of gliding across the map. Projectiles use the same chase with their `speed`/`angle` as the extrapolation.
 - **Camera**: follows the local player's container (`startFollow`), bounded to the projected map size.
-- **Input**: every frame the scene works out a *world-space* direction — from the joystick if active, otherwise from the keyboard (see [Movement](#movement) for the mouse-relative scheme) — and the current `aimAngle`. `updateAim()` recomputes the aim from the mouse each frame (`pointerToWorld`: camera scroll, then `unproject`) *even if the mouse hasn't moved*, because the camera moves under it; it's skipped for touch pointers. `sendInputIfChanged()` sends at most every `INPUT_SEND_INTERVAL_MS` (50ms), only when direction or angle changed, with a `INPUT_KEEPALIVE_MS` (250ms) resend so the server's stale-input cutoff never fires on an active player.
+- **Input**: every frame the scene works out a *world-space* direction — from the joystick if active, otherwise from the keyboard (see [Movement](#movement); on-screen WASD by default, mouse-relative optional) — and the current `aimAngle`. `updateAim()` recomputes the aim from the mouse each frame (`pointerToWorld`: camera scroll, then `unproject`) *even if the mouse hasn't moved*, because the camera moves under it; it's skipped for touch pointers. `sendInputIfChanged()` sends at most every `INPUT_SEND_INTERVAL_MS` (50ms), only when direction or angle changed, with a `INPUT_KEEPALIVE_MS` (250ms) resend so the server's stale-input cutoff never fires on an active player.
 - **Shooting / building**: a pointer-down (mouse click or touch tap — Phaser unifies them) is `unproject`ed to a world point. It either fires toward that point (angle from the local player's world position) or — if `setBuildMode(true)` was called (wired to the React "Build" button in `GameScreen`) — places a structure on `pixelToHex(point)`, then turns build mode back off.
 
 ### Input — desktop and mobile share one message contract
@@ -760,7 +772,7 @@ player.connected = true again      promote a new host if needed (cleanupPlayer)
 - Frozen players are still valid targets (shooting them continues — `CombatSystem` doesn't check `connected` before applying hits)
 - Their owned tiles are retained during the reconnect window
 - Structures they placed remain active
-- If the disconnecting player was the host, **the intended behavior is to promote the next connected player immediately, but the code currently only promotes in `cleanupPlayer`, i.e. after the reconnect window expires** — a disconnected host blocks `startGame` for up to 3 minutes (known bug, see Current Status)
+- If the disconnecting player was the host, `onLeave` promotes the next connected player immediately (doesn't wait for the reconnect window); see `reassignHostIfNeeded`
 
 ---
 
@@ -768,22 +780,33 @@ player.connected = true again      promote a new host if needed (cleanupPlayer)
 
 **All collision detection runs server-side.** Client does no authoritative collision resolution.
 
-### Projectile vs Player (Circle-Circle)
+### Projectile vs Player (swept circle-circle)
+The test uses the path the projectile travelled this tick (`prev` → `proj`), not just its end point. Shots move 20–33 world px per tick and the combined hit radius is only 22 px, so an end-point-only check lets grazing shots skip over a player — measured with a Monte Carlo script on 2026-09-20, hit rate at the edge of the hitbox fell to 56–75% for vertical shots (33 px steps) vs 92% sideways before the fix, and is 100% in both directions after it. Omit `prev` to test a single point.
 ```typescript
 // CollisionSystem.ts
 function checkProjectilePlayerCollision(
   proj: { x: number; y: number },
-  player: { x: number; y: number }
+  player: { x: number; y: number },
+  prev: { x: number; y: number } = proj
 ): boolean {
-  const dx = proj.x - player.x;
-  const dy = proj.y - player.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  return dist < PROJECTILE_RADIUS + PLAYER_RADIUS;
+  const segX = proj.x - prev.x;
+  const segY = proj.y - prev.y;
+  const segLengthSq = segX * segX + segY * segY;
+
+  // Closest point on the segment to the player's center.
+  let t = 0;
+  if (segLengthSq > 0) {
+    t = ((player.x - prev.x) * segX + (player.y - prev.y) * segY) / segLengthSq;
+    t = Math.max(0, Math.min(1, t));
+  }
+  const dx = prev.x + segX * t - player.x;
+  const dy = prev.y + segY * t - player.y;
+  return Math.sqrt(dx * dx + dy * dy) < PROJECTILE_RADIUS + PLAYER_RADIUS;
 }
 ```
 
 ### Projectile vs Structure (hex containment)
-A structure fills its whole hex, so a projectile hits it exactly when the projectile is inside that hex (this replaced an AABB check when the map moved from squares to hexes):
+A structure fills its whole hex, so a projectile hits it exactly when the projectile is inside that hex (this replaced an AABB check when the map moved from squares to hexes). This one is still an end-point test: a hex is ~55 px tall and ~64 px wide and shots move ≤ 33 px per tick, so a shot through a hex's middle always lands inside it on some tick, but one that only clips a corner can be missed. Sweep it like the player test if that ever matters:
 ```typescript
 function checkProjectileStructureCollision(
   proj: { x: number; y: number },
@@ -946,7 +969,7 @@ Bots are the most valuable local test tool now that client/server compatibility 
 | Room with 0 active players | Room disposed cleanly, no memory leak |
 | Full room (10 players) | 11th join rejected with clear error |
 | Server kill mid-match | Clients handle dropped WS connection, show reconnecting UI |
-| Host disconnects | **Currently fails**: promotion only happens after the 3-min reconnect window; expected: next connected player promoted immediately and can send `startGame` |
+| Host disconnects | Next connected player is promoted immediately and can send `startGame` (verified 2026-09-20 with a headless two-client script: uncleanly dropped host, then the remaining player started the match; also a newcomer taking over when the only host was disconnected) |
 | Browser tab backgrounded/hidden mid-move | Player coasts to a stop within ~1s (stale-input cutoff) instead of running on |
 | Player runs out of ammo | Shots are rejected server-side; no regen yet, so this is currently permanent for the rest of the match |
 
@@ -1071,7 +1094,7 @@ export default tseslint.config(
 
 ### `.prettierrc.json` (client and server, identical)
 
-> The repo's config is **`tabWidth: 4`** (earlier drafts of this doc said 2), but most files written before the change are still 2-space, which is why `npm run format:check` flags many files. Files rewritten on 2026-09-20 (`hex.ts`, `GameScene.ts`, `MovementSystem.ts`, client `constants.ts`) are 4-space. Run `npm run format` in each of `client/` and `server/` once to make everything consistent — kept out of feature diffs on purpose so they stay readable.
+> **Indentation is 4 spaces** (`tabWidth: 4`) — this is the project standard for all new and edited code (earlier drafts of this doc said 2). Files written before that was settled are still 2-space, which is why `npm run format:check` flags them; run `npm run format` in each of `client/` and `server/` to bring everything in line, ideally as its own commit so the whitespace churn doesn't bury real changes. `CLAUDE.md` records the convention for Claude Code sessions.
 ```json
 {
   "semi": true,
@@ -1123,15 +1146,15 @@ _As of 2026-09-20 (after the hex/isometric prototype)._ Server and client both t
 
 ### Working (browser- or script-verified)
 - Join/lobby, host `startGame`, phase timers, credits payout, HUD, leaderboard (browser).
-- **Hex map + isometric rendering**: terrain draws correctly; the hover outline lands exactly on the hex under the mouse (picking matches the drawn grid); mouse-aimed `W` carries the player diagonally toward the cursor and claims a line of hexes; a click in combat fires a shot (ammo 30 → 29) (browser).
+- **Hex map + isometric rendering**: terrain draws correctly; the hover outline lands exactly on the hex under the mouse (picking matches the drawn grid); under the first (mouse-relative) control scheme, `W` carried the player diagonally toward the cursor and claimed a line of hexes — the default is now on-screen WASD, which has been typechecked but **not yet re-run in a browser**; a click in combat fires a shot (ammo 30 → 29) (browser).
 - Hex math round-trips exactly for all 4,096 tiles; velocity ramp/turn/decel numbers; off-map positions don't claim; stale input is dropped after 750ms (scripts).
 - Reconnection token flow and the projectile/structure/phase server logic (scripts).
+- Host handover: with the host's connection dropped uncleanly, the remaining player can start the match; a newcomer takes over when the only host is disconnected (headless two-client script).
 
 ### Implemented but not yet exercised in a real browser
 Projectile rendering in flight, structure placement (Build button) and destruction on the hex map, the mobile joystick and `unproject` conversion on a real touch device, reconnect after refresh/drop, multi-player sessions, the results screen, and the stale-input fix under a genuinely backgrounded tab.
 
 ### Known bugs / rough edges
-- **Host is not promoted when the host disconnects.** The doc and intent say the next connected player becomes host immediately, but `GameRoom.onLeave` only marks the player disconnected and waits out the 3-minute reconnect window; promotion happens in `cleanupPlayer`, which runs only after that window (or on a consented leave). Effect: a room whose host's tab was closed or reloaded can't be started for up to 3 minutes. It bites during development because `joinOrCreate` puts every new tab into the same lobby room, so a leftover frozen "Player 1" keeps the host role. Fix: promote inside `onLeave` as soon as `connected` goes false.
 - **Layout overflow:** the game page shows both horizontal and vertical scrollbars and the leaderboard is clipped at the right edge — the Phaser canvas and/or overlay container is larger than the viewport. Likely `#root`/`App.css` (Vite template styles: `#center`, body margins) interacting with `Phaser.Scale.RESIZE`. Not investigated.
 - **No client-side prediction.** Rendering is smoothed and extrapolated, but your own movement still waits for the server round trip (see Movement). Fine on localhost; needs work before real-world latency.
 - **Map corners aren't hex-covered:** movement is clamped to the map rectangle, but the hex edge is jagged, so a player can stand over no hex (claiming ignores it).
@@ -1142,7 +1165,7 @@ Projectile rendering in flight, structure placement (Build button) and destructi
 - **Mobile:** no dedicated fire button; no responsive tuning for phone-width screens.
 - **`playerDisconnected`/`playerReconnected`/`gameOver` server events are not wired**, though the client has handlers for them; `results` phase currently does nothing but wait out its timer.
 - **Contested tile claims** resolve by player join order, not input `seq`.
-- **Prettier config vs. code style mismatch** (config says 4-space; most older files are 2-space) — see Build Tooling. `format:check` flags many files until someone runs `npm run format`.
+- **Some files aren't 4-space yet.** The project standard is 4-space indentation (see Build Tooling), but files written before that was settled are still 2-space, so `format:check` flags them until someone runs `npm run format` in `client/` and `server/`.
 - **Node version is not enforced** (no `.nvmrc` / `engines`) — see Tech Stack.
 - **Dev-server restarts drop every room.** `ts-node-dev --respawn` restarts on any file change (including `tsconfig.json` and a plain `touch`), which wipes in-memory rooms and disconnects clients mid-game. Expected, but surprising when two people share one dev server.
 
@@ -1202,6 +1225,7 @@ Driven by reference art showing hex tiles with mountains, trees, water and cliff
 - **Decide first** whether terrain is gameplay (blocks movement/projectiles, maybe unclaimable — needs `Tile.terrain`/`Tile.height` in the schema and rules in `MovementSystem`/`CombatSystem`/`CollisionSystem`) or purely visual (client-only art keyed off a seeded map, no protocol change).
 - **Rendering with elevation:** the static base layer must draw tiles back-to-front with each tile's cliff height, so heights vary per tile; tall props (mountains, trees, structures) need depth sorting against players using `setDepth(projectedY)` like entities already do. Keep the top-down world as the source of truth and add height only as a render offset.
 - **Art:** the reference image is AI-generated (watermarked, irregular tile shapes, unclear licensing) — treat it as mood only. Real tiles need a consistent hex footprint (64 × ~55 px top at the current size/squash, plus cliff height) so sprites tile cleanly; sprites replace `GameScene`'s primitives without an architecture change (needs a preload step, since the scene currently loads nothing).
+- **Six-direction character sprites:** flat-top hexes suggest six facings (0°, 60°, 120°, 180°, 240°, 300°) with one animation each. Pick the animation from the *projected* (on-screen) velocity, not the world one, because the iso squash bends the angles — bucket the screen angle to the nearest of the six hex-neighbor directions as they appear on screen. Movement itself stays free-form vector velocity (already server-authoritative), so this is purely a visual layer and needs no protocol change; idle = stop the animation. (Phaser arcade physics, often shown alongside this technique, isn't involved: the server owns all movement and collision.)
 - **Map shape:** the jagged hex edge vs. rectangular movement bounds (see Known Issues) is worth fixing at the same time, e.g. by clamping to the nearest valid hex.
 
 ### 8. Client-side prediction — not implemented
@@ -1254,7 +1278,10 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 | Map grid | Flat-top hexes, odd-q offset, stored in the same flat array (`row * cols + col`); axial/cube coordinates used only inside `pixelToHex` | Keep square tiles; pointy-top; axial storage | Hexes are the intended design. Odd-q keeps the map rectangular and the schema/array unchanged, and flat-top matches the reference art. Only tile lookup, structure hits, bounds and rendering had to change — claiming is by position, not adjacency, so this was cheap to do before teams/structure types |
 | Isometric implementation | Render-only vertical squash (`ISO_SQUASH = 0.6`) of a top-down world; server never sees it | True 45° isometric projection; simulating in screen space | A single scale factor gives the ~2:1 hex look of the reference, keeps server hex/collision/movement simple, and inverts trivially. The cost — every pointer/joystick vector must be `unproject`ed before use — is confined to `GameScene` |
 | Movement model | Acceleration-limited velocity (`PLAYER_ACCEL`), world-space input vector (magnitude = speed) + facing angle | Instantly setting velocity from the input (previous behavior); stepping tile to tile | Smooth start/stop/turn at any angle and analog joystick speed, with a server change only in `MovementSystem`. `vx`/`vy`/`angle` are synced so clients can extrapolate and draw facing |
-| Desktop controls | Mouse aims; `W`/`S` toward/away from cursor, `A`/`D` strafe (`MOVE_RELATIVE_TO_AIM`, switchable) | Fixed screen-direction WASD with mouse-only aiming | Requested "mouse looks, forward follows it" feel. Aim is recomputed every frame because the camera moves under a still mouse |
+| Desktop controls | Fixed on-screen WASD/arrows; mouse only aims and shoots (`MOVE_RELATIVE_TO_AIM = false`) | Mouse-relative "forward" with strafing (tried first; still available via the flag) | Mouse-relative movement felt weird: the camera follows the player, so the cursor's world position keeps moving as you approach it (chasing), and strafing orbits it. On-screen keys are predictable and match the view. Aim is still recomputed every frame because the camera moves under a still mouse |
+| Speed metric | Uniform on screen: server measures speed/acceleration with world y scaled by `SCREEN_Y_SCALE` (= client `ISO_SQUASH`); client `UNIFORM_SCREEN_SPEED` sends the unnormalized `unproject`ed direction | Uniform in world space (previous behavior: up/down looked ~40% slower) | Requested after playtesting: with the tilted view, equal world speed reads as slower vertical movement. Costs a little "purity" (server knows the tilt) and makes vertical world distance/hexes cross faster. Reversible with `SCREEN_Y_SCALE = 1` + `UNIFORM_SCREEN_SPEED = false`. Projectiles use the same rule (see PvP Shooting) |
+| Swept projectile-vs-player test | Test the segment each projectile travelled this tick against the player's circle | End-point-only distance check (previous) | Making vertical shots screen-uniform raised their step to ~33 world px/tick vs a 22 px hit radius; grazing shots then skipped players (56–75% hit rate at the hitbox edge). Sweeping fixes it for every direction (100% in a Monte Carlo test) at the cost of a few multiplications per projectile-player pair |
+| Host reassignment | Promote the next connected player as soon as the host disconnects; a newcomer also takes over if the recorded host is disconnected; keep a lone disconnected host so a reconnect restores them | Promote only when the reconnect window expires (previous behavior); always keep the original host | A disconnected host can't send `startGame`, and the old behavior blocked a lobby for up to 3 minutes (it also made the shared dev room confusing) |
 | Stale input | Server discards input older than `INPUT_STALE_MS` (750ms); client keeps alive every 250ms | Trust the last input indefinitely (previous behavior) | A backgrounded tab pauses Phaser's loop, so "key released" never got sent and the player ran on forever. Any silent client (tab hidden, network stall) now coasts to a stop |
 | Client smoothness | Frame-rate-independent exponential smoothing toward `state + velocity × EXTRAPOLATION_S`; snap on large jumps | Fixed per-frame lerp (previous); full client-side prediction now | Hides the 20Hz tick stepping at any frame rate for little code. Prediction/reconciliation is deferred (Planned Features #8) until latency actually matters |
 | Hex rendering | Three `Graphics` layers: static base (drawn once), claims tint (dirty-flag redraw, claimed hexes only), hover outline | One `Graphics` redrawn on every `tilesClaimed`; one game object per tile | `tilesClaimed` fires nearly every tick while moving; redrawing 4,096 hexes with cliff faces each time was the expensive path. Only the small claims layer redraws |

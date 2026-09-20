@@ -69,7 +69,7 @@ Run these inside `server/` or `client/`.
 
 There is no automated test suite yet. Before committing, run `npm run build && npm run lint` in whichever folder you changed — `npm run dev` on the server skips type checking, so type errors only show up in `build`.
 
-> `format:check` currently flags many files: the Prettier config uses 4-space indentation, but older files are 2-space. Running `npm run format` once in each folder fixes it; do it in its own commit so it doesn't bury real changes.
+> **Code style:** 4-space indentation (Prettier `tabWidth: 4`). Some older files are still 2-space, so `format:check` flags them; run `npm run format` once in each folder to fix that, ideally in its own commit so it doesn't bury real changes.
 
 ## Configuration
 
@@ -100,12 +100,12 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 
 | | Desktop | Touch |
 |---|---|---|
-| Aim / look | Mouse | Follows your movement direction |
-| Move | `W` toward the cursor, `S` away, `A`/`D` strafe (arrow keys work too) | Virtual joystick (bottom left) |
+| Aim | Mouse | Follows your movement direction |
+| Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen | Virtual joystick (bottom left) |
 | Shoot | Click (combat phase) | Tap the map |
 | Build a structure | **Build** button, then click a hex you own (combat phase) | **Build** button, then tap a hex you own |
 
-To use plain screen-direction WASD with the mouse only aiming, set `MOVE_RELATIVE_TO_AIM = false` in [`client/src/game/constants.ts`](client/src/game/constants.ts).
+The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
 
 ## How a match works
 
@@ -153,7 +153,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 | Page stays on "connecting…" | The server failed while sending state. Read the **server** log; check `useDefineForClassFields` (above) |
 | `Failed to connect to the game server` | Server isn't running, or `VITE_SERVER_URL` points at the wrong host/port |
 | `EADDRINUSE` on port 2567 | Another server instance is running. Stop it, or set a different `PORT` |
-| You join as "Player 2" and Start Game does nothing | A leftover disconnected host from an earlier tab is holding the room for up to 3 minutes (known bug). Restart the server to get a fresh room |
+| Start Game does nothing | Only the host can start. The host is the first connected player; if they disconnect, the next connected player is promoted immediately |
 | Server restarts mid-game and everyone is dropped | Expected: `npm run dev` restarts on any file change and rooms live in memory |
 
 ## More documentation

@@ -27,7 +27,7 @@ export class Projectile extends Schema {
   @type('number') x: number = 0;
   @type('number') y: number = 0;
   @type('number') angle: number = 0;
-  @type('number') speed: number = 400; // pixels/sec
+  @type('number') speed: number = 400; // on-screen pixels/sec (see SCREEN_Y_SCALE)
   @type('number') spawnedAt: number = 0; // server timestamp ms, for lifetime expiry
 }
 

@@ -26,10 +26,19 @@ export const SMOOTHING_RATE = 20; // higher = tighter/less smooth (per second)
 export const EXTRAPOLATION_S = 0.05;
 export const SNAP_DISTANCE = HEX_SIZE * 2; // bigger jumps (respawn) teleport instead of gliding
 
-// Desktop controls. true: W/S move toward/away from the mouse and A/D strafe
-// (twin-stick style). false: WASD move in fixed screen directions and the
-// mouse only aims.
-export const MOVE_RELATIVE_TO_AIM = true;
+// Desktop controls. false (default): WASD/arrows move in fixed on-screen
+// directions and the mouse only aims/shoots. true: W/S move toward/away from
+// the mouse and A/D strafe (tank/twin-stick style) — it feels like chasing the
+// cursor, because the camera follows you and the cursor stays fixed on screen,
+// so its world position keeps moving away as you approach it.
+export const MOVE_RELATIVE_TO_AIM = false;
+
+// true: movement is equally fast in every on-screen direction. Because the map is
+// tilted, that means covering more *world* distance per second up/down than
+// sideways (the server measures speed with the same tilt — SCREEN_Y_SCALE in
+// server/src/constants.ts must equal ISO_SQUASH). false: speed is uniform in world
+// space, so straight up/down the screen looks ~40% slower than sideways.
+export const UNIFORM_SCREEN_SPEED = true;
 
 // --- Colors ---
 export const BACKGROUND_COLOR = 0x1a1a2e;

@@ -4,14 +4,30 @@ import { hexIndex, isValidHex, pixelToHex } from '../hex';
 import type { Broadcast } from './Broadcast';
 import type { TilesClaimedEvent } from '../types/shared';
 
+/**
+ * Circle-circle hit test against the path the projectile travelled this tick
+ * (`prev` -> `proj`) rather than just its end point. Shots cover 20-33 world px
+ * per tick, which is close to the 22 px hit radius, so testing only the end
+ * point lets grazing shots skip over a player. Omit `prev` to test a point.
+ */
 function checkProjectilePlayerCollision(
   proj: { x: number; y: number },
-  player: { x: number; y: number }
+  player: { x: number; y: number },
+  prev: { x: number; y: number } = proj
 ): boolean {
-  const dx = proj.x - player.x;
-  const dy = proj.y - player.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  return dist < PROJECTILE_RADIUS + PLAYER_RADIUS;
+  const segX = proj.x - prev.x;
+  const segY = proj.y - prev.y;
+  const segLengthSq = segX * segX + segY * segY;
+
+  // Closest point on the segment to the player's center.
+  let t = 0;
+  if (segLengthSq > 0) {
+    t = ((player.x - prev.x) * segX + (player.y - prev.y) * segY) / segLengthSq;
+    t = Math.max(0, Math.min(1, t));
+  }
+  const dx = prev.x + segX * t - player.x;
+  const dy = prev.y + segY * t - player.y;
+  return Math.sqrt(dx * dx + dy * dy) < PROJECTILE_RADIUS + PLAYER_RADIUS;
 }
 
 // A structure fills its whole hex, so a projectile hits it exactly when the

@@ -21,6 +21,7 @@ import {
     SMOOTHING_RATE,
     SNAP_DISTANCE,
     STRUCTURE_LIFT,
+    UNIFORM_SCREEN_SPEED,
 } from '../constants';
 import {
     hexCenter,
@@ -239,9 +240,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     /**
-     * WASD/arrows -> world-space direction. With MOVE_RELATIVE_TO_AIM, "forward"
-     * is wherever the mouse points and A/D strafe, so movement can go at any
-     * angle. Otherwise keys map to fixed on-screen directions.
+     * WASD/arrows -> world-space direction. By default each key is a fixed
+     * on-screen direction (W = up the screen, D = right, ...), combined and
+     * normalized so diagonals aren't faster. The mouse only aims. With
+     * MOVE_RELATIVE_TO_AIM, "forward" is instead wherever the mouse points and
+     * A/D strafe.
      */
     private keyboardToWorld(): { x: number; y: number } {
         if (!this.cursorKeys) return { x: 0, y: 0 };
@@ -254,33 +257,43 @@ export class GameScene extends Phaser.Scene {
         if (this.cursorKeys.left.isDown || this.wasdKeys?.A.isDown) right -= 1;
         if (forward === 0 && right === 0) return { x: 0, y: 0 };
 
-        let x: number;
-        let y: number;
+        // Work out the desired direction as it appears on screen.
+        let screen: { x: number; y: number };
         if (MOVE_RELATIVE_TO_AIM) {
             const fx = Math.cos(this.aimAngle);
             const fy = Math.sin(this.aimAngle);
             // "Right" of forward: rotate +90° in y-down space (clockwise on screen).
-            x = fx * forward + -fy * right;
-            y = fy * forward + fx * right;
+            screen = project(fx * forward + -fy * right, fy * forward + fx * right);
         } else {
-            ({ x, y } = this.screenVectorToWorld(right, -forward));
+            screen = { x: right, y: -forward };
         }
 
-        const length = Math.hypot(x, y);
-        return length > 0 ? { x: x / length, y: y / length } : { x: 0, y: 0 };
+        const length = Math.hypot(screen.x, screen.y);
+        return length > 0 ? this.screenDirToInput(screen.x / length, screen.y / length) : { x: 0, y: 0 };
     }
 
     private joystickToWorld(stick: { x: number; y: number }): { x: number; y: number } {
-        const strength = Math.min(1, Math.hypot(stick.x, stick.y)); // keep analog speed control
-        const world = this.screenVectorToWorld(stick.x, stick.y);
-        return { x: world.x * strength, y: world.y * strength };
+        return this.screenDirToInput(stick.x, stick.y); // length (0..1) is preserved as analog speed
     }
 
-    /** Converts an on-screen direction to a unit world direction (vertical is un-squashed). */
-    private screenVectorToWorld(sx: number, sy: number): { x: number; y: number } {
-        const world = unproject(sx, sy);
-        const length = Math.hypot(world.x, world.y);
-        return length > 0 ? { x: world.x / length, y: world.y / length } : { x: 0, y: 0 };
+    /**
+     * Converts an on-screen direction (length 0..1 = fraction of top speed) into the
+     * world-space vector the server expects as `input.dir`.
+     *
+     * With UNIFORM_SCREEN_SPEED the vector is simply `unproject`ed, so a full-strength
+     * push up the screen has world-y up to 1/ISO_SQUASH and looks as fast as one
+     * sideways. Otherwise the same heading is sent with world length = strength,
+     * i.e. equal world speed in every direction.
+     */
+    private screenDirToInput(sx: number, sy: number): { x: number; y: number } {
+        const length = Math.hypot(sx, sy);
+        if (length === 0) return { x: 0, y: 0 };
+        const strength = Math.min(1, length);
+        const world = unproject(sx / length, sy / length); // unit on screen
+        if (UNIFORM_SCREEN_SPEED) return { x: world.x * strength, y: world.y * strength };
+
+        const worldLength = Math.hypot(world.x, world.y);
+        return { x: (world.x / worldLength) * strength, y: (world.y / worldLength) * strength };
     }
 
     private sendInputIfChanged(dir: { x: number; y: number }, angle: number, time: number): void {
@@ -520,17 +533,30 @@ export class GameScene extends Phaser.Scene {
             const view = this.projectileViews.get(id);
             if (!view) return;
 
-            const lead = EXTRAPOLATION_S * projectile.speed;
+            const velocity = this.projectileWorldVelocity(projectile.angle, projectile.speed);
             this.chase(
                 view,
-                projectile.x + Math.cos(projectile.angle) * lead,
-                projectile.y + Math.sin(projectile.angle) * lead,
+                projectile.x + velocity.x * EXTRAPOLATION_S,
+                projectile.y + velocity.y * EXTRAPOLATION_S,
                 smoothing
             );
 
             const at = project(view.wx, view.wy);
             view.sprite.setPosition(at.x, at.y - BODY_LIFT).setDepth(at.y);
         });
+    }
+
+    /**
+     * World-space velocity of a projectile, mirroring CombatSystem: `speed` is
+     * on-screen, so a shot heading up/down the screen moves faster in world
+     * units than one heading sideways. Used to extrapolate between server ticks.
+     */
+    private projectileWorldVelocity(angle: number, speed: number): { x: number; y: number } {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const yScale = UNIFORM_SCREEN_SPEED ? ISO_SQUASH : 1;
+        const onScreenLength = Math.hypot(cos, sin * yScale);
+        return { x: (cos / onScreenLength) * speed, y: (sin / onScreenLength) * speed };
     }
 
     private chase(
