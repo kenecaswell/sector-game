@@ -31,7 +31,7 @@
 
 | Layer | Technology | Rationale |
 |---|---|---|
-| Server runtime | Node.js **≥ 20 (developed on 24.21)** | Battle-tested, large ecosystem. TypeScript 6 and the current toolchain will not run on old Node — a shell defaulting to Node 13 fails `tsc` with `SyntaxError: Unexpected token '?'`. Run `nvm use 24` before building. |
+| Server runtime | Node.js **20.19+ / 22.13+ / 24+ (developed on 24.21)** | Battle-tested, large ecosystem. TypeScript 6 and the current toolchain will not run on old Node — a shell defaulting to Node 13 fails `tsc` with `SyntaxError: Unexpected token '?'`. Run `nvm use 24` before building. |
 | Server framework | Colyseus — exact pins: `colyseus` 0.16.5, `@colyseus/core` 0.16.26, `@colyseus/schema` 3.0.76, `@colyseus/ws-transport` 0.16.5 | Built-in rooms, delta sync, reconnection. **All four are pinned without `^`** — see the pinning note below. |
 | Server language | TypeScript (`~6.0.2`) | Shared types with client |
 | Client framework | React 19 (`^19.2.8`) | Component-based UI shell (menus, lobby) |
@@ -108,14 +108,16 @@
 ├── server/                         # Node.js + Colyseus server
 │   ├── src/
 │   │   ├── index.ts                # Entry point — Colyseus Server + Express health route
-│   │   ├── constants.ts            # Shared tunables (tick rate, tile size, speeds, damage, etc.)
+│   │   ├── constants.ts            # Shared tunables (tick rate, hex size, speed/accel, damage, etc.)
+│   │   ├── hex.ts                  # Flat-top hex grid math: pixel<->hex, hex centers, map bounds
+
 │   │   ├── rooms/
 │   │   │   └── GameRoom.ts         # Colyseus room — lifecycle, message handlers, tick loop
 │   │   ├── state/
 │   │   │   └── GameState.ts        # Colyseus schema definitions
 │   │   ├── systems/
 │   │   │   ├── Broadcast.ts        # Shared callback type systems use to emit discrete events
-│   │   │   ├── MovementSystem.ts   # Input processing, position updates
+│   │   │   ├── MovementSystem.ts   # Eases velocity toward the input direction (accel-limited), drops stale input
 │   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, batched tilesClaimed broadcast
 │   │   │   ├── CombatSystem.ts     # Projectile movement, hit detection, respawn-on-death
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
@@ -153,9 +155,10 @@
 │   │   │   └── GameScreen.tsx      # Hosts the Phaser canvas + HUD/leaderboard/joystick/build-button overlays
 │   │   └── game/
 │   │       ├── PhaserGame.ts       # Phaser.Game config and init
-│   │       ├── constants.ts        # Client-side render constants mirroring server/src/constants.ts
+│   │       ├── constants.ts        # Client render/smoothing/iso constants; hex/entity sizes mirror server/src/constants.ts
+│   │       ├── hex.ts              # Hand-copy of server/src/hex.ts + isometric project()/unproject()/hexCorners()
 │   │       └── scenes/
-│   │           └── GameScene.ts    # Tiles, players, projectiles, structures, camera, input — see Client — Phaser Game
+│   │           └── GameScene.ts    # Iso hex terrain, entities, smoothing, mouse-aim/joystick input — see Client — Phaser Game
 │   ├── index.html
 │   ├── vite.config.ts
 │   ├── tsconfig.json
@@ -167,7 +170,8 @@
 │
 ├── docs/
 │   ├── technical-blueprint.md      # This document
-│   └── session-handoff.md          # Status/pointer doc for picking the project up in a fresh session
+│   └── session-handoff.md          # HISTORICAL — written to bootstrap the 2026-09-20 session; superseded by this doc, not maintained
+├── README.md                       # How to install, run, build, lint; controls; troubleshooting
 ├── CLAUDE.md                       # Working preferences for Claude Code (notably: the user runs their own git commands)
 └── dev-notes.md                    # Scratch list of open ideas/questions — see Current Status & Known Issues
 ```
@@ -189,13 +193,15 @@ WebSocket via Colyseus protocol. Colyseus handles:
 
 **Client → Server (inputs only, never state):**
 ```typescript
-// Player movement input
-{ type: "input", dir: { x: number, y: number }, seq: number }
+// Player movement input. `dir` is a WORLD-space (top-down) vector; magnitude 0..1 sets speed
+// (analog joystick), longer vectors are clamped. `angle` (optional) is the facing/aim in radians.
+// Send at most every 50ms, and at least every 250ms while active — the server discards input older than 750ms.
+{ type: "input", dir: { x: number, y: number }, angle?: number, seq: number }
 
 // Player shoots
 { type: "shoot", angle: number, seq: number }
 
-// Place structure
+// Place structure. tileX/tileY are hex column/row (offset coords), not pixels.
 { type: "placeStructure", tileX: number, tileY: number, seq: number }
 
 // Host starts the game (lobby -> claiming). No payload.
@@ -249,7 +255,8 @@ import { CombatSystem } from '../systems/CombatSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
 import { EconomySystem } from '../systems/EconomySystem';
 import type { Broadcast } from '../systems/Broadcast';
-import { TICK_RATE, TILE_SIZE, RECONNECT_WINDOW_SECONDS, CREDIT_PAYOUT_INTERVAL_MS } from '../constants';
+import { hexIndex, isValidHex, mapPixelSize } from '../hex';
+import { TICK_RATE, RECONNECT_WINDOW_SECONDS, CREDIT_PAYOUT_INTERVAL_MS } from '../constants';
 import type {
   InputMessage,
   ShootMessage,
@@ -292,8 +299,9 @@ export class GameRoom extends Room<GameState> {
     player.id = client.sessionId;
     player.name = `Player ${this.state.players.size + 1}`;
     player.color = PLAYER_COLORS[this.state.players.size % PLAYER_COLORS.length];
-    player.x = (this.state.mapWidth * TILE_SIZE) / 2;
-    player.y = (this.state.mapHeight * TILE_SIZE) / 2;
+    const { width, height } = mapPixelSize(this.state.mapWidth, this.state.mapHeight);
+    player.x = width / 2; // everyone spawns at map center for now — see Current Status (open question)
+    player.y = height / 2;
     this.state.players.set(client.sessionId, player);
 
     if (this.hostId === null) this.hostId = client.sessionId; // first joiner is host
@@ -349,12 +357,16 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.connected) return;
 
-    // Clamp so a buggy/malicious client can't move faster than PLAYER_SPEED.
-    const dir = {
-      x: Math.max(-1, Math.min(1, msg.dir?.x ?? 0)),
-      y: Math.max(-1, Math.min(1, msg.dir?.y ?? 0)),
-    };
-    this.playerInputs.set(client.sessionId, { dir, seq: msg.seq });
+    // Sanitize (finite numbers only) and clamp so a buggy/malicious client can't
+    // move faster than PLAYER_SPEED — MovementSystem also caps the vector length at 1.
+    const clampAxis = (value: unknown): number =>
+      typeof value === 'number' && Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
+    const dir = { x: clampAxis(msg.dir?.x), y: clampAxis(msg.dir?.y) };
+    // receivedAt lets MovementSystem drop input from a client that went silent (INPUT_STALE_MS).
+    this.playerInputs.set(client.sessionId, { dir, seq: msg.seq, receivedAt: Date.now() });
+
+    // Facing is cosmetic (other clients draw it), so just sanitize it.
+    if (typeof msg.angle === 'number' && Number.isFinite(msg.angle)) player.angle = msg.angle;
     client.send('inputAck', { seq: msg.seq } satisfies InputAckEvent);
   }
 
@@ -378,8 +390,9 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.connected || this.state.phase.phase !== 'combat') return;
 
-    const idx = msg.tileY * this.state.mapWidth + msg.tileX;
-    const tile = this.state.tiles[idx];
+    // Validate first — an out-of-range column would otherwise wrap onto another row.
+    if (!isValidHex(msg.tileX, msg.tileY, this.state.mapWidth, this.state.mapHeight)) return;
+    const tile = this.state.tiles[hexIndex(msg.tileX, msg.tileY, this.state.mapWidth)];
     if (!tile || tile.ownerId !== client.sessionId) return; // must own the tile
 
     let occupied = false;
@@ -462,6 +475,9 @@ export class Player extends Schema {
   @type('string')  name: string = '';
   @type('number')  x: number = 0;
   @type('number')  y: number = 0;
+  @type('number')  vx: number = 0;               // px/sec, synced so clients can extrapolate between ticks
+  @type('number')  vy: number = 0;
+  @type('number')  angle: number = 0;            // facing/aim, radians, world space
   @type('number')  health: number = 100;
   @type('number')  ammo: number = 30;
   @type('number')  tilesOwned: number = 0;
@@ -519,8 +535,25 @@ export class GameState extends Schema {
 
 ## Game Mechanics
 
+### Map — hex grid and coordinate spaces
+
+The map is **64 × 64 flat-top hexes** in an **odd-q offset** layout (odd columns sit half a hex lower), stored in the flat `tiles` array at index `row * mapWidth + col`. `tileX`/`tileY` in messages and events are hex **column/row**, not pixels. (`mapWidth`/`mapHeight` are column/row counts.)
+
+There are two coordinate spaces, and mixing them up is the main way to introduce bugs here:
+
+| Space | Used by | Definition |
+|---|---|---|
+| **World** | The server, all state (`x`, `y`, `vx`, `vy`, projectile positions), message payloads | Top-down, pixels, y down. Hex size `HEX_SIZE = 32` (circumradius); flat-to-flat height is `√3 × HEX_SIZE`. |
+| **Scene** (screen) | Only the client's Phaser objects | World with `y` multiplied by `ISO_SQUASH` (0.6). This *is* the isometric look. |
+
+The isometric view is **purely a render-time transform**. The server never sees it, so hex math, collision, and movement stay simple top-down. The client `project()`s everything it reads from the server before it touches a Phaser object, and `unproject()`s everything it reads from the pointer or joystick before sending it back (otherwise "aim at the cursor" and "walk where the stick points" come out wrong vertically).
+
+`server/src/hex.ts` provides `hexCenter(col,row)`, `pixelToHex(x,y)` (axial cube-rounding, returns coords that may be off-map), `mapPixelSize(cols,rows)`, `isValidHex`, and `hexIndex`. `client/src/game/hex.ts` is a **hand-copy** of it plus the projection helpers — keep the shared part in sync by hand, like `types/shared.ts`. Verified 2026-09-20: `hexCenter`→`pixelToHex` round-trips exactly for all 4,096 tiles, including points offset toward each hex's edge.
+
+Known limitation: the map's pixel bounds are a rectangle, but the hex edge is jagged, so a player can stand at a corner over *no* hex. Claiming simply ignores those spots.
+
 ### Tile Claiming
-- Players claim tiles by moving over unclaimed tiles or enemy tiles while in the `claiming` or `combat` phase
+- Players claim tiles by moving over unclaimed tiles or enemy tiles while in the `claiming` or `combat` phase — "over" meaning `pixelToHex(player.x, player.y)` lands on a valid hex
 - Tile ownership stored as `ownerId` string in the flat `tiles` array
 - On claim: update tile, increment player's `tilesOwned`, decrement the previous owner's if any
 - `CollisionSystem` batches every tile claimed in a tick into a single `tilesClaimed` broadcast rather than one broadcast per tile
@@ -536,14 +569,18 @@ export class GameState extends Schema {
 | `results` | Game over | 15s, then room disposed (no scoring/gameOver logic yet — see Networking Layer note) |
 
 - Server owns all timers. `endsAt` is a server epoch timestamp (ms); client uses this for display countdown and corrects any local drift.
-- `lobby` has no timer — the first player to join becomes `hostId`, and only that client's `startGame` message advances the phase. If the host disconnects, `GameRoom.onLeave` promotes the next connected player.
+- `lobby` has no timer — the first player to join becomes `hostId`, and only that client's `startGame` message advances the phase. If the host is removed, `GameRoom.cleanupPlayer` promotes the next connected player — **but that only runs once the host's 3-minute reconnect window expires (or on a consented leave), not at the moment of disconnect** (see Current Status: known bug).
 - Phase transitions broadcast a `phaseChanged` message with the new phase and `endsAt`.
 
 ### Movement
-- Continuous movement — clients send a direction vector each tick via the `input` message
-- `MovementSystem` normalizes the direction vector (so diagonal movement isn't faster than cardinal movement), applies `velocity × deltaTime`, and clamps to map bounds
-- The server keeps only the *latest* input per player (overwrite, not a queue) — appropriate for continuous movement, not for discrete/turn-based actions
-- Client-side prediction: client simulates own movement locally for responsiveness, corrects on server update (not yet implemented client-side)
+
+Movement is continuous, at **any angle**, and eased rather than snapping between headings.
+
+- **Server (`MovementSystem`)**: each tick, the target velocity is `dir × PLAYER_SPEED` (`dir` clamped to length ≤ 1, with a small deadzone; magnitude scales speed, so an analog joystick can walk slowly). Actual velocity moves toward the target by at most `PLAYER_ACCEL × dt` (1200 px/s²) — the *same* limit applies when speeding up, stopping, and turning, so a full reverse takes a fraction of a second instead of flipping instantly. Then `position += velocity × dt`, clamped to the map rectangle (velocity is zeroed on the axis that hit the edge). `vx`/`vy` are synced so clients can extrapolate. Verified with a script: ramp to 200 px/s in ~4 ticks, headings ease from 45° to −73° over ~5 ticks, and a stop takes ~4 ticks.
+- **Input is a world-space vector plus a facing angle**, so the server is agnostic to how the client derived it. The server keeps only the *latest* input per player (overwrite, not a queue).
+- **Stale input is dropped.** If no input arrives for `INPUT_STALE_MS` (750ms) the player is treated as pressing nothing and coasts to a stop. Without this, a client that goes silent — a backgrounded browser tab pauses Phaser's loop, or the connection stalls — leaves the player running in their last direction indefinitely (found and fixed 2026-09-20). Clients therefore re-send at least every 250ms while active.
+- **Desktop controls (client)**: the mouse *aims*; "forward" is toward the cursor. `W`/`S` move toward/away from it, `A`/`D` strafe (twin-stick style). `MOVE_RELATIVE_TO_AIM = false` in `client/src/game/constants.ts` switches to fixed screen-direction WASD with the mouse only aiming. **Mobile**: the joystick gives an on-screen vector that is `unproject`ed to world space, so the character moves where the stick points on screen; facing follows the movement direction.
+- **Smoothness on the client**: see [Client — Phaser Game](#client--phaser-game) — rendered positions chase server state with frame-rate-independent smoothing plus a little velocity extrapolation. There is **no client-side prediction yet**, so your own input still takes about one round trip plus a server tick to show up (imperceptible on localhost, noticeable at 100ms+ latency). Prediction with reconciliation is the next step for latency hiding.
 
 ### PvP Shooting
 - Client sends `shoot` message with an angle; server rejects it outside the `combat` phase or if the player is out of `ammo`
@@ -637,19 +674,20 @@ export function createPhaserGame(
 
 ### `game/scenes/GameScene.ts` — responsibilities
 
-- **Tile grid**: a single `Graphics` object, redrawn on the `tilesClaimed` broadcast (and once on scene create) — not every frame. Tile color is derived from the owning player's `color` field (`Tile` itself doesn't store a color).
+- **Isometric hex terrain**: three `Graphics` layers. (1) *Base* — every hex drawn once at scene create: cliff faces on the three lower edges (`HEX_DEPTH` px tall), then the top face and outline, tiles sorted back-to-front by center y so a nearer tile's top covers the face of the tile behind it. It never redraws. (2) *Claims* — the top face of each claimed hex tinted with its owner's color (`CLAIM_BLEND`), redrawn from `room.state.tiles` when a dirty flag is set (by `tilesClaimed`, or a player leaving — their tiles are released without an event), at most once per frame. (3) *Hover* — an outline of the hex under the mouse, which doubles as a visual check that pointer picking matches the drawn grid. Hex corner points are cached per tile (as `Vector2`s, which is what `Graphics.fillPoints` is typed for in Phaser 4). With uniform heights, cliff faces only show on the map edge; per-tile elevation would need the base layer split by height (see Planned Features).
 - **Entity lifecycle**: `getStateCallbacks(room)`'s `onAdd`/`onRemove` on `players`/`projectiles`/`structures` create/destroy the corresponding Phaser game object. Existing entities at scene-create time are handled with one explicit `forEach`, since `onAdd` only fires for changes *after* the callback is registered — full state sent on join doesn't retroactively fire it.
-- **Position rendering**: `update()` reads `room.state` directly every frame (not through React, and not through reactive callbacks) and lerps each sprite toward the live server position (`POSITION_LERP_FACTOR = 0.25`) — this is the "read state directly each frame" approach flagged as the plan in [Client — React Shell](#client--react-shell).
-- **Camera**: follows the local player's circle (`cameras.main.startFollow`), bounded to the map's pixel dimensions.
-- **Input**: keyboard (arrows + WASD) is polled every frame in `update()` and sent via `sendInputIfChanged()`, which only re-sends when the direction actually changes (or every 250ms as a keep-alive, in case a packet drops) rather than flooding the server every frame. The same `sendInputIfChanged()` method is called externally by the mobile joystick overlay (see below), so both input paths share one throttle/dedupe implementation.
-- **Shooting / building**: a pointer-down (works for both mouse clicks and touch taps — Phaser unifies them) either fires toward the tapped world point, or — if `setBuildMode(true)` was called (wired to the React "Build" button in `GameScreen`) — places a structure on the tapped tile instead, then automatically turns build mode back off.
+- **Entity views and depth**: each entity remembers its smoothed *world* position (`wx`, `wy`); the Phaser object sits at `project(wx, wy)` with `setDepth(projectedY)` so things lower on screen draw in front. A player is a `Container` of a flattened shadow ellipse, a body circle lifted `BODY_LIFT` px off the ground, and a small "nose" dot on the facing direction (your own from local input so it never lags the mouse; others' from the synced `angle`). Projectiles float at body height; structures are boxes raised `STRUCTURE_LIFT`.
+- **Smoothing**: `update()` reads `room.state` directly every frame (not through React) and moves each entity's world position toward `serverPosition + velocity × EXTRAPOLATION_S` by `1 − exp(−SMOOTHING_RATE × dt)` — exponential smoothing that's frame-rate independent, unlike the old fixed per-frame lerp. Jumps larger than `SNAP_DISTANCE` (a respawn) teleport instead of gliding across the map. Projectiles use the same chase with their `speed`/`angle` as the extrapolation.
+- **Camera**: follows the local player's container (`startFollow`), bounded to the projected map size.
+- **Input**: every frame the scene works out a *world-space* direction — from the joystick if active, otherwise from the keyboard (see [Movement](#movement) for the mouse-relative scheme) — and the current `aimAngle`. `updateAim()` recomputes the aim from the mouse each frame (`pointerToWorld`: camera scroll, then `unproject`) *even if the mouse hasn't moved*, because the camera moves under it; it's skipped for touch pointers. `sendInputIfChanged()` sends at most every `INPUT_SEND_INTERVAL_MS` (50ms), only when direction or angle changed, with a `INPUT_KEEPALIVE_MS` (250ms) resend so the server's stale-input cutoff never fires on an active player.
+- **Shooting / building**: a pointer-down (mouse click or touch tap — Phaser unifies them) is `unproject`ed to a world point. It either fires toward that point (angle from the local player's world position) or — if `setBuildMode(true)` was called (wired to the React "Build" button in `GameScreen`) — places a structure on `pixelToHex(point)`, then turns build mode back off.
 
 ### Input — desktop and mobile share one message contract
 
-No server changes were needed for touch support, confirming what [Planned Features](#planned-features) predicted: `input`'s `{x, y}` vector and `shoot`'s `angle` are already input-method-agnostic.
+Touch support needed no protocol changes, confirming what [Planned Features](#planned-features) predicted: `input`'s world-space `{x, y}` vector and `shoot`'s `angle` are input-method-agnostic. (The hex/mouse-aim work later added only the optional `angle` on `input`.)
 
-- **Desktop**: keyboard polling inside `GameScene`, above.
-- **Mobile**: `client/src/components/MobileJoystick.tsx` — a drag-based virtual joystick built from plain pointer events (no Phaser plugin dependency), rendered as a React overlay by `GameScreen` when `utils/device.ts`'s `isTouchDevice()` returns true. It computes the same `{x, y}` shape (each axis clamped to `[-1, 1]`) and calls into the active `GameScene` instance's `sendInputIfChanged()` — reached via `game.scene.getScene('GameScene')` from `GameScreen`, since the joystick is a React component with no direct reference to the Phaser scene.
+- **Desktop**: mouse-aim + keyboard inside `GameScene`, above.
+- **Mobile**: `client/src/components/MobileJoystick.tsx` — a drag-based virtual joystick built from plain pointer events (no Phaser plugin dependency), rendered as a React overlay by `GameScreen` when `utils/device.ts`'s `isTouchDevice()` returns true. It reports the raw on-screen deflection (each axis clamped to `[-1, 1]`) to the active `GameScene` via `setJoystick()` — reached through `game.scene.getScene('GameScene')` from `GameScreen`, since the joystick is a React component with no direct reference to the Phaser scene. The scene converts it to a world-space direction each frame (undoing the iso squash, keeping the stick's strength as speed). Not yet exercised on a real touch device.
 
 ### HUD and Leaderboard — React overlays, not a Phaser UIScene
 
@@ -722,7 +760,7 @@ player.connected = true again      promote a new host if needed (cleanupPlayer)
 - Frozen players are still valid targets (shooting them continues — `CombatSystem` doesn't check `connected` before applying hits)
 - Their owned tiles are retained during the reconnect window
 - Structures they placed remain active
-- If the disconnecting player was the host, `onLeave` promotes the next connected player immediately (doesn't wait for the reconnect window)
+- If the disconnecting player was the host, **the intended behavior is to promote the next connected player immediately, but the code currently only promotes in `cleanupPlayer`, i.e. after the reconnect window expires** — a disconnected host blocks `startGame` for up to 3 minutes (known bug, see Current Status)
 
 ---
 
@@ -744,30 +782,26 @@ function checkProjectilePlayerCollision(
 }
 ```
 
-### Projectile vs Structure (AABB)
-Each structure occupies one tile (grid-aligned box):
+### Projectile vs Structure (hex containment)
+A structure fills its whole hex, so a projectile hits it exactly when the projectile is inside that hex (this replaced an AABB check when the map moved from squares to hexes):
 ```typescript
 function checkProjectileStructureCollision(
   proj: { x: number; y: number },
   structure: { tileX: number; tileY: number }
 ): boolean {
-  const sx = structure.tileX * TILE_SIZE;
-  const sy = structure.tileY * TILE_SIZE;
-  return (
-    proj.x > sx && proj.x < sx + TILE_SIZE &&
-    proj.y > sy && proj.y < sy + TILE_SIZE
-  );
+  const { col, row } = pixelToHex(proj.x, proj.y);
+  return col === structure.tileX && row === structure.tileY;
 }
 ```
 
-### Tile Claiming (Grid)
-Player position → floor to tile coordinates → check tile ownership; every claim this tick is collected into one batched `tilesClaimed` broadcast:
+### Tile Claiming (Hex grid)
+Player position → `pixelToHex` → check the hex is on the map and who owns it; every claim this tick is collected into one batched `tilesClaimed` broadcast:
 ```typescript
 function claimTile(state: GameState, player: Player, claimed: TilesClaimedEvent['tiles']) {
-  const tileX = Math.floor(player.x / TILE_SIZE);
-  const tileY = Math.floor(player.y / TILE_SIZE);
-  const idx = tileY * state.mapWidth + tileX;
-  const tile = state.tiles[idx];
+  const { col: tileX, row: tileY } = pixelToHex(player.x, player.y);
+  // Map corners/edges aren't fully covered by hexes, so a player can be over no tile at all.
+  if (!isValidHex(tileX, tileY, state.mapWidth, state.mapHeight)) return;
+  const tile = state.tiles[hexIndex(tileX, tileY, state.mapWidth)];
   if (!tile || tile.ownerId === player.id) return;
 
   if (tile.ownerId !== '') {
@@ -867,6 +901,10 @@ Not yet exercised in a browser: combat phase, shooting, structure placement/dest
 
 Debugging tips learned the hard way: (1) a blank page means check the browser console first — it was an uncaught provider error, not a build problem; (2) a page stuck on "connecting" with a successful `POST /matchmake/joinOrCreate/GameRoom` (200) in the network tab means the server failed while sending state — read the **server** log; (3) `EADDRINUSE` on 2567 means another server instance (often a `ts-node-dev` you forgot about) is already running; `ts-node-dev --respawn` also restarts itself on any file change, including `tsconfig.json`, so the port can briefly go down mid-session.
 
+**Second pass — hex/isometric prototype (2026-09-20).** Confirmed: hex terrain renders as squashed flat-top hexes with the player's claimed hexes tinted in their color; the hover outline sits exactly on the hex under the cursor; holding `W` with the cursor to the lower right moved the player diagonally toward it, claiming a stepped line of hexes (9 tiles after ~2s of movement); a click in combat spent one ammo. The pass was cut short — the user was using the same dev server at the same time, which put both of us in one room — so structure placement, projectile visuals and the stale-input fix were not re-checked in the browser.
+
+Testing notes from this pass: (1) synthetic key *taps* from browser automation are too short for a per-frame poll to see — dispatch `keydown`, wait, then `keyup` on `window` to simulate a held key; (2) an automation-driven pane can be backgrounded, which pauses Phaser's loop and stops input being sent — that is how the stale-input bug surfaced (the player kept walking after the key was released); (3) if you need a private room for testing while someone else uses the dev server, run a second server on another port (`PORT=2599 node dist/index.js`) and point a second Vite at it with `VITE_SERVER_URL=ws://localhost:2599`.
+
 ### Multiple Browser Instances
 - Open the game in multiple browser windows or profiles
 - Chrome regular window + Chrome Incognito = 2 isolated sessions
@@ -908,7 +946,8 @@ Bots are the most valuable local test tool now that client/server compatibility 
 | Room with 0 active players | Room disposed cleanly, no memory leak |
 | Full room (10 players) | 11th join rejected with clear error |
 | Server kill mid-match | Clients handle dropped WS connection, show reconnecting UI |
-| Host disconnects | Next connected player promoted to host, can still send `startGame` |
+| Host disconnects | **Currently fails**: promotion only happens after the 3-min reconnect window; expected: next connected player promoted immediately and can send `startGame` |
+| Browser tab backgrounded/hidden mid-move | Player coasts to a stop within ~1s (stale-input cutoff) instead of running on |
 | Player runs out of ammo | Shots are rejected server-side; no regen yet, so this is currently permanent for the rest of the match |
 
 ---
@@ -1031,13 +1070,15 @@ export default tseslint.config(
 ```
 
 ### `.prettierrc.json` (client and server, identical)
+
+> The repo's config is **`tabWidth: 4`** (earlier drafts of this doc said 2), but most files written before the change are still 2-space, which is why `npm run format:check` flags many files. Files rewritten on 2026-09-20 (`hex.ts`, `GameScene.ts`, `MovementSystem.ts`, client `constants.ts`) are 4-space. Run `npm run format` in each of `client/` and `server/` once to make everything consistent — kept out of feature diffs on purpose so they stay readable.
 ```json
 {
   "semi": true,
   "singleQuote": true,
   "trailingComma": "es5",
   "printWidth": 100,
-  "tabWidth": 2
+  "tabWidth": 4
 }
 ```
 
@@ -1078,29 +1119,37 @@ The server's `tsconfig.json` needs a few settings beyond the client's, driven by
 
 ## Current Status & Known Issues
 
-_As of 2026-09-20._ Server builds and lints clean (`tsc`, `eslint`) and boots; the client typechecks and lints clean and renders in a browser. Prettier `format:check` currently flags ~15 server files (pre-existing, cosmetic — `npm run format` fixes it).
+_As of 2026-09-20 (after the hex/isometric prototype)._ Server and client both typecheck and lint clean, and the game runs end to end in a browser: join → lobby → start → mouse-aimed movement on an isometric hex map → tile claiming → credits → shooting. Nothing about teams, scoring, or the results flow has been built yet.
 
 ### Working (browser- or script-verified)
-Join/lobby, host + `startGame`, phase timers, movement, tile claiming (batched broadcast), credits payout, HUD, leaderboard, reconnection token flow (script-verified), projectile/structure/phase server logic (script-verified).
+- Join/lobby, host `startGame`, phase timers, credits payout, HUD, leaderboard (browser).
+- **Hex map + isometric rendering**: terrain draws correctly; the hover outline lands exactly on the hex under the mouse (picking matches the drawn grid); mouse-aimed `W` carries the player diagonally toward the cursor and claims a line of hexes; a click in combat fires a shot (ammo 30 → 29) (browser).
+- Hex math round-trips exactly for all 4,096 tiles; velocity ramp/turn/decel numbers; off-map positions don't claim; stale input is dropped after 750ms (scripts).
+- Reconnection token flow and the projectile/structure/phase server logic (scripts).
 
 ### Implemented but not yet exercised in a real browser
-Combat phase and shooting, structure placement (Build button) and destruction, mobile joystick, reconnect after refresh/drop, multi-player sessions, results screen.
+Projectile rendering in flight, structure placement (Build button) and destruction on the hex map, the mobile joystick and `unproject` conversion on a real touch device, reconnect after refresh/drop, multi-player sessions, the results screen, and the stale-input fix under a genuinely backgrounded tab.
 
 ### Known bugs / rough edges
+- **Host is not promoted when the host disconnects.** The doc and intent say the next connected player becomes host immediately, but `GameRoom.onLeave` only marks the player disconnected and waits out the 3-minute reconnect window; promotion happens in `cleanupPlayer`, which runs only after that window (or on a consented leave). Effect: a room whose host's tab was closed or reloaded can't be started for up to 3 minutes. It bites during development because `joinOrCreate` puts every new tab into the same lobby room, so a leftover frozen "Player 1" keeps the host role. Fix: promote inside `onLeave` as soon as `connected` goes false.
 - **Layout overflow:** the game page shows both horizontal and vertical scrollbars and the leaderboard is clipped at the right edge — the Phaser canvas and/or overlay container is larger than the viewport. Likely `#root`/`App.css` (Vite template styles: `#center`, body margins) interacting with `Phaser.Scale.RESIZE`. Not investigated.
-- **Possibly odd movement path:** in the automated browser run, holding `d` produced a wandering trail (turns up/left) instead of a straight line right. May be an artifact of synthetic key events (stuck/repeated keys) rather than a real input bug — needs a manual check with a physical keyboard before treating as a bug.
+- **No client-side prediction.** Rendering is smoothed and extrapolated, but your own movement still waits for the server round trip (see Movement). Fine on localhost; needs work before real-world latency.
+- **Map corners aren't hex-covered:** movement is clamped to the map rectangle, but the hex edge is jagged, so a player can stand over no hex (claiming ignores it).
+- **Everything is one height:** the reference art has elevation, cliffs, water and mountains; the prototype has a single flat height, so cliff faces show only on the map edge. Structures are plain boxes and players are circles.
 - **Ammo never regenerates** (30 shots for the whole match) — see PvP Shooting.
 - **No reconnect retry cap/backoff** in `GameContext`.
 - **Client bundle ~1.7MB** (Phaser) — Vite chunk-size warning, no code-splitting yet.
 - **Mobile:** no dedicated fire button; no responsive tuning for phone-width screens.
 - **`playerDisconnected`/`playerReconnected`/`gameOver` server events are not wired**, though the client has handlers for them; `results` phase currently does nothing but wait out its timer.
 - **Contested tile claims** resolve by player join order, not input `seq`.
-- **`GameScene.ts`** (~250 lines) is a candidate to split once it grows.
+- **Prettier config vs. code style mismatch** (config says 4-space; most older files are 2-space) — see Build Tooling. `format:check` flags many files until someone runs `npm run format`.
 - **Node version is not enforced** (no `.nvmrc` / `engines`) — see Tech Stack.
+- **Dev-server restarts drop every room.** `ts-node-dev --respawn` restarts on any file change (including `tsconfig.json` and a plain `touch`), which wipes in-memory rooms and disconnects clients mid-game. Expected, but surprising when two people share one dev server.
 
-### Open questions and ideas (from `dev-notes.md`)
+### Open questions and ideas (from `dev-notes.md` and the reference art)
 1. **Should the project move off Colyseus?** Raised because of the repeated client/server compatibility problems (see Tech Stack items 1–5). Not decided. Considerations: the published `colyseus.js` client tops out at 0.16.22, so the server is stuck on the 0.16 line with exact pins; the pain so far has been version/config drift rather than fundamental design limits, and everything is now working and verified on the pinned versions. Alternatives (raw `ws` + own delta sync, or another framework) would mean re-implementing rooms, delta-compressed state sync, and reconnection.
-2. **Starting positions:** players should start in a line on the right side of the map to simulate "going west". Today every player spawns at the exact map center (`GameRoom.onJoin`, and `CombatSystem` respawns to center). Needs a spawn-slot scheme for up to 10 players and a decision on whether respawns also use it. Not implemented.
+2. **Starting positions:** players should start in a line on the right side of the map to simulate "going west". Today every player spawns at the exact map center (`GameRoom.onJoin`, and `CombatSystem` respawns to center). Needs a spawn-slot scheme for up to 10 players (spawn hexes along the right edge) and a decision on whether respawns also use it.
+3. **Is terrain gameplay or decoration?** The reference image shows water, mountains and cliffs. If they block movement or projectiles, `Tile` needs a terrain (and maybe height) field and `MovementSystem`/`CombatSystem` need rules for it; if decoration, it can stay client-only art. See Planned Features #7.
 
 ---
 
@@ -1143,9 +1192,21 @@ Captured 2026-09-20 as design ideas; the Phaser game view work session that foll
 
 ### 6. Mobile web controls — ✅ implemented
 
-- `client/src/components/MobileJoystick.tsx` — a drag-based virtual joystick built with pointer events (not a Phaser plugin), producing the same `{x, y}` direction vector shape the keyboard path does. `GameScreen` shows it when `utils/device.ts`'s `isTouchDevice()` check passes, and it feeds into the same `GameScene.sendInputIfChanged()` throttle/dedupe path the keyboard uses (see [Client — Phaser Game](#client--phaser-game)) — no separate server-side handling needed, confirming the original prediction that the existing `input`/`shoot` message shapes already supported this.
+- `client/src/components/MobileJoystick.tsx` — a drag-based virtual joystick built with pointer events (not a Phaser plugin), reporting the on-screen stick deflection. `GameScreen` shows it when `utils/device.ts`'s `isTouchDevice()` check passes, and it feeds `GameScene.setJoystick()`, which converts it to a world-space direction and sends it through the same throttle/dedupe path the keyboard uses (see [Client — Phaser Game](#client--phaser-game)) — no separate server-side handling needed, confirming the original prediction that the existing `input`/`shoot` message shapes already supported this.
 - Shooting and structure-placement are tap-driven in `GameScene` itself (a tap shoots toward the tap point; a "Build" button arms one-shot placement mode for the next tap) — the same handlers serve both mouse and touch, since Phaser's pointer events unify them.
 - Not yet done: a dedicated fire button (tap-to-shoot doubles as both aim and fire today, which is serviceable but not necessarily the best mobile feel — worth revisiting during playtesting) and responsive layout tuning for small screens (the HUD/leaderboard positioning hasn't been tested at phone width yet).
+
+### 7. Terrain, elevation, and real art — not implemented
+
+Driven by reference art showing hex tiles with mountains, trees, water and cliff faces. Prototype status: one flat height, primitive shapes, no terrain.
+- **Decide first** whether terrain is gameplay (blocks movement/projectiles, maybe unclaimable — needs `Tile.terrain`/`Tile.height` in the schema and rules in `MovementSystem`/`CombatSystem`/`CollisionSystem`) or purely visual (client-only art keyed off a seeded map, no protocol change).
+- **Rendering with elevation:** the static base layer must draw tiles back-to-front with each tile's cliff height, so heights vary per tile; tall props (mountains, trees, structures) need depth sorting against players using `setDepth(projectedY)` like entities already do. Keep the top-down world as the source of truth and add height only as a render offset.
+- **Art:** the reference image is AI-generated (watermarked, irregular tile shapes, unclear licensing) — treat it as mood only. Real tiles need a consistent hex footprint (64 × ~55 px top at the current size/squash, plus cliff height) so sprites tile cleanly; sprites replace `GameScene`'s primitives without an architecture change (needs a preload step, since the scene currently loads nothing).
+- **Map shape:** the jagged hex edge vs. rectangular movement bounds (see Known Issues) is worth fixing at the same time, e.g. by clamping to the nearest valid hex.
+
+### 8. Client-side prediction — not implemented
+
+Simulate the local player with the same acceleration model as `MovementSystem` (share the step function between client and server), replay unacknowledged inputs against each authoritative update (the `seq`/`inputAck` plumbing already exists for this), and correct smoothly. Do this once latency is a real concern; the extrapolation/smoothing already in place hides tick-rate stepping but not round-trip delay.
 
 ---
 
@@ -1161,7 +1222,7 @@ Captured 2026-09-20 as design ideas; the Phaser game view work session that foll
 | Client UI framework | React (v19 installed; earlier drafts said 18) | Lit.js, vanilla JS | Familiarity goal; good component model for lobby/menus |
 | Client bundler | Vite (client only) | Webpack, Parcel | Fast HMR, zero-config TS+React, modern standard. Server does **not** use Vite — plain `tsc` build + `ts-node-dev` for hot reload, since Vite targets browser bundling |
 | Transport protocol | WebSockets (via Colyseus) | WebRTC, SSE, polling | Right latency profile; server-authoritative; P2P not needed at this scale |
-| Collision detection | Home-rolled distance/AABB | Rapier, Planck.js, P2.js | Sufficient complexity; physics engine is overkill for this game type |
+| Collision detection | Home-rolled distance / hex containment | Rapier, Planck.js, P2.js | Sufficient complexity; physics engine is overkill for this game type |
 | Structure destruction | Health-based discrete | Voxel blocks, physics deformation | Simplest to implement, easiest to sync over network, easiest to balance |
 | Reconnect window | 3 minutes | Immediate drop, longer window | Reasonable for casual play; short enough not to stall match indefinitely |
 | Reconnect behavior | Freeze entity in place, retain tiles | Drop entity, release tiles | Fairer to reconnecting player; avoiding incentivizing disconnect |
@@ -1190,3 +1251,11 @@ Captured 2026-09-20 as design ideas; the Phaser game view work session that foll
 | Version-drift guardrails | Document exact pins and the "run a real client against a real server" check; `.nvmrc`/`engines` not yet added | Trust isolated build/lint passes | Three of the five compatibility bugs to date (the matchmake protocol mismatch, the `useDefineForClassFields` encode crash, and that setting missing from the committed `tsconfig.json`) passed every per-side build/lint check and surfaced only when a real client joined a real server; the other two (`@colyseus/core` peer drift, `index.ts` on the 0.18 API) were caught by `tsc`. Separately, a Node 13 default shell can't run TS 6 at all |
 | Whether to leave Colyseus | **Undecided** — staying on pinned 0.16.x for now | Raw `ws` + custom sync; another framework | Raised in `dev-notes.md` because of the compatibility churn. Everything works and is verified on the pinned versions, and replacing rooms/delta sync/reconnection is a large cost; revisit if the 0.16 line's lack of updates or a needed feature becomes a real blocker |
 | Git workflow | The user runs all git commands; Claude edits files and asks the user to commit | Claude commits/pushes | Stated preference in `CLAUDE.md` — the user wants to review what's being committed |
+| Map grid | Flat-top hexes, odd-q offset, stored in the same flat array (`row * cols + col`); axial/cube coordinates used only inside `pixelToHex` | Keep square tiles; pointy-top; axial storage | Hexes are the intended design. Odd-q keeps the map rectangular and the schema/array unchanged, and flat-top matches the reference art. Only tile lookup, structure hits, bounds and rendering had to change — claiming is by position, not adjacency, so this was cheap to do before teams/structure types |
+| Isometric implementation | Render-only vertical squash (`ISO_SQUASH = 0.6`) of a top-down world; server never sees it | True 45° isometric projection; simulating in screen space | A single scale factor gives the ~2:1 hex look of the reference, keeps server hex/collision/movement simple, and inverts trivially. The cost — every pointer/joystick vector must be `unproject`ed before use — is confined to `GameScene` |
+| Movement model | Acceleration-limited velocity (`PLAYER_ACCEL`), world-space input vector (magnitude = speed) + facing angle | Instantly setting velocity from the input (previous behavior); stepping tile to tile | Smooth start/stop/turn at any angle and analog joystick speed, with a server change only in `MovementSystem`. `vx`/`vy`/`angle` are synced so clients can extrapolate and draw facing |
+| Desktop controls | Mouse aims; `W`/`S` toward/away from cursor, `A`/`D` strafe (`MOVE_RELATIVE_TO_AIM`, switchable) | Fixed screen-direction WASD with mouse-only aiming | Requested "mouse looks, forward follows it" feel. Aim is recomputed every frame because the camera moves under a still mouse |
+| Stale input | Server discards input older than `INPUT_STALE_MS` (750ms); client keeps alive every 250ms | Trust the last input indefinitely (previous behavior) | A backgrounded tab pauses Phaser's loop, so "key released" never got sent and the player ran on forever. Any silent client (tab hidden, network stall) now coasts to a stop |
+| Client smoothness | Frame-rate-independent exponential smoothing toward `state + velocity × EXTRAPOLATION_S`; snap on large jumps | Fixed per-frame lerp (previous); full client-side prediction now | Hides the 20Hz tick stepping at any frame rate for little code. Prediction/reconciliation is deferred (Planned Features #8) until latency actually matters |
+| Hex rendering | Three `Graphics` layers: static base (drawn once), claims tint (dirty-flag redraw, claimed hexes only), hover outline | One `Graphics` redrawn on every `tilesClaimed`; one game object per tile | `tilesClaimed` fires nearly every tick while moving; redrawing 4,096 hexes with cliff faces each time was the expensive path. Only the small claims layer redraws |
+| Structure hit test | Projectile is inside the structure's hex (`pixelToHex` equality) | Circle or AABB approximation of a hex | Exact for a structure that fills its whole hex, and no extra geometry |
