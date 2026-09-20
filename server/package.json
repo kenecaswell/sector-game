@@ -17,8 +17,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@colyseus/schema": "^5.0.33",
-    "colyseus": "^0.18.6",
+    "@colyseus/core": "0.16.26",
+    "@colyseus/schema": "3.0.76",
+    "@colyseus/ws-transport": "0.16.5",
+    "colyseus": "0.16.5",
     "cors": "^2.8.6",
     "express": "^5.2.1"
   },

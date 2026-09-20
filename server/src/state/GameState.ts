@@ -9,6 +9,7 @@ export class Player extends Schema {
   @type('number') ammo: number = 30;
   @type('number') tilesOwned: number = 0;
   @type('number') kills: number = 0;
+  @type('number') credits: number = 0;
   @type('boolean') connected: boolean = true;
   @type('string') color: string = '';
 }
@@ -49,4 +50,5 @@ export class GameState extends Schema {
   @type(GamePhaseState) phase = new GamePhaseState();
   @type('number') mapWidth: number = 64;
   @type('number') mapHeight: number = 64;
+  @type('number') nextPayoutAt: number = 0; // server timestamp ms, next credit payout
 }

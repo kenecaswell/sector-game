@@ -1,101 +1,73 @@
-import { useState } from 'react';
-import heroImg from './assets/hero.png';
-import reactLogo from './assets/react.svg';
-import viteLogo from './assets/vite.svg';
+import { useGameConnection } from './context/GameContext';
+import { GameScreen } from './screens/GameScreen';
 import './App.css';
 
 function App() {
-  const [count, setCount] = useState(0);
+  const { status, error, phase, players, sessionId, gameOver, connect, startGame } =
+    useGameConnection();
+
+  if (status !== 'connected') {
+    return (
+      <section id="center">
+        <div>
+          <h1>Sector 42</h1>
+          <p>Status: {status}</p>
+          {error && <p role="alert">{error}</p>}
+        </div>
+
+        {status === 'idle' && (
+          <button type="button" className="counter" onClick={connect}>
+            Join Game
+          </button>
+        )}
+
+        {(status === 'connecting' || status === 'reconnecting') && <p>{status}…</p>}
+      </section>
+    );
+  }
+
+  if (gameOver) {
+    return (
+      <section id="center">
+        <h2>Game Over</h2>
+        <ol>
+          {gameOver.scores
+            .slice()
+            .sort((a, b) => b.tilesOwned - a.tilesOwned)
+            .map((score) => (
+              <li key={score.playerId}>
+                {score.playerId} — tiles: {score.tilesOwned}, kills: {score.kills}
+              </li>
+            ))}
+        </ol>
+      </section>
+    );
+  }
+
+  if (phase !== 'lobby') {
+    return <GameScreen />;
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button type="button" className="counter" onClick={() => setCount((count) => count + 1)}>
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <section id="center">
+      <div>
+        <h1>Sector 42</h1>
+        <p>Waiting in lobby…</p>
+      </div>
+      <ul>
+        {players.map((player) => (
+          <li key={player.id} style={{ color: player.color }}>
+            {player.name}
+            {player.id === sessionId ? ' (you)' : ''} — tiles: {player.tilesOwned}, kills:{' '}
+            {player.kills}
+            {!player.connected ? ' (disconnected)' : ''}
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="counter" onClick={startGame}>
+        Start Game
+      </button>
+    </section>
   );
 }
 

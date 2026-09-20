@@ -12,3 +12,5 @@ export const PLAYER_RADIUS = 16; // pixels, for projectile collision
 export const PROJECTILE_RADIUS = 6; // pixels, for player collision
 export const PROJECTILE_DAMAGE = 25;
 export const PROJECTILE_LIFETIME_MS = 2000;
+
+export const CREDIT_PAYOUT_INTERVAL_MS = 10_000; // 1 credit per owned tile, every 10s

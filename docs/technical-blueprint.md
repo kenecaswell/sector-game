@@ -21,7 +21,7 @@
 13. [Destructible Structures](#destructible-structures)
 14. [Testing Multiplayer Locally](#testing-multiplayer-locally)
 15. [Build Tooling](#build-tooling)
-16. [Planned Features — Not Yet Implemented](#planned-features--not-yet-implemented)
+16. [Planned Features](#planned-features)
 17. [Decisions Log](#decisions-log)
 
 ---
@@ -112,7 +112,8 @@
 │   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, batched tilesClaimed broadcast
 │   │   │   ├── CombatSystem.ts     # Projectile movement, hit detection, respawn-on-death
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
-│   │   │   └── PhaseSystem.ts      # Phase transitions, timer management
+│   │   │   ├── PhaseSystem.ts      # Phase transitions, timer management
+│   │   │   └── EconomySystem.ts    # Credit payouts (1/tile/10s)
 │   │   └── types/
 │   │       └── shared.ts           # Shared message types (copy into client too)
 │   ├── tsconfig.json
@@ -125,34 +126,29 @@
 ├── client/                         # React + Phaser client
 │   ├── src/
 │   │   ├── main.tsx                # Vite entry point — wraps <App /> in <GameProvider>
-│   │   ├── App.tsx                 # Currently a minimal lobby (see Client — React Shell); screen router planned
+│   │   ├── App.tsx                 # Routes on connection status + room phase — see Client — React Shell
 │   │   ├── vite-env.d.ts           # Vite client types + VITE_SERVER_URL ImportMetaEnv typing
 │   │   ├── context/
-│   │   │   └── GameContext.tsx     # IMPLEMENTED — GameProvider/useGameConnection: connection lifecycle, reconnection, phase/roster state
+│   │   │   └── GameContext.tsx     # GameProvider/useGameConnection: connection lifecycle, reconnection, phase/roster state
 │   │   ├── net/
-│   │   │   ├── config.ts           # IMPLEMENTED — SERVER_URL from VITE_SERVER_URL env var
-│   │   │   └── GameConnection.ts   # IMPLEMENTED — Client/Room wrapper, typed send helpers, reconnection-token persistence
+│   │   │   ├── config.ts           # SERVER_URL from VITE_SERVER_URL env var
+│   │   │   └── GameConnection.ts   # Client/Room wrapper, typed send helpers, reconnection-token persistence
 │   │   ├── types/
-│   │   │   ├── shared.ts           # IMPLEMENTED — hand-copy of server/src/types/shared.ts
-│   │   │   └── gameState.ts        # IMPLEMENTED — plain interfaces typing the decoded room.state shape
-│   │   ├── screens/                # PLANNED — not yet built
-│   │   │   ├── MenuScreen.tsx      # Create/join room
-│   │   │   ├── LobbyScreen.tsx     # Player list, ready up, start game
-│   │   │   ├── GameScreen.tsx      # Phaser instance host
-│   │   │   └── ResultsScreen.tsx   # Post-game scores
-│   │   └── game/                   # PLANNED — not yet built
+│   │   │   ├── shared.ts           # Hand-copy of server/src/types/shared.ts
+│   │   │   └── gameState.ts        # Plain interfaces typing the decoded room.state shape
+│   │   ├── utils/
+│   │   │   └── device.ts           # isTouchDevice() — picks keyboard vs. virtual-joystick input
+│   │   ├── components/
+│   │   │   ├── HUD.tsx             # Own player's health/ammo/tiles/credits + phase countdown
+│   │   │   ├── Leaderboard.tsx     # All players ranked by credits (stand-in for score — see Planned Features)
+│   │   │   └── MobileJoystick.tsx  # Drag-based virtual joystick (touch input)
+│   │   ├── screens/
+│   │   │   └── GameScreen.tsx      # Hosts the Phaser canvas + HUD/leaderboard/joystick/build-button overlays
+│   │   └── game/
 │   │       ├── PhaserGame.ts       # Phaser.Game config and init
-│   │       ├── scenes/
-│   │       │   ├── GameScene.ts    # Main scene: tiles, players, projectiles
-│   │       │   ├── UIScene.ts      # HUD overlay (health, phase timer, scores)
-│   │       │   └── PreloadScene.ts # Asset loading
-│   │       ├── systems/
-│   │       │   ├── TileRenderer.ts     # Tile grid rendering + ownership colors
-│   │       │   ├── PlayerRenderer.ts   # Player sprites, interpolation
-│   │       │   ├── ProjectileRenderer.ts # Visual projectile trails
-│   │       │   └── StructureRenderer.ts  # Structure sprites, damage states
-│   │       └── input/
-│   │           └── InputHandler.ts # Keyboard/mouse input → server messages
+│   │       ├── constants.ts        # Client-side render constants mirroring server/src/constants.ts
+│   │       └── scenes/
+│   │           └── GameScene.ts    # Tiles, players, projectiles, structures, camera, input — see Client — Phaser Game
 │   ├── index.html
 │   ├── vite.config.ts
 │   ├── tsconfig.json
@@ -239,8 +235,9 @@ import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
+import { EconomySystem } from '../systems/EconomySystem';
 import type { Broadcast } from '../systems/Broadcast';
-import { TICK_RATE, TILE_SIZE, RECONNECT_WINDOW_SECONDS } from '../constants';
+import { TICK_RATE, TILE_SIZE, RECONNECT_WINDOW_SECONDS, CREDIT_PAYOUT_INTERVAL_MS } from '../constants';
 import type {
   InputMessage,
   ShootMessage,
@@ -265,6 +262,7 @@ export class GameRoom extends Room<GameState> {
     for (let i = 0; i < state.mapWidth * state.mapHeight; i++) {
       state.tiles.push(new Tile());
     }
+    state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
     this.setState(state);
 
     this.setSimulationInterval((dt) => this.tick(dt / 1000), 1000 / TICK_RATE);
@@ -332,6 +330,7 @@ export class GameRoom extends Room<GameState> {
     CollisionSystem.update(this.state, this.broadcastEvent);
     CombatSystem.update(this.state, dt, this.broadcastEvent);
     PhaseSystem.update(this.state, this.broadcastEvent);
+    EconomySystem.update(this.state);
   }
 
   private handleInput(client: Client, msg: InputMessage): void {
@@ -455,6 +454,7 @@ export class Player extends Schema {
   @type('number')  ammo: number = 30;
   @type('number')  tilesOwned: number = 0;
   @type('number')  kills: number = 0;
+  @type('number')  credits: number = 0;            // see EconomySystem
   @type('boolean') connected: boolean = true;
   @type('string')  color: string = '';           // hex color for tile ownership
 }
@@ -495,6 +495,7 @@ export class GameState extends Schema {
   @type(GamePhaseState)       phase       = new GamePhaseState();
   @type('number')             mapWidth: number  = 64;
   @type('number')             mapHeight: number = 64;
+  @type('number')             nextPayoutAt: number = 0; // server timestamp ms, next EconomySystem payout
 }
 ```
 
@@ -539,6 +540,13 @@ export class GameState extends Schema {
 - On a killing blow, the shooter's `kills` increments and the target **respawns** (full health, repositioned to map center) rather than being eliminated — this is a territory-claiming game, not a deathmatch, so matches don't end early from PvP alone
 - Server broadcasts `playerHit` on every hit (not just kills); client should use this to play a hit effect
 
+### Economy (Credits)
+- Every player with `tilesOwned > 0` earns 1 credit per owned tile, once every `CREDIT_PAYOUT_INTERVAL_MS` (10s)
+- `EconomySystem` runs only during `claiming`/`combat` — no payouts in `lobby` (no tiles are ownable yet) or `results` (match is already decided)
+- Uses a wall-clock `GameState.nextPayoutAt` timestamp rather than counting ticks, so it stays correct if `TICK_RATE` ever changes — same pattern as `GamePhaseState.endsAt`
+- No discrete broadcast event for a payout — `Player.credits` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
+- Credits currently have no purpose beyond accruing (no spending, no scoring) — see [Planned Features #3](#planned-features) for the scoring formula that will consume them
+
 ---
 
 ## Client — React Shell
@@ -549,40 +557,24 @@ The client's networking code is built and has been exercised end-to-end against 
 
 - **`src/types/shared.ts`** — hand-copied mirror of `server/src/types/shared.ts` (the client/server message contract). Keep both files in sync by hand; there's no shared package between the two yet.
 - **`src/types/gameState.ts`** — plain TypeScript interfaces (`PlayerState`, `TileState`, `ProjectileState`, `StructureState`, `GameStateShape`, etc.) describing the shape of the decoded root state, typed as `ReadonlyMap`/`readonly T[]` rather than importing the server's schema classes. `colyseus.js` decodes `@colyseus/schema` state by **reflection** at connect time, so the client never needs the server's actual `Schema` subclasses — these interfaces exist purely for TypeScript, and the real decoded `MapSchema`/`ArraySchema` instances satisfy them structurally at runtime.
-- **`src/net/GameConnection.ts`** — a thin wrapper around `colyseus.js`'s `Client`/`Room`: `connectToGame(handlers)` joins (or rejoins via a `sessionStorage`-persisted `reconnectionToken`) the `GameRoom` and wires up discrete server→client message handlers; `sendInput`/`sendShoot`/`sendPlaceStructure`/`sendStartGame` are typed send helpers; `leaveGame`/`clearReconnectionToken`/`isNormalClose` support a clean, consented leave. High-frequency gameplay state (positions, tile ownership) is **not** modeled as discrete messages — it's plain Colyseus state, read directly off `room.state` by whatever renders the game (the Phaser layer, not yet built).
+- **`src/net/GameConnection.ts`** — a thin wrapper around `colyseus.js`'s `Client`/`Room`: `connectToGame(handlers)` joins (or rejoins via a `sessionStorage`-persisted `reconnectionToken`) the `GameRoom` and wires up discrete server→client message handlers; `sendInput`/`sendShoot`/`sendPlaceStructure`/`sendStartGame` are typed send helpers; `leaveGame`/`clearReconnectionToken`/`isNormalClose` support a clean, consented leave. High-frequency gameplay state (positions, tile ownership) is **not** modeled as discrete messages — it's plain Colyseus state, read directly off `room.state` by the Phaser layer's render loop — see [Client — Phaser Game](#client--phaser-game).
 - **`src/context/GameContext.tsx`** — a React context (`GameProvider` / `useGameConnection()`) that owns the connection lifecycle: `status` (`idle` / `connecting` / `connected` / `reconnecting` / `error`), the current `room`, `sessionId`, `phase`/`phaseEndsAt` (kept in React state via the `phaseChanged` message, since phase changes are low-frequency and worth a re-render), a `players` array kept in sync via `getStateCallbacks(room)` reactive `onAdd`/`onRemove`/`onChange` callbacks (also low-frequency — a HUD/lobby list, not a per-tick render), and `gameOver`. It automatically retries via the reconnection token on an unexpected drop (any `onLeave` code other than `1000`, the consented-leave code), with a fixed retry delay — not implemented yet: a max-attempts cutoff or backoff, worth adding before this ships. `connect()`/`leave()` are exposed for a lobby screen to call, and `input`/`shoot`/`placeStructure`/`startGame` are the typed action dispatchers.
 
-`App.tsx` currently renders a minimal lobby (join button, connection status, live player list via `useGameConnection()`, start-game button, game-over scoreboard) — enough to prove the networking layer end-to-end. It is **not** the multi-screen router described below; that's the next piece of client work, once the Phaser game view exists to route to.
+### Screen routing — implemented 2026-09-20
 
-### Screen State Machine (planned, not yet implemented)
-
-```
-lobby ──► game ──► results ──► lobby
-  │
-  └──► (direct URL join) ──► lobby
-```
-
-### App Router (planned, not yet implemented)
+`App.tsx` routes on connection `status` and room `phase` directly, rather than a separate `screen` enum a Colyseus-agnostic sketch might use — `phase` is already the authoritative source of truth for what should be on screen:
 
 ```typescript
-// App.tsx — target shape once GameScreen/Phaser exists; current App.tsx is a lobby-only stand-in
-import { useGameConnection } from './context/GameContext';
-import { MenuScreen }    from './screens/MenuScreen';
-import { LobbyScreen }   from './screens/LobbyScreen';
-import { GameScreen }    from './screens/GameScreen';
-import { ResultsScreen } from './screens/ResultsScreen';
-
-export function App() {
-  const { phase } = useGameConnection();
-  // Map `phase` (lobby | claiming | combat | results) plus local "not yet
-  // connected" state onto which screen renders — replacing the standalone
-  // `screen` state a Colyseus-agnostic sketch would use, since the room's
-  // `phase` is already the authoritative source of truth for this.
-}
+// App.tsx (actual, simplified)
+if (status !== 'connected') return <ConnectPrompt />;      // idle / connecting / reconnecting / error
+if (gameOver) return <ResultsSummary />;                     // gameOver event received
+if (phase !== 'lobby') return <GameScreen />;                // claiming / combat / results
+return <LobbyList />;                                        // phase === 'lobby'
 ```
 
+`GameScreen` (`src/screens/GameScreen.tsx`) hosts the Phaser canvas plus the HUD, leaderboard, mobile joystick, and build-mode button — see [Client — Phaser Game](#client--phaser-game) for how those pieces fit together. There's no dedicated `MenuScreen`/standalone `LobbyScreen`/`ResultsScreen` component split yet (the lobby and results views are still inline in `App.tsx`); splitting those out is straightforward follow-up whenever `App.tsx` grows unwieldy, but wasn't necessary yet.
 
-### URL-based Room Joining
+### URL-based Room Joining (not yet implemented)
 - Room created via HTTP `POST /rooms` → server returns `{ roomId, shortCode }`
 - Shareable URL: `https://yourgame.com/play/ABC123`
 - On page load, client reads room code from URL path and auto-joins that room
@@ -592,68 +584,62 @@ export function App() {
 
 ## Client — Phaser Game
 
-### Phaser Config
+**Implemented and verified 2026-09-20** (build + typecheck + lint clean; the underlying game-state decode/message path is the same one covered by the live smoke tests under [Testing Multiplayer Locally](#testing-multiplayer-locally)). This deviates from the original sketch in a few ways worth calling out:
+
+- **No `PreloadScene` or `UIScene`.** Every entity (player, projectile, structure, tile) renders as a plain Phaser primitive (`add.circle`/`add.rectangle`/a shared `Graphics` for the tile grid) rather than a sprite, so there's nothing to preload. The HUD and leaderboard are a **React overlay** (`GameScreen`, `HUD.tsx`, `Leaderboard.tsx`), not a Phaser `UIScene` — they're driven by state that's already reactive on the React side (`GameContext`'s `players`/`phase`), so re-implementing that reactivity inside Phaser would be pure duplication. `GameScene` owns only the parts of the screen that need per-frame, direct-state-read rendering: the map, players, projectiles, and structures.
+- **A single scene (`GameScene`) does it all** — tile rendering, entity rendering, camera follow, and input — rather than splitting responsibilities the original sketch proposed (`TileRenderer`/`PlayerRenderer`/`ProjectileRenderer`/`StructureRenderer`/`InputHandler` as separate files). Splitting those out is a reasonable follow-up once the scene grows, but wasn't necessary for a working first version.
+- **No arcade physics.** Collision is server-authoritative (see [Collision Detection](#collision-detection)); the client only renders positions it's told, so there's no local physics simulation to configure.
+
+### `game/PhaserGame.ts`
 
 ```typescript
-// game/PhaserGame.ts
 import Phaser from 'phaser';
-import { PreloadScene } from './scenes/PreloadScene';
-import { GameScene }    from './scenes/GameScene';
-import { UIScene }      from './scenes/UIScene';
+import { GameScene, type GameSceneCallbacks } from './scenes/GameScene';
+import type { GameRoom } from '../net/GameConnection';
 
-export function createPhaserGame(parent: HTMLElement): Phaser.Game {
-  return new Phaser.Game({
+export function createPhaserGame(
+  parent: HTMLElement,
+  room: GameRoom,
+  sessionId: string,
+  callbacks: GameSceneCallbacks
+): Phaser.Game {
+  const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: parent.clientWidth || window.innerWidth,
+    height: parent.clientHeight || window.innerHeight,
     backgroundColor: '#1a1a2e',
-    scene: [PreloadScene, GameScene, UIScene],
-    physics: { default: 'arcade' },  // used for client-side visual only, not authoritative
+    scale: { mode: Phaser.Scale.RESIZE },
+    // No `scene` entry here — GameScene needs init data (the room/sessionId/
+    // callbacks), so it's added and started explicitly below rather than
+    // auto-started by the config, which would run init() with no data first.
   });
+
+  game.scene.add('GameScene', GameScene);
+  game.scene.start('GameScene', { room, sessionId, callbacks });
+  return game;
 }
 ```
 
-### GameScene Responsibilities
-- Render tile grid with ownership colors
-- Interpolate player positions between server ticks (smooth at 60fps despite 20Hz server)
-- Render projectile trails/effects
-- Render structures with damage state visuals (intact → cracked → destroyed)
-- Send player input to Colyseus room each frame
-- Apply server state updates to local render state
+### `game/scenes/GameScene.ts` — responsibilities
 
-### Interpolation Pattern
-```typescript
-// PlayerRenderer.ts — smooth other players between ticks
-update(delta: number) {
-  for (const [id, player] of this.players) {
-    const target = this.serverState.players.get(id);
-    if (!target) continue;
-    // Lerp toward server position
-    player.sprite.x = Phaser.Math.Linear(player.sprite.x, target.x, 0.2);
-    player.sprite.y = Phaser.Math.Linear(player.sprite.y, target.y, 0.2);
-  }
-}
-```
+- **Tile grid**: a single `Graphics` object, redrawn on the `tilesClaimed` broadcast (and once on scene create) — not every frame. Tile color is derived from the owning player's `color` field (`Tile` itself doesn't store a color).
+- **Entity lifecycle**: `getStateCallbacks(room)`'s `onAdd`/`onRemove` on `players`/`projectiles`/`structures` create/destroy the corresponding Phaser game object. Existing entities at scene-create time are handled with one explicit `forEach`, since `onAdd` only fires for changes *after* the callback is registered — full state sent on join doesn't retroactively fire it.
+- **Position rendering**: `update()` reads `room.state` directly every frame (not through React, and not through reactive callbacks) and lerps each sprite toward the live server position (`POSITION_LERP_FACTOR = 0.25`) — this is the "read state directly each frame" approach flagged as the plan in [Client — React Shell](#client--react-shell).
+- **Camera**: follows the local player's circle (`cameras.main.startFollow`), bounded to the map's pixel dimensions.
+- **Input**: keyboard (arrows + WASD) is polled every frame in `update()` and sent via `sendInputIfChanged()`, which only re-sends when the direction actually changes (or every 250ms as a keep-alive, in case a packet drops) rather than flooding the server every frame. The same `sendInputIfChanged()` method is called externally by the mobile joystick overlay (see below), so both input paths share one throttle/dedupe implementation.
+- **Shooting / building**: a pointer-down (works for both mouse clicks and touch taps — Phaser unifies them) either fires toward the tapped world point, or — if `setBuildMode(true)` was called (wired to the React "Build" button in `GameScreen`) — places a structure on the tapped tile instead, then automatically turns build mode back off.
 
-### Input Handler
-```typescript
-// input/InputHandler.ts
-export class InputHandler {
-  private seq = 0;
-  private keys: Phaser.Types.Input.Keyboard.CursorKeys;
+### Input — desktop and mobile share one message contract
 
-  update(room: Room) {
-    const dir = { x: 0, y: 0 };
-    if (this.keys.left.isDown)  dir.x = -1;
-    if (this.keys.right.isDown) dir.x = 1;
-    if (this.keys.up.isDown)    dir.y = -1;
-    if (this.keys.down.isDown)  dir.y = 1;
+No server changes were needed for touch support, confirming what [Planned Features](#planned-features) predicted: `input`'s `{x, y}` vector and `shoot`'s `angle` are already input-method-agnostic.
 
-    room.send('input', { dir, seq: ++this.seq });
-  }
-}
-```
+- **Desktop**: keyboard polling inside `GameScene`, above.
+- **Mobile**: `client/src/components/MobileJoystick.tsx` — a drag-based virtual joystick built from plain pointer events (no Phaser plugin dependency), rendered as a React overlay by `GameScreen` when `utils/device.ts`'s `isTouchDevice()` returns true. It computes the same `{x, y}` shape (each axis clamped to `[-1, 1]`) and calls into the active `GameScene` instance's `sendInputIfChanged()` — reached via `game.scene.getScene('GameScene')` from `GameScreen`, since the joystick is a React component with no direct reference to the Phaser scene.
+
+### HUD and Leaderboard — React overlays, not a Phaser UIScene
+
+`client/src/components/HUD.tsx` and `Leaderboard.tsx` render on top of the Phaser canvas (absolutely positioned `<div>`s in `GameScreen`), reading from `GameContext` — the same reactive `players`/`phase`/`phaseEndsAt` state already used by the lobby screen. This avoids re-deriving Colyseus reactivity a second time inside Phaser: the HUD shows the local player's health/ammo/tiles/credits and the phase countdown; the leaderboard ranks all players (currently by `credits`, standing in for `score` until [Planned Features #3](#planned-features) lands).
 
 ---
 
@@ -1062,51 +1048,51 @@ The server's `tsconfig.json` needs a few settings beyond the client's, driven by
 
 ---
 
-## Planned Features — Not Yet Implemented
+## Planned Features
 
-Captured 2026-09-20, before implementation started. These are design decisions and how they'd hook into the current architecture, so the next work session can pick them up without re-deriving anything. Nothing in this section exists in code yet.
+Captured 2026-09-20 as design ideas; the Phaser game view work session that followed (also 2026-09-20) implemented several of them along the way. Status is marked per item below — see the Decisions Log for what changed and why.
 
-### 1. Credits (economy)
+### 1. Credits (economy) — ✅ implemented
 
-- New synced field: `Player.credits: number` (or `Team.credits`, if teams — see below — pool credits at the team level).
-- Payout rule: **1 credit per tile owned, every 10 seconds.**
-- Implementation shape: a new `EconomySystem` (`server/src/systems/EconomySystem.ts`), called from `GameRoom.tick()` like the other systems. Rather than counting ticks (fragile if `TICK_RATE` ever changes), give `GameState` a `nextPayoutAt: number` field (same pattern as `GamePhaseState.endsAt`) — when `Date.now() >= nextPayoutAt`, pay out and set `nextPayoutAt = Date.now() + 10_000`.
-- Open question: does accrual run during every phase, or only `claiming`/`combat` (tiles aren't ownable before `claiming` starts, and it's unclear whether it should keep paying out during `results`)? Recommend stopping payouts once `results` begins, so the economy doesn't affect anything after the match is decided.
+- `Player.credits: number` (synced schema field) and `GameState.nextPayoutAt: number` (server timestamp of the next payout, same pattern as `GamePhaseState.endsAt`).
+- `server/src/systems/EconomySystem.ts`: every `CREDIT_PAYOUT_INTERVAL_MS` (10s, in `constants.ts`), every player with `tilesOwned > 0` gets `credits += tilesOwned`. Runs only during `claiming`/`combat` — payouts stop once `results` begins, per the open question raised when this was planned.
+- Wired into `GameRoom.tick()` alongside the other systems; `nextPayoutAt` is initialized in `onCreate()`.
+- Verified live: a throwaway script joined, claimed tiles, waited 11s, and confirmed `credits` incremented by exactly `tilesOwned` after one payout cycle.
 
-### 2. Teams
+### 2. Teams — not yet implemented
 
 - New schema: `GameState.teams: MapSchema<Team>`, where `Team` has `id`, `color`, and (if credits are pooled — see below) `credits`. `Player` gets a `teamId: string` field (empty string = free-for-all/no team, same convention as `Tile.ownerId`).
 - **Tile ownership needs a real decision here.** Today `Tile.ownerId` stores a player's `sessionId`. "Tiles all belong to the team" means either: (a) keep `Tile.ownerId` as the *player* id but always render/derive tile color from `player.teamId`'s team color, treating individual claims as team-attributed; or (b) change `Tile.ownerId` to store the *team* id directly once teams are active, so any teammate's presence claims for the team as a single pool. (b) is closer to what's described ("teammate's tiles all belong to the team") and simpler for `CollisionSystem`'s claim logic (no per-player tile counts to reconcile within a team), but it's a real schema/logic change, not just a rendering tweak — decide before implementing.
-- Credits: either **pooled at the team level** (one `Team.credits`, split only at scoring time or spendable as a shared pool) or **distributed evenly to each teammate's own `Player.credits`** every payout tick. The request says "credits are distributed evenly between teammates," which reads as the latter — `EconomySystem` would compute `teamTiles / teamSize` per payout and credit each connected teammate that amount (need a rounding/remainder rule for team sizes that don't divide evenly).
+- Credits: either **pooled at the team level** (one `Team.credits`, split only at scoring time or spendable as a shared pool) or **distributed evenly to each teammate's own `Player.credits`** every payout tick. The request says "credits are distributed evenly between teammates," which reads as the latter — `EconomySystem` would compute `teamTiles / teamSize` per payout and credit each connected teammate that amount (need a rounding/remainder rule for team sizes that don't divide evenly). Note `EconomySystem` currently pays each player individually based on their own `tilesOwned` — that logic will need to branch on whether teams are active.
 - Friendly fire: `CombatSystem.checkProjectilePlayerCollision` (or wherever the hit is applied) needs an early-out when `shooter.teamId !== '' && shooter.teamId === target.teamId`. Same idea for structures: `handlePlaceStructure`'s occupancy check already prevents overlap, but damaging/destroying needs a same-team guard added to whatever resolves projectile-vs-structure hits.
 - Open question: how are teams formed? Not designed yet — options are a lobby team-select UI (host or self-assign before `startGame`), auto-balancing on join, or a `joinTeam`/`leaveTeam` message during the `lobby` phase. Needs a decision before the client lobby screen can be built out.
 
-### 3. Win condition / Scoring
+### 3. Win condition / Scoring — not yet implemented
 
 - **Match length: 5 minutes to start** (make it configurable — a constant, not hardcoded, since the request already flags 5–10 min as a range to tune). Today's phase durations (`claiming` 90s + `combat` 120s = 210s ≈ 3.5 min) don't add up to 5 minutes on their own, so this needs a decision: either (a) lengthen `combat` so `claiming + combat ≈ 300s`, or (b) decouple "match length" from "phase length" entirely — give `GameState` a `matchEndsAt` (set once, at `startGame`) separate from `phase.endsAt`, and have `PhaseSystem` force an early transition to `results` once `Date.now() >= matchEndsAt`, regardless of which phase is active. (b) is more flexible (lets `claiming`/`combat` loop or vary in length later without re-deriving "5 minutes") and is the recommended approach.
 - Scoring formula: `score = credits × pointsPerCredit + Σ(structure count × its point value)`.
-  - Structure point values: **city hall 1000, school 250, house 100, fort 25.** This means `Structure` needs a `type` field it doesn't have today (`'cityHall' | 'school' | 'house' | 'fort'`), a `STRUCTURE_POINTS` lookup in `constants.ts`, and the `placeStructure` message needs a `structureType` field added (today it's just `{ tileX, tileY, seq }`) plus whatever client UI lets a player pick a type before placing.
+  - Structure point values: **city hall 1000, school 250, house 100, fort 25.** This means `Structure` needs a `type` field it doesn't have today (`'cityHall' | 'school' | 'house' | 'fort'`), a `STRUCTURE_POINTS` lookup in `constants.ts`, and the `placeStructure` message needs a `structureType` field added (today it's just `{ tileX, tileY, seq }`) plus whatever client UI lets a player pick a type before placing — the `GameScene`'s build-mode tap-to-place flow (see [Client — Phaser Game](#client--phaser-game)) would need a type picker added before this can be wired up.
   - `pointsPerCredit` value is not yet chosen — placeholder constant, tune during playtesting.
   - Implies a `Player.score` (or `Team.score`) field, recomputed on payout and on structure build/destroy events rather than every tick (score only changes on those events, so no need to recompute per-tick).
 - Win condition: at match end (`matchEndsAt` reached), highest score wins — player-level in free-for-all, team-level (sum or average of teammates' scores — decide which) if teams are active. Tie-breaking is not addressed yet — flag for later.
+- The Leaderboard (#5, below) currently sorts by `credits` as a stand-in, since `score` doesn't exist yet — swap the sort key once it does.
 
-### 4. HUD (credits + score)
+### 4. HUD (credits + score) — ✅ implemented (credits; score pending #3)
 
-Purely a rendering concern once `Player.credits`/`Player.score` (or the team equivalents) exist as schema fields — they're already synced to every client via the existing `GameStateShape`/`getStateCallbacks` machinery (see [Client — React Shell](#client--react-shell)), so no new message types are needed. Add `credits`/`score` to `client/src/types/gameState.ts`'s `PlayerState` interface and render them wherever the HUD lives (a Phaser `UIScene` overlay or a React overlay atop the canvas — not yet decided which, since neither exists yet).
+`client/src/components/HUD.tsx` — a React overlay (not a Phaser `UIScene`; see [Client — Phaser Game](#client--phaser-game) for why) rendered on top of the Phaser canvas by `GameScreen`. Shows the current phase and countdown, and the local player's health, ammo, tiles owned, and credits. Score will slot in next to credits once #3 exists.
 
-### 5. Leaderboard / player-status info panel
+### 5. Leaderboard / player-status info panel — ✅ implemented
 
-A live, ranked view of every player's (or team's) score. Since `players` is already a reactive `MapSchema` kept in sync client-side (`GameContext`'s `players` array, updated via `onAdd`/`onRemove`/`onChange`), this is a client-only feature: sort that array (or a future `teams` array) by `score` descending and render it. No server changes beyond the score field itself existing.
+`client/src/components/Leaderboard.tsx` — a React overlay listing every player, sorted by `credits` descending (a stand-in for `score` until #3 lands), showing tiles/kills/connection status too. Needs no server changes beyond the fields it already reads — it's driven entirely by `GameContext`'s existing reactive `players` array.
 
-### 6. Mobile web controls
+### 6. Mobile web controls — ✅ implemented
 
-The existing message contract already supports this without server changes: `input` takes an abstract `{x, y}` direction vector and `shoot` takes an `angle` — neither is tied to keyboard key codes — so a touch input scheme produces the exact same messages a keyboard scheme does. What's needed is purely client-side:
-- A virtual joystick (drag-based direction vector) for movement, in place of (or alongside) the keyboard `InputHandler` sketch under [Client — Phaser Game](#client--phaser-game) — e.g. a touch-drag handler emitting the same `{x, y}` shape, or a library like `phaser3-rex-plugins`'s virtual joystick if the game view ends up in Phaser.
-- A tap-to-shoot or fire-button control, and a tap-a-tile-you-own gesture for `placeStructure`.
-- Touch vs. keyboard capability detection to choose which input scheme mounts (`('ontouchstart' in window)` or a pointer-type media query, typically).
-- Responsive layout for the HUD/leaderboard/menus — touch-sized tap targets, a proper viewport meta tag, and the canvas resizing to fill a mobile viewport — a Vite/CSS/React concern independent of any of the above.
+- `client/src/components/MobileJoystick.tsx` — a drag-based virtual joystick built with pointer events (not a Phaser plugin), producing the same `{x, y}` direction vector shape the keyboard path does. `GameScreen` shows it when `utils/device.ts`'s `isTouchDevice()` check passes, and it feeds into the same `GameScene.sendInputIfChanged()` throttle/dedupe path the keyboard uses (see [Client — Phaser Game](#client--phaser-game)) — no separate server-side handling needed, confirming the original prediction that the existing `input`/`shoot` message shapes already supported this.
+- Shooting and structure-placement are tap-driven in `GameScene` itself (a tap shoots toward the tap point; a "Build" button arms one-shot placement mode for the next tap) — the same handlers serve both mouse and touch, since Phaser's pointer events unify them.
+- Not yet done: a dedicated fire button (tap-to-shoot doubles as both aim and fire today, which is serviceable but not necessarily the best mobile feel — worth revisiting during playtesting) and responsive layout tuning for small screens (the HUD/leaderboard positioning hasn't been tested at phone width yet).
 
 ---
+
 
 ## Decisions Log
 
@@ -1137,3 +1123,8 @@ The existing message contract already supports this without server changes: `inp
 | Contested tile-claim resolution | Iteration order over `state.players` (join order) | Resolve by earliest input `seq`, as originally planned | Not yet implemented as designed — flagged as a known gap in Testing Multiplayer Locally rather than silently left inconsistent with the original design |
 | Client networking library / server version pairing | `colyseus.js@0.16.22` (the only published client) against `colyseus@0.16.5` + `@colyseus/schema@^3.0.76` on the server | Server on `colyseus@^0.18` / `@colyseus/schema@^5.0` (the original scaffold choice) | The server was originally scaffolded on the 0.18 line, but no published `colyseus.js` client supports it — confirmed via a direct `curl` comparison showing the matchmake HTTP response shape itself changed (nested `{room:{...}}` vs flat), not just the schema encoding. Downgraded the server to the one version line with a verified-compatible client, and confirmed end-to-end with a live join/decode/message-round-trip test (see Testing Multiplayer Locally) |
 | `useDefineForClassFields` on the server | `false` | `true` (TypeScript's default at `target: "ES2022"`, i.e. leaving it unset) | Left unset, class field initializers compile to `Object.defineProperty` in the constructor, which overwrites the getter/setter `@colyseus/schema`'s legacy `@type()` decorator installs on the prototype for change tracking. This produced no compile error and no symptom until the first client join, when the server crashed encoding full state — a second, independent bug found only by testing a real client against a real server rather than trusting either side's isolated build/lint/typecheck passing |
+| HUD/leaderboard implementation | React overlay components (`HUD.tsx`, `Leaderboard.tsx`) absolutely positioned over the Phaser canvas | A Phaser `UIScene` (as in the original sketch) | `GameContext` already keeps `players`/`phase` reactive on the React side (via `getStateCallbacks`); a `UIScene` would need to re-derive that same reactivity inside Phaser purely to re-display it. Overlaying React avoids the duplication and lets the HUD/leaderboard reuse the exact state the lobby screen already renders |
+| Phaser scene structure | One `GameScene` handling tiles, all entity types, camera, and input | Split `TileRenderer`/`PlayerRenderer`/`ProjectileRenderer`/`StructureRenderer`/`InputHandler` files, as the original sketch proposed | Premature separation for a first working version — the single-file scene is small enough to stay readable; splitting it out is easy to do later once/if it grows |
+| Mobile movement input | A hand-built drag joystick (`MobileJoystick.tsx`, plain pointer events, no external dependency) | A Phaser plugin (e.g. `phaser3-rex-plugins`'s virtual joystick), as the original plan suggested | Avoids a new dependency for a fairly small amount of pointer-event math, and keeps the control as a React component consistent with the rest of the UI overlay (HUD, leaderboard, build button) rather than mixing input-handling styles between Phaser and React |
+| Structure/tile rendering | Plain Phaser primitives (`add.circle`/`add.rectangle`/a shared `Graphics`) | Sprite-based rendering with a `PreloadScene` loading art assets, as the original sketch proposed | No art assets exist yet; primitives need no preloading and are enough to validate the networking/rendering pipeline. Swapping in real sprites later is a `GameScene` change only, not an architecture change |
+| Credits payout scope | Every player earns 1 credit per tile they individually own, during `claiming`/`combat` only | Payouts continuing into `results`, or scoped only to `combat` | Matches the request's "based on number of tiles they control" without over-scoping into phases where tile ownership isn't changing meaningfully or the match is already decided; open questions about team-pooled credits remain in Planned Features #2 |

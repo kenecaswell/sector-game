@@ -18,6 +18,7 @@ export interface PlayerState {
   ammo: number;
   tilesOwned: number;
   kills: number;
+  credits: number;
   connected: boolean;
   color: string;
 }
@@ -58,4 +59,5 @@ export interface GameStateShape {
   phase: GamePhaseStateShape;
   mapWidth: number;
   mapHeight: number;
+  nextPayoutAt: number;
 }

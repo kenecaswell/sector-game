@@ -4,8 +4,14 @@ import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
+import { EconomySystem } from '../systems/EconomySystem';
 import type { Broadcast } from '../systems/Broadcast';
-import { TICK_RATE, TILE_SIZE, RECONNECT_WINDOW_SECONDS } from '../constants';
+import {
+  TICK_RATE,
+  TILE_SIZE,
+  RECONNECT_WINDOW_SECONDS,
+  CREDIT_PAYOUT_INTERVAL_MS,
+} from '../constants';
 import type {
   InputMessage,
   ShootMessage,
@@ -26,11 +32,12 @@ const PLAYER_COLORS = [
   '#ff7675',
 ];
 
-export class GameRoom extends Room<{ state: GameState }> {
+export class GameRoom extends Room<GameState> {
   maxClients = 10;
 
   // Per-player transient state that shouldn't be synced to clients, so it
-  // lives outside the Colyseus schema rather than as @type fields.
+  // lives outside the Colyseus schema rather than as @type fields. NOT named
+  // `inputs` — some Colyseus versions reserve that property name on Room.
   private playerInputs = new Map<string, PlayerInput>();
   private hostId: string | null = null;
   private nextProjectileId = 0;
@@ -42,6 +49,7 @@ export class GameRoom extends Room<{ state: GameState }> {
     for (let i = 0; i < state.mapWidth * state.mapHeight; i++) {
       state.tiles.push(new Tile());
     }
+    state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
     this.setState(state);
 
     this.setSimulationInterval((dt) => this.tick(dt / 1000), 1000 / TICK_RATE);
@@ -67,34 +75,24 @@ export class GameRoom extends Room<{ state: GameState }> {
     if (this.hostId === null) this.hostId = client.sessionId;
   }
 
-  onDrop(client: Client): void {
-    // Called on an unconsented disconnect (dropped connection). Freeze the
-    // player entity in place — tiles/structures are retained — and open a
-    // reconnection window. onLeave() fires when this window expires, or
-    // onReconnect() fires if the player comes back in time.
+  async onLeave(client: Client, consented: boolean): Promise<void> {
     const player = this.state.players.get(client.sessionId);
     if (player) player.connected = false;
 
-    this.allowReconnection(client, RECONNECT_WINDOW_SECONDS);
-  }
+    if (consented) {
+      this.cleanupPlayer(client.sessionId);
+      return;
+    }
 
-  onReconnect(client: Client): void {
-    const player = this.state.players.get(client.sessionId);
-    if (player) player.connected = true;
-  }
-
-  onLeave(client: Client): void {
-    // Fires for both a consented leave and an expired reconnection window —
-    // either way the player is gone for good, so release their tiles.
-    this.state.tiles.forEach((tile) => {
-      if (tile.ownerId === client.sessionId) tile.ownerId = '';
-    });
-    this.state.players.delete(client.sessionId);
-    this.playerInputs.delete(client.sessionId);
-
-    if (this.hostId === client.sessionId) {
-      const next = Array.from(this.state.players.values()).find((p) => p.connected);
-      this.hostId = next ? next.id : null;
+    try {
+      // Freezes the player entity in place — tiles/structures are retained
+      // — while this client has a chance to reconnect.
+      await this.allowReconnection(client, RECONNECT_WINDOW_SECONDS);
+      const reconnected = this.state.players.get(client.sessionId);
+      if (reconnected) reconnected.connected = true;
+    } catch {
+      // Reconnection window expired.
+      this.cleanupPlayer(client.sessionId);
     }
   }
 
@@ -102,18 +100,32 @@ export class GameRoom extends Room<{ state: GameState }> {
     // No external resources to release yet (no DB connections, timers, etc.)
   }
 
+  private cleanupPlayer(sessionId: string): void {
+    this.state.tiles.forEach((tile) => {
+      if (tile.ownerId === sessionId) tile.ownerId = '';
+    });
+    this.state.players.delete(sessionId);
+    this.playerInputs.delete(sessionId);
+
+    if (this.hostId === sessionId) {
+      const next = Array.from(this.state.players.values()).find((p) => p.connected);
+      this.hostId = next ? next.id : null;
+    }
+  }
+
   private tick(dt: number): void {
     MovementSystem.update(this.state, this.playerInputs, dt);
     CollisionSystem.update(this.state, this.broadcastEvent);
     CombatSystem.update(this.state, dt, this.broadcastEvent);
     PhaseSystem.update(this.state, this.broadcastEvent);
+    EconomySystem.update(this.state);
   }
 
   private handleInput(client: Client, msg: InputMessage): void {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.connected) return;
 
-    // Clamp so a malicious/buggy client can't send an oversized direction
+    // Clamp so a buggy/malicious client can't send an oversized direction
     // vector and move faster than PLAYER_SPEED.
     const dir = {
       x: Math.max(-1, Math.min(1, msg.dir?.x ?? 0)),
