@@ -1,39 +1,70 @@
-import type { GameState } from '../state/GameState';
+import type { GameState, Player } from '../state/GameState';
 import { CollisionSystem } from './CollisionSystem';
+import { StructureSystem } from './StructureSystem';
+import { PROJECTILE_LIFETIME_MS, PROJECTILE_DAMAGE, TILE_SIZE } from '../constants';
+import type { Broadcast } from './Broadcast';
+import type { PlayerHitEvent } from '../types/shared';
 
-const PROJECTILE_LIFETIME_MS = 2000;
-const PROJECTILE_DAMAGE = 25;
+function respawnPlayer(state: GameState, player: Player): void {
+  // Territory-claiming game, not a deathmatch — a defeated player respawns
+  // at the map center with full health rather than being eliminated.
+  // Kills and tilesOwned are untouched.
+  player.health = 100;
+  player.x = (state.mapWidth * TILE_SIZE) / 2;
+  player.y = (state.mapHeight * TILE_SIZE) / 2;
+}
 
 /**
  * Advances all in-flight projectiles, applies hit detection against
  * players and structures, and removes expired or spent projectiles.
  */
-function update(state: GameState, dt: number): void {
+function update(state: GameState, dt: number, broadcast: Broadcast): void {
   if (state.phase.phase !== 'combat') return;
 
-  const toRemove: string[] = [];
+  const now = Date.now();
+  const toRemove = new Set<string>();
 
   state.projectiles.forEach((proj, id) => {
     proj.x += Math.cos(proj.angle) * proj.speed * dt;
     proj.y += Math.sin(proj.angle) * proj.speed * dt;
 
     state.players.forEach((player) => {
-      if (player.id === proj.ownerId || !player.connected) return;
-      if (CollisionSystem.checkProjectilePlayerCollision(proj, player)) {
-        player.health = Math.max(0, player.health - PROJECTILE_DAMAGE);
-        toRemove.push(id);
-        // TODO: broadcast 'playerHit' event { targetId, damage, shooterId }
+      if (toRemove.has(id) || player.id === proj.ownerId || !player.connected) return;
+      if (!CollisionSystem.checkProjectilePlayerCollision(proj, player)) return;
+
+      toRemove.add(id);
+      player.health = Math.max(0, player.health - PROJECTILE_DAMAGE);
+      broadcast('playerHit', {
+        targetId: player.id,
+        damage: PROJECTILE_DAMAGE,
+        shooterId: proj.ownerId,
+      } satisfies PlayerHitEvent);
+
+      if (player.health === 0) {
+        const shooter = state.players.get(proj.ownerId);
+        if (shooter) shooter.kills++;
+        respawnPlayer(state, player);
       }
     });
 
-    // Out of bounds or lifetime expiry — placeholder bounds check.
-    if (proj.x < 0 || proj.y < 0 || proj.x > state.mapWidth * 32 || proj.y > state.mapHeight * 32) {
-      toRemove.push(id);
-    }
+    state.structures.forEach((structure) => {
+      if (toRemove.has(id) || structure.ownerId === proj.ownerId) return;
+      if (!CollisionSystem.checkProjectileStructureCollision(proj, structure)) return;
+
+      toRemove.add(id);
+      StructureSystem.applyDamage(state, structure.id, PROJECTILE_DAMAGE, broadcast);
+    });
+
+    const outOfBounds =
+      proj.x < 0 ||
+      proj.y < 0 ||
+      proj.x > state.mapWidth * TILE_SIZE ||
+      proj.y > state.mapHeight * TILE_SIZE;
+    const expired = now - proj.spawnedAt > PROJECTILE_LIFETIME_MS;
+    if (outOfBounds || expired) toRemove.add(id);
   });
 
   toRemove.forEach((id) => state.projectiles.delete(id));
-  void PROJECTILE_LIFETIME_MS; // reserved for time-based expiry once spawn timestamps are tracked
 }
 
 export const CombatSystem = { update };

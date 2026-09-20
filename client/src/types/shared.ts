@@ -1,6 +1,6 @@
 // Shared message shapes between client and server.
-// Mirrors the "Message Shapes" section of docs/technical-blueprint.md.
-// Copy or symlink this file into client/src/types/shared.ts to keep both sides in sync.
+// Mirrors server/src/types/shared.ts exactly — keep both files in sync by hand
+// (see docs/technical-blueprint.md "Message Shapes" section for the source of truth).
 
 export type GamePhase = 'lobby' | 'claiming' | 'combat' | 'results';
 

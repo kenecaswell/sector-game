@@ -24,6 +24,7 @@ export class Projectile extends Schema {
   @type('number') y: number = 0;
   @type('number') angle: number = 0;
   @type('number') speed: number = 400; // pixels/sec
+  @type('number') spawnedAt: number = 0; // server timestamp ms, for lifetime expiry
 }
 
 export class Structure extends Schema {

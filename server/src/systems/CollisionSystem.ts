@@ -1,8 +1,7 @@
 import type { GameState } from '../state/GameState';
-
-export const TILE_SIZE = 32;
-const PROJECTILE_RADIUS = 6;
-const PLAYER_RADIUS = 16;
+import { TILE_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
+import type { Broadcast } from './Broadcast';
+import type { TilesClaimedEvent } from '../types/shared';
 
 function checkProjectilePlayerCollision(
   proj: { x: number; y: number },
@@ -25,7 +24,8 @@ function checkProjectileStructureCollision(
 
 function claimTile(
   state: GameState,
-  player: { id: string; x: number; y: number; tilesOwned: number }
+  player: { id: string; x: number; y: number; tilesOwned: number },
+  claimed: TilesClaimedEvent['tiles']
 ): void {
   const tileX = Math.floor(player.x / TILE_SIZE);
   const tileY = Math.floor(player.y / TILE_SIZE);
@@ -39,19 +39,27 @@ function claimTile(
   }
   tile.ownerId = player.id;
   player.tilesOwned++;
+  claimed.push({ x: tileX, y: tileY, ownerId: player.id });
 }
 
 /**
- * Runs tile-claiming collision each tick. Projectile/structure hit
- * detection is wired in once CombatSystem spawns projectiles.
+ * Runs tile-claiming collision each tick and broadcasts a single batched
+ * 'tilesClaimed' event for whatever changed this tick (rather than one
+ * broadcast per tile). Projectile/structure hit detection lives in
+ * CombatSystem, which already iterates projectiles each tick.
  */
-function update(state: GameState): void {
+function update(state: GameState, broadcast: Broadcast): void {
   if (state.phase.phase !== 'claiming' && state.phase.phase !== 'combat') return;
 
+  const claimed: TilesClaimedEvent['tiles'] = [];
   state.players.forEach((player) => {
     if (!player.connected) return;
-    claimTile(state, player);
+    claimTile(state, player, claimed);
   });
+
+  if (claimed.length > 0) {
+    broadcast('tilesClaimed', { tiles: claimed } satisfies TilesClaimedEvent);
+  }
 }
 
 export const CollisionSystem = {
