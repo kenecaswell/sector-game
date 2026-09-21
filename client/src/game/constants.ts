@@ -18,6 +18,17 @@ export const STRUCTURE_LIFT = 8;
 export const INPUT_SEND_INTERVAL_MS = 50;
 export const INPUT_KEEPALIVE_MS = 250; // resend even if unchanged, in case a packet dropped
 
+// --- Click-to-move (right-click on desktop) ---
+export const TARGET_ARRIVE_DISTANCE = 10; // world px: closer than this counts as arrived
+export const TARGET_SLOW_DISTANCE = 80; // world px: ease the speed off inside this so we stop on the spot
+export const TARGET_STUCK_MS = 1200; // give up if there's no progress this long (blocked by a structure...)
+export const TARGET_MARKER_COLOR = 0xffffff;
+
+// --- Shooting ---
+// Minimum time between shots for held Space / the mobile fire button and rapid clicking.
+// Client-side only for now: the server has no fire-rate limit (see blueprint Known Issues).
+export const FIRE_INTERVAL_MS = 200;
+
 // --- Smoothness ---
 // Rendered positions chase the server's latest state with frame-rate-independent
 // exponential smoothing. Server state arrives at 20Hz, so the target is nudged
@@ -47,3 +58,5 @@ export const HEX_SIDE_COLOR = 0x262f45;
 export const HEX_SIDE_DARK_COLOR = 0x1d2436;
 export const HEX_OUTLINE_COLOR = 0x1a1a2e;
 export const CLAIM_BLEND = 0.65; // how strongly an owner's color tints a claimed hex top
+export const CLAIM_BORDER_DARKEN = 0.45; // border of a claimed hex: its fill, darkened by this much
+export const CLAIM_BORDER_WIDTH = 2;

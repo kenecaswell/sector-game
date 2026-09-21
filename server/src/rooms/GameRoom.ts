@@ -5,6 +5,7 @@ import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
 import { EconomySystem } from '../systems/EconomySystem';
+import { ScoreSystem } from '../systems/ScoreSystem';
 import { hexIndex, isValidHex, mapPixelSize } from '../hex';
 import type { Broadcast } from '../systems/Broadcast';
 import {
@@ -18,6 +19,7 @@ import type {
   ShootMessage,
   PlaceStructureMessage,
   InputAckEvent,
+  GameOverEvent,
 } from '../types/shared';
 
 const PLAYER_COLORS = [
@@ -41,6 +43,8 @@ export class GameRoom extends Room<GameState> {
   // `inputs` — some Colyseus versions reserve that property name on Room.
   private playerInputs = new Map<string, PlayerInput>();
   private hostId: string | null = null;
+  private matchFinished = false;
+  private closing = false;
   private nextProjectileId = 0;
 
   private readonly broadcastEvent: Broadcast = (type, payload) => this.broadcast(type, payload);
@@ -61,6 +65,7 @@ export class GameRoom extends Room<GameState> {
       this.handlePlaceStructure(client, msg)
     );
     this.onMessage('startGame', (client) => this.handleStartGame(client));
+    this.onMessage('endBuying', (client) => this.handleEndBuying(client));
   }
 
   onJoin(client: Client): void {
@@ -87,7 +92,8 @@ export class GameRoom extends Room<GameState> {
     // startGame, so hand the role to someone who can.
     this.reassignHostIfNeeded();
 
-    if (consented) {
+    // Nobody needs a reconnect window once the match is over — let them go so the room can close.
+    if (consented || this.state.phase.phase === 'results') {
       this.cleanupPlayer(client.sessionId);
       return;
     }
@@ -133,12 +139,36 @@ export class GameRoom extends Room<GameState> {
     if (next) this.hostId = next.id;
   }
 
+  /**
+   * When the match ends: lock the room so matchmaking stops sending new players
+   * into it, and close it once the results period is over. (It also closes as
+   * soon as the last player leaves — see onLeave and Colyseus's autoDispose.)
+   */
+  private closeFinishedMatch(): void {
+    if (this.state.phase.phase !== 'results') return;
+
+    if (!this.matchFinished) {
+      this.matchFinished = true;
+      this.lock();
+      ScoreSystem.update(this.state); // make sure the snapshot reflects the very last tick
+      this.broadcast('gameOver', {
+        scores: ScoreSystem.finalScores(this.state),
+      } satisfies GameOverEvent);
+    }
+    if (!this.closing && Date.now() >= this.state.phase.endsAt) {
+      this.closing = true;
+      void this.disconnect();
+    }
+  }
+
   private tick(dt: number): void {
     MovementSystem.update(this.state, this.playerInputs, dt);
     CollisionSystem.update(this.state, this.broadcastEvent);
     CombatSystem.update(this.state, dt, this.broadcastEvent);
     PhaseSystem.update(this.state, this.broadcastEvent);
+    this.closeFinishedMatch();
     EconomySystem.update(this.state);
+    ScoreSystem.update(this.state);
   }
 
   private handleInput(client: Client, msg: InputMessage): void {
@@ -169,7 +199,7 @@ export class GameRoom extends Room<GameState> {
 
   private handleShoot(client: Client, msg: ShootMessage): void {
     const player = this.state.players.get(client.sessionId);
-    if (!player || !player.connected || this.state.phase.phase !== 'combat') return;
+    if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
     if (player.ammo <= 0) return;
 
     player.ammo--;
@@ -187,7 +217,7 @@ export class GameRoom extends Room<GameState> {
 
   private handlePlaceStructure(client: Client, msg: PlaceStructureMessage): void {
     const player = this.state.players.get(client.sessionId);
-    if (!player || !player.connected || this.state.phase.phase !== 'combat') return;
+    if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
 
     // Validate first — an out-of-range column would otherwise wrap onto another row.
     if (!isValidHex(msg.tileX, msg.tileY, this.state.mapWidth, this.state.mapHeight)) return;
@@ -209,10 +239,21 @@ export class GameRoom extends Room<GameState> {
     this.state.structures.set(structure.id, structure);
   }
 
+  /**
+   * TEMPORARY testing shortcut: the host can end the buying phase early (the client sends this when
+   * they close the shop popup during buying) so a solo tester doesn't wait out the 30s. Host-only so
+   * other players closing their popup can't start the match. Remove once the buy menu is real.
+   */
+  private handleEndBuying(client: Client): void {
+    if (client.sessionId !== this.hostId) return;
+    if (this.state.phase.phase !== 'buying') return;
+    PhaseSystem.transitionTo(this.state, 'playing', this.broadcastEvent);
+  }
+
   private handleStartGame(client: Client): void {
     if (client.sessionId !== this.hostId) return;
     if (this.state.phase.phase !== 'lobby') return;
 
-    PhaseSystem.transitionTo(this.state, 'claiming', this.broadcastEvent);
+    PhaseSystem.transitionTo(this.state, 'buying', this.broadcastEvent);
   }
 }

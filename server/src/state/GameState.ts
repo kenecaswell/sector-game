@@ -1,4 +1,5 @@
 import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
+import { STARTING_CREDITS } from '../constants';
 
 export class Player extends Schema {
   @type('string') id: string = '';
@@ -12,7 +13,8 @@ export class Player extends Schema {
   @type('number') ammo: number = 30;
   @type('number') tilesOwned: number = 0;
   @type('number') kills: number = 0;
-  @type('number') credits: number = 0;
+  @type('number') score: number = 0; // computed by ScoreSystem: tiles + kills x 50 + structures
+  @type('number') credits: number = STARTING_CREDITS;
   @type('boolean') connected: boolean = true;
   @type('string') color: string = '';
 }
@@ -41,7 +43,7 @@ export class Structure extends Schema {
 }
 
 export class GamePhaseState extends Schema {
-  @type('string') phase: string = 'lobby'; // lobby | claiming | combat | results
+  @type('string') phase: string = 'lobby'; // lobby | buying | playing | results
   @type('number') endsAt: number = 0; // server timestamp ms
 }
 

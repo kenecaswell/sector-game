@@ -21,7 +21,27 @@ export const PLAYER_ACCEL = 1200; // pixels/sec^2 — speeding up, slowing down,
 export const PLAYER_RADIUS = 16; // pixels, for projectile collision
 
 export const PROJECTILE_RADIUS = 6; // pixels, for player collision
-export const PROJECTILE_DAMAGE = 25;
+export const PROJECTILE_DAMAGE = 50; // players start at 100 health, so two hits kill (armor and better guns come later)
 export const PROJECTILE_LIFETIME_MS = 2000;
+
+// Phase lengths. PHASE_TIME_SCALE (an environment variable, dev/testing only) shrinks them all so
+// a whole match can be run in seconds, e.g. PHASE_TIME_SCALE=0.02 npm run dev. Leave it unset normally.
+const requestedScale = Number(process.env.PHASE_TIME_SCALE);
+const PHASE_TIME_SCALE = requestedScale > 0 ? requestedScale : 1;
+export const BUY_PHASE_DURATION_MS = 30_000 * PHASE_TIME_SCALE; // quick shopping before play starts
+export const MATCH_DURATION_MS = 5 * 60_000 * PHASE_TIME_SCALE; // the `playing` phase
+// After the match ends the room is locked (no new players) and kept open this long so players can
+// look at the results, then closed. It closes sooner if everyone leaves.
+export const RESULTS_DURATION_MS = 60_000 * PHASE_TIME_SCALE;
+
+export const STARTING_CREDITS = 100; // credits each player begins with (to spend in the buy menu)
+
+// Score = tiles owned x TILE_POINTS + kills x KILL_POINTS + structures owned x STRUCTURE_POINTS.
+// Credits are NOT part of the score (they're for buying things). STRUCTURE_POINTS is a
+// placeholder for the one generic structure; planned types (city hall/school/house/fort)
+// will each get their own value.
+export const TILE_POINTS = 1;
+export const KILL_POINTS = 50;
+export const STRUCTURE_POINTS = 25;
 
 export const CREDIT_PAYOUT_INTERVAL_MS = 10_000; // 1 credit per owned tile, every 10s

@@ -1,6 +1,12 @@
 import type { GameState } from '../state/GameState';
-import { INPUT_STALE_MS, PLAYER_ACCEL, PLAYER_SPEED, SCREEN_Y_SCALE } from '../constants';
-import { mapPixelSize } from '../hex';
+import {
+    INPUT_STALE_MS,
+    PLAYER_ACCEL,
+    PLAYER_RADIUS,
+    PLAYER_SPEED,
+    SCREEN_Y_SCALE,
+} from '../constants';
+import { hexEdgeContact, mapPixelSize } from '../hex';
 
 export interface PlayerInput {
     dir: { x: number; y: number };
@@ -9,6 +15,7 @@ export interface PlayerInput {
 }
 
 const INPUT_DEADZONE = 0.05;
+const APPROACH_EPSILON = 1e-3; // px; see findBlockingStructure
 
 /**
  * Moves each connected player by easing their velocity toward the velocity
@@ -23,10 +30,23 @@ const INPUT_DEADZONE = 0.05;
  * up the screen has a larger world-y component than one pointing sideways has
  * world-x, and both look equally fast. Longer vectors are clamped to that limit.
  *
+ * Structures are solid to everyone except their owner: a player can't move
+ * into another player's structure and instead slides along it. Players who end
+ * up inside one (e.g. it was built on top of them) can still move out.
+ *
  * Players with no input keep decelerating to a stop. Does not touch tile
- * ownership or collisions — see CollisionSystem for that.
+ * ownership — see CollisionSystem for that.
  */
 function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number): void {
+    // Players only move during the match: not in the lobby, while shopping, or after it ends.
+    if (state.phase.phase !== 'playing') {
+        state.players.forEach((player) => {
+            player.vx = 0;
+            player.vy = 0;
+        });
+        return;
+    }
+
     const { width, height } = mapPixelSize(state.mapWidth, state.mapHeight);
     const maxVelocityChange = PLAYER_ACCEL * dt;
     const now = Date.now();
@@ -69,13 +89,69 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
 
         const nextX = player.x + player.vx * dt;
         const nextY = player.y + player.vy * dt;
-        player.x = Math.max(0, Math.min(width, nextX));
-        player.y = Math.max(0, Math.min(height, nextY));
+        let x = Math.max(0, Math.min(width, nextX));
+        let y = Math.max(0, Math.min(height, nextY));
 
         // Sliding along a map edge shouldn't keep building velocity into it.
-        if (player.x !== nextX) player.vx = 0;
-        if (player.y !== nextY) player.vy = 0;
+        if (x !== nextX) player.vx = 0;
+        if (y !== nextY) player.vy = 0;
+
+        const hit = findBlockingStructure(state, sessionId, player.x, player.y, x, y);
+        if (hit) {
+            // Slide: drop the part of the motion (and velocity) that points into the structure.
+            const moveX = x - player.x;
+            const moveY = y - player.y;
+            const into = moveX * hit.nx + moveY * hit.ny;
+            if (into < 0) {
+                x = player.x + moveX - into * hit.nx;
+                y = player.y + moveY - into * hit.ny;
+            }
+            const speedInto = player.vx * hit.nx + player.vy * hit.ny;
+            if (speedInto < 0) {
+                player.vx -= speedInto * hit.nx;
+                player.vy -= speedInto * hit.ny;
+            }
+            // Wedged between two structures: don't move at all.
+            if (findBlockingStructure(state, sessionId, player.x, player.y, x, y)) {
+                x = player.x;
+                y = player.y;
+            }
+        }
+
+        player.x = Math.max(0, Math.min(width, x));
+        player.y = Math.max(0, Math.min(height, y));
     });
+}
+
+/**
+ * The first structure (not owned by `playerId`) that moving from (fromX, fromY)
+ * to (toX, toY) would push the player's circle further into, or null. Moves that
+ * don't get closer are allowed, which is what lets a player who's already inside
+ * a structure walk out of it. Returns the push-out direction at the player's
+ * *current* position (edge normal, or away from the nearest corner) so the caller
+ * can slide around it — using the destination's normal fails at corners, where it
+ * points along the motion.
+ */
+function findBlockingStructure(
+    state: GameState,
+    playerId: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number
+): { nx: number; ny: number } | null {
+    for (const structure of state.structures.values()) {
+        if (structure.ownerId === playerId) continue;
+
+        const to = hexEdgeContact(toX, toY, structure.tileX, structure.tileY);
+        if (to.distance >= PLAYER_RADIUS) continue;
+
+        const from = hexEdgeContact(fromX, fromY, structure.tileX, structure.tileY);
+        // Tolerance: sliding along an edge keeps the distance the same up to floating-point
+        // noise, and that must not count as "getting closer" or the player freezes in place.
+        if (to.distance < from.distance - APPROACH_EPSILON) return { nx: from.nx, ny: from.ny };
+    }
+    return null;
 }
 
 export const MovementSystem = { update };

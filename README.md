@@ -7,7 +7,7 @@ Server-authoritative: clients send inputs, the server simulates everything and s
 - **Server:** Node.js + TypeScript + [Colyseus](https://colyseus.io/) 0.16
 - **Client:** React 19 + [Phaser](https://phaser.io/) 4 (Vite, TypeScript)
 
-> **Status:** playable prototype. You can join a lobby, start a match, move with mouse-aim controls, claim hexes, earn credits, and shoot. Teams, scoring/win condition, and the results screen are designed but not built. See [Current Status & Known Issues](docs/technical-blueprint.md#current-status--known-issues).
+> **Status:** playable prototype. You can join a lobby, start a match, move around an isometric hex map, claim hexes, earn credits, shoot other players, and build structures. Teams, scoring/win condition, and the results screen are designed but not built. See [Current Status & Known Issues](docs/technical-blueprint.md#current-status--known-issues).
 
 ## Quick start
 
@@ -76,6 +76,7 @@ There is no automated test suite yet. Before committing, run `npm run build && n
 | Setting | Where | Default |
 |---|---|---|
 | Server port | `PORT` environment variable | `2567` |
+| Phase length multiplier (dev/testing only) | `PHASE_TIME_SCALE` on the server, e.g. `PHASE_TIME_SCALE=0.05 npm run dev` runs a whole match in about 20 seconds | `1` |
 | Server URL the client connects to | `VITE_SERVER_URL` (put it in `client/.env.local`) | `ws://localhost:2567` |
 
 Health check: `GET http://localhost:2567/health` returns `{"status":"ok"}`.
@@ -101,20 +102,25 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | | Desktop | Touch |
 |---|---|---|
 | Aim | Mouse | Follows your movement direction |
-| Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen | Virtual joystick (bottom left) |
-| Shoot | Click (combat phase) | Tap the map |
-| Build a structure | **Build** button, then click a hex you own (combat phase) | **Build** button, then tap a hex you own |
+| Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
+| Shoot | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, hold to keep firing), or tap the map to fire at that spot |
+| Build a structure | **Build** button, then click a hex you own | **Build** button (above FIRE), then tap a hex you own |
+| Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
+| Shop | **Shop** button (below Leaderboard) or `B`; `Esc` closes | **Shop** button |
+| FPS readout | `` ` `` (backtick) toggles a small frames-per-second counter | — |
 
-The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
+Your score is always shown at the top center. The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
 
 ## How a match works
 
 1. **Lobby** — players join; the host starts the match.
-2. **Claiming (90s)** — move over hexes to claim them.
-3. **Combat (120s)** — shooting is enabled, and you can build structures on hexes you own and destroy other players' structures.
-4. **Results (15s)** — the match ends. Scoring and a winner are not implemented yet.
+2. **Buying (30s)** — a quick shopping window. Everyone starts with 100 credits; the shop opens automatically. It's a mock-up for now (placeholder items, nothing purchasable yet). Nobody can move, shoot or build yet. *While testing, the host can skip the wait by closing the shop popup, which starts the match immediately.*
+3. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them, shoot other players, build structures on hexes you own, and earn credits. The shop stays available from the **Shop** button (or `B`) — the game keeps running while it's open.
+4. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
-Every 10 seconds each player earns 1 credit per hex they own. Defeated players respawn at the map center with full health, keeping their tiles and kills.
+**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. A hit does 50 damage against 100 health, so two hits kill. Structures are solid: other players can't walk through yours (they slide around it), but you can.
+
+Every 10 seconds each player earns 1 credit per hex they own (credits will be spent in a buy menu that doesn't exist yet). Defeated players respawn at the map center with full health, keeping their tiles and kills.
 
 ## Project layout
 
@@ -125,13 +131,13 @@ server/                     Colyseus game server
   src/hex.ts                Hex grid math (pixel <-> hex, bounds)
   src/rooms/GameRoom.ts     Room lifecycle, message handlers, tick loop
   src/state/GameState.ts    Synced state schema
-  src/systems/              Movement, collision, combat, structures, phases, economy
+  src/systems/              Movement, collision, combat, structures, phases, economy, score
   src/types/shared.ts       Client/server message types
 client/                     React + Phaser client
   src/context/GameContext   Connection lifecycle, reconnection, roster state
   src/net/                  colyseus.js wrapper and typed send helpers
   src/game/                 Phaser scene, iso/hex helpers, render constants
-  src/components/           HUD, leaderboard, mobile joystick (React overlays)
+  src/components/           HUD, score badge, leaderboard popup, joystick, fire button (React overlays)
   src/screens/              Game screen hosting the canvas and overlays
 docs/technical-blueprint.md Architecture, protocol, decisions, status
 ```
@@ -154,6 +160,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 | `Failed to connect to the game server` | Server isn't running, or `VITE_SERVER_URL` points at the wrong host/port |
 | `EADDRINUSE` on port 2567 | Another server instance is running. Stop it, or set a different `PORT` |
 | Start Game does nothing | Only the host can start. The host is the first connected player; if they disconnect, the next connected player is promoted immediately |
+| Results screen says "This room has closed." | Expected: finished rooms close after the results period. Choose **Play again** for a fresh lobby |
 | Server restarts mid-game and everyone is dropped | Expected: `npm run dev` restarts on any file change and rooms live in memory |
 
 ## More documentation

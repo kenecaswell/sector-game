@@ -21,6 +21,7 @@ export interface PlayerState {
   ammo: number;
   tilesOwned: number;
   kills: number;
+  score: number; // computed server-side: tiles + kills x 50 + structures (credits excluded)
   credits: number;
   connected: boolean;
   color: string;

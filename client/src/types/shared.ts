@@ -2,7 +2,7 @@
 // Mirrors server/src/types/shared.ts exactly — keep both files in sync by hand
 // (see docs/technical-blueprint.md "Message Shapes" section for the source of truth).
 
-export type GamePhase = 'lobby' | 'claiming' | 'combat' | 'results';
+export type GamePhase = 'lobby' | 'buying' | 'playing' | 'results';
 
 // Client -> Server
 export interface InputMessage {
@@ -61,6 +61,19 @@ export interface PlayerReconnectedEvent {
   playerId: string;
 }
 
+// One player's final standing.
+export interface FinalScore {
+  playerId: string;
+  name: string;
+  color: string;
+  score: number;
+  tilesOwned: number;
+  kills: number;
+  structures: number;
+}
+
+// Sent once when the match ends (phase -> results): the final standings, best first. Clients keep
+// it so the results screen stays up after the room closes.
 export interface GameOverEvent {
-  scores: Array<{ playerId: string; tilesOwned: number; kills: number }>;
+  scores: FinalScore[];
 }

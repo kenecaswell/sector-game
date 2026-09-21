@@ -68,7 +68,7 @@ function claimTile(
  * CombatSystem, which already iterates projectiles each tick.
  */
 function update(state: GameState, broadcast: Broadcast): void {
-  if (state.phase.phase !== 'claiming' && state.phase.phase !== 'combat') return;
+  if (state.phase.phase !== 'playing') return;
 
   const claimed: TilesClaimedEvent['tiles'] = [];
   state.players.forEach((player) => {

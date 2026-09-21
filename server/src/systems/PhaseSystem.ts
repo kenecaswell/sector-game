@@ -1,25 +1,28 @@
 import type { GameState } from '../state/GameState';
 import type { GamePhase, PhaseChangedEvent } from '../types/shared';
+import { BUY_PHASE_DURATION_MS, MATCH_DURATION_MS, RESULTS_DURATION_MS } from '../constants';
 import type { Broadcast } from './Broadcast';
 
 const PHASE_DURATIONS_MS: Record<GamePhase, number> = {
-  lobby: 0, // ends only when the host calls transitionTo('claiming'), not on a timer
-  claiming: 90_000,
-  combat: 120_000,
-  results: 15_000,
+  lobby: 0, // ends only when the host calls transitionTo('buying'), not on a timer
+  buying: BUY_PHASE_DURATION_MS,
+  playing: MATCH_DURATION_MS,
+  results: RESULTS_DURATION_MS,
 };
 
 const NEXT_PHASE: Record<GamePhase, GamePhase | null> = {
-  lobby: 'claiming',
-  claiming: 'combat',
-  combat: 'results',
+  lobby: 'buying',
+  buying: 'playing',
+  playing: 'results',
   results: null, // room is disposed instead of transitioning further
 };
 
 /**
  * Advances the game phase when its timer expires. The lobby phase has no
- * timer — GameRoom calls transitionTo('claiming', ...) explicitly when the
- * host starts the game.
+ * timer — GameRoom calls transitionTo('buying', ...) explicitly when the
+ * host starts the game. Flow: lobby -> buying (short shopping window, nothing
+ * else allowed) -> playing (claiming, shooting and building all at once) ->
+ * results (GameRoom closes the room when it ends).
  */
 function update(state: GameState, broadcast: Broadcast): void {
   const phase = state.phase.phase as GamePhase;

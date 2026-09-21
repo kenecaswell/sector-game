@@ -5,7 +5,10 @@ import {
     BACKGROUND_COLOR,
     BODY_LIFT,
     CLAIM_BLEND,
+    CLAIM_BORDER_DARKEN,
+    CLAIM_BORDER_WIDTH,
     EXTRAPOLATION_S,
+    FIRE_INTERVAL_MS,
     HEX_DEPTH,
     HEX_OUTLINE_COLOR,
     HEX_SIDE_COLOR,
@@ -21,6 +24,10 @@ import {
     SMOOTHING_RATE,
     SNAP_DISTANCE,
     STRUCTURE_LIFT,
+    TARGET_ARRIVE_DISTANCE,
+    TARGET_MARKER_COLOR,
+    TARGET_SLOW_DISTANCE,
+    TARGET_STUCK_MS,
     UNIFORM_SCREEN_SPEED,
 } from '../constants';
 import {
@@ -57,7 +64,7 @@ interface PlayerView {
 }
 
 interface ProjectileView {
-    sprite: Phaser.GameObjects.Arc;
+    sprite: Phaser.GameObjects.Container;
     wx: number;
     wy: number;
 }
@@ -85,8 +92,11 @@ export class GameScene extends Phaser.Scene {
     private sessionId = '';
     private callbacks!: GameSceneCallbacks;
 
-    private baseGraphics!: Phaser.GameObjects.Graphics; // static hex terrain, drawn once
-    private claimGraphics!: Phaser.GameObjects.Graphics; // ownership tint, redrawn when dirty
+    // Both terrain layers are baked into textures. A Graphics object re-runs its whole command
+    // list every frame, so drawing 4,096 hexes that way cost ~50ms per frame (~19fps); a baked
+    // texture is one quad per frame.
+    private baseLayer!: Phaser.GameObjects.RenderTexture; // static hex terrain, baked once
+    private claimLayer!: Phaser.GameObjects.RenderTexture; // ownership tint, re-baked when dirty
     private hoverGraphics!: Phaser.GameObjects.Graphics; // outline of the hex under the cursor
     // Corner points as Vector2s because Graphics.fillPoints/strokePoints are typed for them.
     private hexCornerCache: Phaser.Math.Vector2[][] = [];
@@ -105,6 +115,17 @@ export class GameScene extends Phaser.Scene {
     };
     private buildMode = false;
 
+    private spaceKey?: Phaser.Input.Keyboard.Key;
+    private fireHeld = false; // set by the mobile fire button
+    private lastShotAt = -Infinity;
+
+    // Right-click destination (world space). Cleared on arrival, when blocked, or when the player
+    // takes over with the keyboard/joystick.
+    private moveTarget: Point | null = null;
+    private targetBestDistance = Infinity;
+    private targetProgressAt = 0;
+    private targetMarker!: Phaser.GameObjects.Ellipse;
+
     private aimAngle = 0; // world-space radians; where "forward" points
     private joystick = { x: 0, y: 0 }; // raw screen-space stick deflection, each axis -1..1
 
@@ -121,6 +142,9 @@ export class GameScene extends Phaser.Scene {
         this.sessionId = data.sessionId;
         this.callbacks = data.callbacks;
         this.buildMode = false;
+        this.fireHeld = false;
+        this.lastShotAt = -Infinity;
+        this.moveTarget = null;
         this.claimsDirty = true;
         this.hexCornerCache = [];
         this.playerViews.clear();
@@ -136,9 +160,19 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.setBounds(0, 0, world.width, world.height * ISO_SQUASH + HEX_DEPTH);
         this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
 
-        this.baseGraphics = this.add.graphics().setDepth(-3);
-        this.claimGraphics = this.add.graphics().setDepth(-2);
+        const layerWidth = Math.ceil(world.width) + 1;
+        const layerHeight = Math.ceil(world.height * ISO_SQUASH + HEX_DEPTH) + 1;
+        this.baseLayer = this.add.renderTexture(0, 0, layerWidth, layerHeight);
+        this.baseLayer.setOrigin(0, 0).setDepth(-3);
+        this.claimLayer = this.add.renderTexture(0, 0, layerWidth, layerHeight);
+        this.claimLayer.setOrigin(0, 0).setDepth(-2);
         this.hoverGraphics = this.add.graphics().setDepth(-1);
+        // A ring on the ground where a right-click told the player to go.
+        this.targetMarker = this.add.ellipse(0, 0, HEX_SIZE * 1.2, HEX_SIZE * 1.2 * ISO_SQUASH);
+        this.targetMarker
+            .setStrokeStyle(2, TARGET_MARKER_COLOR, 0.9)
+            .setDepth(-0.5)
+            .setVisible(false);
         this.buildHexCornerCache();
         this.drawBase();
 
@@ -174,7 +208,10 @@ export class GameScene extends Phaser.Scene {
                 Phaser.Input.Keyboard.Key
             >;
             this.wasdKeys = { W: keys.W, A: keys.A, S: keys.S, D: keys.D };
+            this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         }
+
+        this.input.mouse?.disableContextMenu(); // right-click is a game control, not a browser menu
 
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) =>
             this.handlePointerDown(pointer)
@@ -186,6 +223,7 @@ export class GameScene extends Phaser.Scene {
 
         this.updateAim();
         this.pollInput(time);
+        this.updateFiring();
         this.updateEntities(dt);
 
         if (this.claimsDirty) {
@@ -198,6 +236,11 @@ export class GameScene extends Phaser.Scene {
     /** Toggled by the React "Build" button so the next tap places a structure instead of shooting. */
     setBuildMode(active: boolean): void {
         this.buildMode = active;
+    }
+
+    /** Called by the mobile fire button: while held, shoots along the current aim at FIRE_INTERVAL_MS. */
+    setFireHeld(held: boolean): void {
+        this.fireHeld = held;
     }
 
     /**
@@ -230,10 +273,16 @@ export class GameScene extends Phaser.Scene {
         let dir: { x: number; y: number };
 
         if (this.joystick.x !== 0 || this.joystick.y !== 0) {
+            this.clearMoveTarget();
             dir = this.joystickToWorld(this.joystick);
             if (dir.x !== 0 || dir.y !== 0) this.aimAngle = Math.atan2(dir.y, dir.x);
         } else {
             dir = this.keyboardToWorld();
+            if (dir.x !== 0 || dir.y !== 0) {
+                this.clearMoveTarget(); // pressing a movement key takes control back
+            } else {
+                dir = this.targetToInput();
+            }
         }
 
         this.sendInputIfChanged(dir, this.aimAngle, time);
@@ -269,7 +318,9 @@ export class GameScene extends Phaser.Scene {
         }
 
         const length = Math.hypot(screen.x, screen.y);
-        return length > 0 ? this.screenDirToInput(screen.x / length, screen.y / length) : { x: 0, y: 0 };
+        return length > 0
+            ? this.screenDirToInput(screen.x / length, screen.y / length)
+            : { x: 0, y: 0 };
     }
 
     private joystickToWorld(stick: { x: number; y: number }): { x: number; y: number } {
@@ -315,6 +366,11 @@ export class GameScene extends Phaser.Scene {
     private handlePointerDown(pointer: Phaser.Input.Pointer): void {
         const target = this.pointerToWorld(pointer);
 
+        if (pointer.rightButtonDown()) {
+            this.setMoveTarget(target);
+            return;
+        }
+
         if (this.buildMode) {
             const { col, row } = pixelToHex(target.x, target.y);
             this.callbacks.onPlaceStructure(col, row);
@@ -324,7 +380,81 @@ export class GameScene extends Phaser.Scene {
 
         const me = this.playerViews.get(this.sessionId);
         if (!me) return;
-        this.callbacks.onShoot(Math.atan2(target.y - me.wy, target.x - me.wx));
+
+        // A click/tap shoots toward the pointer. On touch there's no mouse to aim
+        // with, so the tap also becomes the aim the fire button uses afterwards.
+        const angle = Math.atan2(target.y - me.wy, target.x - me.wx);
+        this.aimAngle = angle;
+        this.tryShoot(angle);
+    }
+
+    private setMoveTarget(target: Point): void {
+        this.moveTarget = target;
+        this.targetBestDistance = Infinity;
+        this.targetProgressAt = this.game.loop.time;
+
+        const at = project(target.x, target.y);
+        this.targetMarker.setPosition(at.x, at.y).setVisible(true);
+    }
+
+    private clearMoveTarget(): void {
+        if (!this.moveTarget) return;
+        this.moveTarget = null;
+        this.targetMarker.setVisible(false);
+    }
+
+    /**
+     * The input vector that walks the local player toward the right-click target, or zero (and the
+     * target is cleared) once they arrive or stop making progress — e.g. the spot is inside a
+     * structure they can't enter, or off the map.
+     */
+    private targetToInput(): { x: number; y: number } {
+        if (!this.moveTarget) return { x: 0, y: 0 };
+        const me = this.playerViews.get(this.sessionId);
+        if (!me) return { x: 0, y: 0 };
+
+        const dx = this.moveTarget.x - me.wx;
+        const dy = this.moveTarget.y - me.wy;
+        const distance = Math.hypot(dx, dy);
+        if (distance < TARGET_ARRIVE_DISTANCE) {
+            this.clearMoveTarget();
+            return { x: 0, y: 0 };
+        }
+
+        const now = this.game.loop.time;
+        if (distance < this.targetBestDistance - 4) {
+            this.targetBestDistance = distance;
+            this.targetProgressAt = now;
+        } else if (now - this.targetProgressAt > TARGET_STUCK_MS) {
+            this.clearMoveTarget();
+            return { x: 0, y: 0 };
+        }
+
+        // Head toward it as it appears on screen, easing off close in so we stop on the spot.
+        const screen = project(dx, dy);
+        const length = Math.hypot(screen.x, screen.y);
+        const strength = Math.min(1, distance / TARGET_SLOW_DISTANCE);
+        return this.screenDirToInput(
+            (screen.x / length) * strength,
+            (screen.y / length) * strength
+        );
+    }
+
+    /** Space (or the mobile fire button) held down: shoot along the current aim. */
+    private updateFiring(): void {
+        if (this.spaceKey?.isDown || this.fireHeld) this.tryShoot(this.aimAngle);
+    }
+
+    /** Sends a shot unless it's on cooldown, outside the match, or out of ammo (the server enforces the last two too). */
+    private tryShoot(angle: number): void {
+        const now = performance.now();
+        if (now - this.lastShotAt < FIRE_INTERVAL_MS) return;
+        if (this.room.state.phase.phase !== 'playing') return;
+        const me = this.room.state.players.get(this.sessionId);
+        if (!me || me.ammo <= 0) return;
+
+        this.lastShotAt = now;
+        this.callbacks.onShoot(angle);
     }
 
     /** Pointer -> world (top-down) coordinates, accounting for camera scroll and the iso squash. */
@@ -354,8 +484,7 @@ export class GameScene extends Phaser.Scene {
      */
     private drawBase(): void {
         const { mapWidth, mapHeight } = this.room.state;
-        const g = this.baseGraphics;
-        g.clear();
+        const g = this.make.graphics({}, false);
 
         const order: Array<{ col: number; row: number; y: number }> = [];
         for (let row = 0; row < mapHeight; row++) {
@@ -389,13 +518,25 @@ export class GameScene extends Phaser.Scene {
             g.lineStyle(1, HEX_OUTLINE_COLOR, 0.6);
             g.strokePoints(corners, true);
         }
+
+        this.bake(this.baseLayer, g);
+    }
+
+    /** Replaces a layer's contents with what `source` draws, then frees `source`. */
+    private bake(
+        layer: Phaser.GameObjects.RenderTexture,
+        source: Phaser.GameObjects.Graphics
+    ): void {
+        layer.clear();
+        layer.draw(source);
+        layer.render();
+        source.destroy();
     }
 
     /** Tints the top face of every claimed hex with its owner's color. */
     private drawClaims(): void {
         const { tiles, players } = this.room.state;
-        const g = this.claimGraphics;
-        g.clear();
+        const g = this.make.graphics({}, false);
 
         for (let i = 0; i < tiles.length; i++) {
             const ownerId = tiles[i]?.ownerId;
@@ -406,9 +547,16 @@ export class GameScene extends Phaser.Scene {
             const ownerColor = Phaser.Display.Color.HexStringToColor(
                 owner.color || '#ffffff'
             ).color;
-            g.fillStyle(blendColors(HEX_TOP_COLOR, ownerColor, CLAIM_BLEND), 1);
+            // Fill covers the base layer's outline, so draw a border again — otherwise
+            // a group of same-colored hexes merges into one blob.
+            const fill = blendColors(HEX_TOP_COLOR, ownerColor, CLAIM_BLEND);
+            g.fillStyle(fill, 1);
             g.fillPoints(this.hexCornerCache[i], true);
+            g.lineStyle(CLAIM_BORDER_WIDTH, blendColors(fill, 0x000000, CLAIM_BORDER_DARKEN), 1);
+            g.strokePoints(this.hexCornerCache[i], true);
         }
+
+        this.bake(this.claimLayer, g);
     }
 
     /** Outlines the hex under the mouse — also a visual check that pointer picking matches the drawn grid. */
@@ -463,7 +611,21 @@ export class GameScene extends Phaser.Scene {
     private addProjectileView(projectile: ProjectileState): void {
         if (this.projectileViews.has(projectile.id)) return;
         const start = project(projectile.x, projectile.y);
-        const sprite = this.add.circle(start.x, start.y - BODY_LIFT, PROJECTILE_RADIUS, 0xffe066);
+
+        // Placeholder art: a glowing bolt floating at body height over a small ground shadow.
+        const shadow = this.add.ellipse(
+            0,
+            0,
+            PROJECTILE_RADIUS * 2.2,
+            PROJECTILE_RADIUS * 2.2 * ISO_SQUASH,
+            0x000000,
+            0.3
+        );
+        const glow = this.add.circle(0, -BODY_LIFT, PROJECTILE_RADIUS * 1.8, 0xffe066, 0.3);
+        const core = this.add.circle(0, -BODY_LIFT, PROJECTILE_RADIUS, 0xfff2a8);
+        core.setStrokeStyle(2, 0xffb300, 1);
+
+        const sprite = this.add.container(start.x, start.y, [shadow, glow, core]);
         sprite.setDepth(start.y);
         this.projectileViews.set(projectile.id, { sprite, wx: projectile.x, wy: projectile.y });
     }
@@ -542,7 +704,7 @@ export class GameScene extends Phaser.Scene {
             );
 
             const at = project(view.wx, view.wy);
-            view.sprite.setPosition(at.x, at.y - BODY_LIFT).setDepth(at.y);
+            view.sprite.setPosition(at.x, at.y).setDepth(at.y);
         });
     }
 

@@ -23,7 +23,7 @@ function respawnPlayer(state: GameState, player: Player): void {
  * players and structures, and removes expired or spent projectiles.
  */
 function update(state: GameState, dt: number, broadcast: Broadcast): void {
-  if (state.phase.phase !== 'combat') return;
+  if (state.phase.phase !== 'playing') return;
 
   const now = Date.now();
   const { width, height } = mapPixelSize(state.mapWidth, state.mapHeight);
