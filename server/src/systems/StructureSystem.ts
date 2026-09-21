@@ -7,19 +7,19 @@ import type { StructureDestroyedEvent } from '../types/shared';
  * Called from CombatSystem when a projectile hits a structure.
  */
 function applyDamage(
-  state: GameState,
-  structureId: string,
-  damage: number,
-  broadcast?: Broadcast
+    state: GameState,
+    structureId: string,
+    damage: number,
+    broadcast?: Broadcast
 ): void {
-  const structure = state.structures.get(structureId);
-  if (!structure) return;
+    const structure = state.structures.get(structureId);
+    if (!structure) return;
 
-  structure.health -= damage;
-  if (structure.health <= 0) {
-    state.structures.delete(structureId);
-    broadcast?.('structureDestroyed', { structureId } satisfies StructureDestroyedEvent);
-  }
+    structure.health -= damage;
+    if (structure.health <= 0) {
+        state.structures.delete(structureId);
+        broadcast?.('structureDestroyed', { structureId } satisfies StructureDestroyedEvent);
+    }
 }
 
 export const StructureSystem = { applyDamage };

@@ -18,17 +18,17 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+    res.json({ status: 'ok' });
 });
 
 const httpServer = createServer(app);
 
 const gameServer = new Server({
-  transport: new WebSocketTransport({ server: httpServer }),
+    transport: new WebSocketTransport({ server: httpServer }),
 });
 
 gameServer.define('GameRoom', GameRoom);
 
 httpServer.listen(PORT, () => {
-  console.log(`Game server listening on :${PORT}`);
+    console.log(`Game server listening on :${PORT}`);
 });

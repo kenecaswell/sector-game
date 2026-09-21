@@ -10,58 +10,58 @@
 import type { GamePhase } from './shared';
 
 export interface PlayerState {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  angle: number;
-  health: number;
-  ammo: number;
-  tilesOwned: number;
-  kills: number;
-  score: number; // computed server-side: tiles + kills x 50 + structures (credits excluded)
-  credits: number;
-  connected: boolean;
-  color: string;
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    angle: number;
+    health: number;
+    ammo: number;
+    tilesOwned: number;
+    kills: number;
+    score: number; // computed server-side: tiles + kills x 50 + structures (credits excluded)
+    credits: number;
+    connected: boolean;
+    color: string;
 }
 
 export interface TileState {
-  ownerId: string; // empty string = unclaimed
+    ownerId: string; // empty string = unclaimed
 }
 
 export interface ProjectileState {
-  id: string;
-  ownerId: string;
-  x: number;
-  y: number;
-  angle: number;
-  speed: number;
-  spawnedAt: number;
+    id: string;
+    ownerId: string;
+    x: number;
+    y: number;
+    angle: number;
+    speed: number;
+    spawnedAt: number;
 }
 
 export interface StructureState {
-  id: string;
-  ownerId: string;
-  tileX: number;
-  tileY: number;
-  health: number;
-  maxHealth: number;
+    id: string;
+    ownerId: string;
+    tileX: number;
+    tileY: number;
+    health: number;
+    maxHealth: number;
 }
 
 export interface GamePhaseStateShape {
-  phase: GamePhase;
-  endsAt: number;
+    phase: GamePhase;
+    endsAt: number;
 }
 
 export interface GameStateShape {
-  players: ReadonlyMap<string, PlayerState>;
-  structures: ReadonlyMap<string, StructureState>;
-  projectiles: ReadonlyMap<string, ProjectileState>;
-  tiles: readonly TileState[];
-  phase: GamePhaseStateShape;
-  mapWidth: number;
-  mapHeight: number;
-  nextPayoutAt: number;
+    players: ReadonlyMap<string, PlayerState>;
+    structures: ReadonlyMap<string, StructureState>;
+    projectiles: ReadonlyMap<string, ProjectileState>;
+    tiles: readonly TileState[];
+    phase: GamePhaseStateShape;
+    mapWidth: number;
+    mapHeight: number;
+    nextPayoutAt: number;
 }

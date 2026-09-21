@@ -3,6 +3,6 @@
  * laptop still gets the joystick shown alongside the keyboard, which is
  * harmless — both send the same `{x, y}` input shape. */
 export function isTouchDevice(): boolean {
-  if (typeof window === 'undefined') return false;
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (typeof window === 'undefined') return false;
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }

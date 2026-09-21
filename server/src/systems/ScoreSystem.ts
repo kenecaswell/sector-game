@@ -13,22 +13,22 @@ import type { FinalScore } from '../types/shared';
  * the wire.
  */
 function update(state: GameState): void {
-  const structuresByOwner = countStructuresByOwner(state);
+    const structuresByOwner = countStructuresByOwner(state);
 
-  state.players.forEach((player) => {
-    player.score =
-      player.tilesOwned * TILE_POINTS +
-      player.kills * KILL_POINTS +
-      (structuresByOwner.get(player.id) ?? 0) * STRUCTURE_POINTS;
-  });
+    state.players.forEach((player) => {
+        player.score =
+            player.tilesOwned * TILE_POINTS +
+            player.kills * KILL_POINTS +
+            (structuresByOwner.get(player.id) ?? 0) * STRUCTURE_POINTS;
+    });
 }
 
 function countStructuresByOwner(state: GameState): Map<string, number> {
-  const counts = new Map<string, number>();
-  state.structures.forEach((structure) => {
-    counts.set(structure.ownerId, (counts.get(structure.ownerId) ?? 0) + 1);
-  });
-  return counts;
+    const counts = new Map<string, number>();
+    state.structures.forEach((structure) => {
+        counts.set(structure.ownerId, (counts.get(structure.ownerId) ?? 0) + 1);
+    });
+    return counts;
 }
 
 /**
@@ -37,19 +37,19 @@ function countStructuresByOwner(state: GameState): Map<string, number> {
  * Call `update` first so the numbers are current.
  */
 function finalScores(state: GameState): FinalScore[] {
-  const structuresByOwner = countStructuresByOwner(state);
+    const structuresByOwner = countStructuresByOwner(state);
 
-  return Array.from(state.players.values())
-    .map((player) => ({
-      playerId: player.id,
-      name: player.name,
-      color: player.color,
-      score: player.score,
-      tilesOwned: player.tilesOwned,
-      kills: player.kills,
-      structures: structuresByOwner.get(player.id) ?? 0,
-    }))
-    .sort((a, b) => b.score - a.score || b.kills - a.kills || b.tilesOwned - a.tilesOwned);
+    return Array.from(state.players.values())
+        .map((player) => ({
+            playerId: player.id,
+            name: player.name,
+            color: player.color,
+            score: player.score,
+            tilesOwned: player.tilesOwned,
+            kills: player.kills,
+            structures: structuresByOwner.get(player.id) ?? 0,
+        }))
+        .sort((a, b) => b.score - a.score || b.kills - a.kills || b.tilesOwned - a.tilesOwned);
 }
 
 export const ScoreSystem = { update, finalScores };

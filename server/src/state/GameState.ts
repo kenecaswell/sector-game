@@ -2,58 +2,58 @@ import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
 import { STARTING_CREDITS } from '../constants';
 
 export class Player extends Schema {
-  @type('string') id: string = '';
-  @type('string') name: string = '';
-  @type('number') x: number = 0;
-  @type('number') y: number = 0;
-  @type('number') vx: number = 0; // px/sec — synced so clients can extrapolate smoothly between ticks
-  @type('number') vy: number = 0;
-  @type('number') angle: number = 0; // facing/aim direction in radians (world space)
-  @type('number') health: number = 100;
-  @type('number') ammo: number = 30;
-  @type('number') tilesOwned: number = 0;
-  @type('number') kills: number = 0;
-  @type('number') score: number = 0; // computed by ScoreSystem: tiles + kills x 50 + structures
-  @type('number') credits: number = STARTING_CREDITS;
-  @type('boolean') connected: boolean = true;
-  @type('string') color: string = '';
+    @type('string') id: string = '';
+    @type('string') name: string = '';
+    @type('number') x: number = 0;
+    @type('number') y: number = 0;
+    @type('number') vx: number = 0; // px/sec — synced so clients can extrapolate smoothly between ticks
+    @type('number') vy: number = 0;
+    @type('number') angle: number = 0; // facing/aim direction in radians (world space)
+    @type('number') health: number = 100;
+    @type('number') ammo: number = 30;
+    @type('number') tilesOwned: number = 0;
+    @type('number') kills: number = 0;
+    @type('number') score: number = 0; // computed by ScoreSystem: tiles + kills x 50 + structures
+    @type('number') credits: number = STARTING_CREDITS;
+    @type('boolean') connected: boolean = true;
+    @type('string') color: string = '';
 }
 
 export class Tile extends Schema {
-  @type('string') ownerId: string = ''; // empty string = unclaimed
+    @type('string') ownerId: string = ''; // empty string = unclaimed
 }
 
 export class Projectile extends Schema {
-  @type('string') id: string = '';
-  @type('string') ownerId: string = '';
-  @type('number') x: number = 0;
-  @type('number') y: number = 0;
-  @type('number') angle: number = 0;
-  @type('number') speed: number = 400; // on-screen pixels/sec (see SCREEN_Y_SCALE)
-  @type('number') spawnedAt: number = 0; // server timestamp ms, for lifetime expiry
+    @type('string') id: string = '';
+    @type('string') ownerId: string = '';
+    @type('number') x: number = 0;
+    @type('number') y: number = 0;
+    @type('number') angle: number = 0;
+    @type('number') speed: number = 400; // on-screen pixels/sec (see SCREEN_Y_SCALE)
+    @type('number') spawnedAt: number = 0; // server timestamp ms, for lifetime expiry
 }
 
 export class Structure extends Schema {
-  @type('string') id: string = '';
-  @type('string') ownerId: string = '';
-  @type('number') tileX: number = 0;
-  @type('number') tileY: number = 0;
-  @type('number') health: number = 100;
-  @type('number') maxHealth: number = 100;
+    @type('string') id: string = '';
+    @type('string') ownerId: string = '';
+    @type('number') tileX: number = 0;
+    @type('number') tileY: number = 0;
+    @type('number') health: number = 100;
+    @type('number') maxHealth: number = 100;
 }
 
 export class GamePhaseState extends Schema {
-  @type('string') phase: string = 'lobby'; // lobby | buying | playing | results
-  @type('number') endsAt: number = 0; // server timestamp ms
+    @type('string') phase: string = 'lobby'; // lobby | buying | playing | results
+    @type('number') endsAt: number = 0; // server timestamp ms
 }
 
 export class GameState extends Schema {
-  @type({ map: Player }) players = new MapSchema<Player>();
-  @type({ map: Structure }) structures = new MapSchema<Structure>();
-  @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();
-  @type([Tile]) tiles = new ArraySchema<Tile>(); // flat array, index = y*width+x
-  @type(GamePhaseState) phase = new GamePhaseState();
-  @type('number') mapWidth: number = 64;
-  @type('number') mapHeight: number = 64;
-  @type('number') nextPayoutAt: number = 0; // server timestamp ms, next credit payout
+    @type({ map: Player }) players = new MapSchema<Player>();
+    @type({ map: Structure }) structures = new MapSchema<Structure>();
+    @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();
+    @type([Tile]) tiles = new ArraySchema<Tile>(); // flat array, index = y*width+x
+    @type(GamePhaseState) phase = new GamePhaseState();
+    @type('number') mapWidth: number = 64;
+    @type('number') mapHeight: number = 64;
+    @type('number') nextPayoutAt: number = 0; // server timestamp ms, next credit payout
 }

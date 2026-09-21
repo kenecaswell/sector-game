@@ -11,15 +11,15 @@ import { CREDIT_PAYOUT_INTERVAL_MS } from '../constants';
  * rather than counting ticks, so payouts stay correct even if TICK_RATE changes.
  */
 function update(state: GameState): void {
-  const phase = state.phase.phase;
-  if (phase !== 'playing') return;
-  if (Date.now() < state.nextPayoutAt) return;
+    const phase = state.phase.phase;
+    if (phase !== 'playing') return;
+    if (Date.now() < state.nextPayoutAt) return;
 
-  state.players.forEach((player) => {
-    if (player.tilesOwned > 0) player.credits += player.tilesOwned;
-  });
+    state.players.forEach((player) => {
+        if (player.tilesOwned > 0) player.credits += player.tilesOwned;
+    });
 
-  state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
+    state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
 }
 
 export const EconomySystem = { update };
