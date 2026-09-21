@@ -1,6 +1,6 @@
 import type { GameState } from '../state/GameState';
-import { PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
-import { hexIndex, isValidHex, pixelToHex } from '../hex';
+import { HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
+import { hexCenter, hexIndex, isValidHex, pixelToHex } from '../hex';
 import type { Broadcast } from './Broadcast';
 import type { TilesClaimedEvent } from '../types/shared';
 
@@ -40,25 +40,56 @@ function checkProjectileStructureCollision(
     return col === structure.tileX && row === structure.tileY;
 }
 
-function claimTile(
+/**
+ * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
+ * their `claimRadius` (the Expander upgrade doubles it). A hex holding another player's structure
+ * can't be claimed — the structure protects its tile.
+ */
+function claimTiles(
     state: GameState,
-    player: { id: string; x: number; y: number; tilesOwned: number },
+    player: { id: string; x: number; y: number; tilesOwned: number; claimRadius: number },
     claimed: TilesClaimedEvent['tiles']
 ): void {
-    const { col: tileX, row: tileY } = pixelToHex(player.x, player.y);
-    // Map corners/edges aren't fully covered by hexes, so a player can be
-    // standing over no tile at all.
-    if (!isValidHex(tileX, tileY, state.mapWidth, state.mapHeight)) return;
-    const tile = state.tiles[hexIndex(tileX, tileY, state.mapWidth)];
-    if (!tile || tile.ownerId === player.id) return;
+    const { col: centerCol, row: centerRow } = pixelToHex(player.x, player.y);
+    // Search a window a bit wider than the radius (hexes are at least ~48px apart).
+    const reach = Math.ceil(player.claimRadius / HEX_SIZE) + 1;
 
-    if (tile.ownerId !== '') {
-        const prevOwner = state.players.get(tile.ownerId);
-        if (prevOwner) prevOwner.tilesOwned--;
+    for (let row = centerRow - reach; row <= centerRow + reach; row++) {
+        for (let col = centerCol - reach; col <= centerCol + reach; col++) {
+            // Map corners/edges aren't fully covered by hexes, so this also skips positions
+            // where the player is standing over no tile at all.
+            if (!isValidHex(col, row, state.mapWidth, state.mapHeight)) continue;
+
+            const isStandingOn = col === centerCol && row === centerRow;
+            if (!isStandingOn) {
+                const center = hexCenter(col, row);
+                if (Math.hypot(center.x - player.x, center.y - player.y) > player.claimRadius) {
+                    continue;
+                }
+            }
+
+            const tile = state.tiles[hexIndex(col, row, state.mapWidth)];
+            if (!tile || tile.ownerId === player.id) continue;
+            if (isProtectedFrom(state, col, row, player.id)) continue;
+
+            if (tile.ownerId !== '') {
+                const prevOwner = state.players.get(tile.ownerId);
+                if (prevOwner) prevOwner.tilesOwned--;
+            }
+            tile.ownerId = player.id;
+            player.tilesOwned++;
+            claimed.push({ x: col, y: row, ownerId: player.id });
+        }
     }
-    tile.ownerId = player.id;
-    player.tilesOwned++;
-    claimed.push({ x: tileX, y: tileY, ownerId: player.id });
+}
+
+/** True if a structure owned by someone else stands on this hex. */
+function isProtectedFrom(state: GameState, col: number, row: number, playerId: string): boolean {
+    for (const structure of state.structures.values()) {
+        if (structure.tileX === col && structure.tileY === row)
+            return structure.ownerId !== playerId;
+    }
+    return false;
 }
 
 /**
@@ -73,7 +104,7 @@ function update(state: GameState, broadcast: Broadcast): void {
     const claimed: TilesClaimedEvent['tiles'] = [];
     state.players.forEach((player) => {
         if (!player.connected) return;
-        claimTile(state, player, claimed);
+        claimTiles(state, player, claimed);
     });
 
     if (claimed.length > 0) {
@@ -85,5 +116,5 @@ export const CollisionSystem = {
     update,
     checkProjectilePlayerCollision,
     checkProjectileStructureCollision,
-    claimTile,
+    claimTiles,
 };

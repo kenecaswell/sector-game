@@ -10,6 +10,7 @@ import { MobileJoystick } from '../components/MobileJoystick';
 import { DebugStats } from '../components/DebugStats';
 import { FireButton } from '../components/FireButton';
 import { ScoreBadge } from '../components/ScoreBadge';
+import { BASE_CLAIM_RADIUS } from '../game/constants';
 import { isTouchDevice } from '../utils/device';
 import { scoreFor } from '../utils/score';
 
@@ -26,6 +27,7 @@ export function GameScreen() {
         shoot,
         placeStructure,
         endBuying,
+        purchase,
     } = useGameConnection();
     const containerRef = useRef<HTMLDivElement>(null);
     const gameRef = useRef<Phaser.Game | null>(null);
@@ -103,7 +105,7 @@ export function GameScreen() {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, []);
 
-    const getFps = useCallback(() => gameRef.current?.loop.actualFps ?? 0, []);
+    const getGame = useCallback(() => gameRef.current, []);
 
     const getScene = (): GameScene | undefined =>
         gameRef.current?.scene.getScene('GameScene') as GameScene | undefined;
@@ -151,6 +153,9 @@ export function GameScreen() {
             {panel === 'shop' && shopAvailable && (
                 <BuyMenu
                     credits={me?.credits ?? 0}
+                    ammo={me?.ammo ?? 0}
+                    hasExpander={(me?.claimRadius ?? 0) > BASE_CLAIM_RADIUS + 0.5}
+                    onBuy={purchase}
                     phase={phase}
                     phaseEndsAt={phaseEndsAt}
                     onClose={() => setPanel('none')}
@@ -181,7 +186,7 @@ export function GameScreen() {
                 </button>
             )}
 
-            {showStats && <DebugStats getFps={getFps} />}
+            {showStats && <DebugStats getGame={getGame} />}
             {touch && <MobileJoystick onChange={(dir) => getScene()?.setJoystick(dir)} />}
             {touch && phase === 'playing' && (
                 <FireButton onHoldChange={(held) => getScene()?.setFireHeld(held)} />

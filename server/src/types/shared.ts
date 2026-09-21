@@ -77,3 +77,42 @@ export interface FinalScore {
 export interface GameOverEvent {
     scores: FinalScore[];
 }
+
+// --- Shop --------------------------------------------------------------------------------------
+// The catalog is shared so the server (validation) and client (menu) always agree on prices.
+// Keep this block identical in server/src/types/shared.ts and client/src/types/shared.ts.
+export type ShopItemId = 'ammo' | 'expander';
+
+export interface ShopItem {
+    id: ShopItemId;
+    name: string;
+    description: string;
+    cost: number; // credits
+}
+
+export const AMMO_PACK_SIZE = 30; // shots per purchase
+export const AMMO_CREDITS_PER_SHOT = 1;
+
+export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
+    ammo: {
+        id: 'ammo',
+        name: 'Ammo pack',
+        description: `${AMMO_PACK_SIZE} shots (${AMMO_CREDITS_PER_SHOT} credit per shot)`,
+        cost: AMMO_PACK_SIZE * AMMO_CREDITS_PER_SHOT,
+    },
+    expander: {
+        id: 'expander',
+        name: 'Expander',
+        description: 'Claim hexes in a much larger radius. One per player.',
+        cost: 100,
+    },
+};
+
+export function isShopItemId(value: unknown): value is ShopItemId {
+    return typeof value === 'string' && Object.hasOwn(SHOP_ITEMS, value);
+}
+
+// Client -> Server: buy an item (allowed during the `buying` and `playing` phases).
+export interface PurchaseMessage {
+    itemId: ShopItemId;
+}

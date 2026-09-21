@@ -11,7 +11,7 @@ Server-authoritative: clients send inputs, the server simulates everything and s
 
 ## Quick start
 
-You need **Node.js 22.13+** (20.19+ or 24+ also work). The project is developed on Node 24. Older versions fail in confusing ways — for example, a default Node 13 shell can't even run `tsc` (`SyntaxError: Unexpected token '?'`).
+You need **Node.js 22.13+** (20.19+ or 24+ also work). The project is developed on Node 24.
 
 ```bash
 nvm use 24        # or whichever supported version you have installed
@@ -22,7 +22,7 @@ Install dependencies once (there is no root package — each folder is its own p
 
 ```bash
 cd server && npm ci
-cd ../client && npm ci
+cd client && npm ci
 ```
 
 Run the server and the client in **two terminals**:
@@ -107,20 +107,22 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Build a structure | **Build** button, then click a hex you own | **Build** button (above FIRE), then tap a hex you own |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
 | Shop | **Shop** button (below Leaderboard) or `B`; `Esc` closes | **Shop** button |
-| FPS readout | `` ` `` (backtick) toggles a small frames-per-second counter | — |
+| Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 
 Your score is always shown at the top center. The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
 
 ## How a match works
 
 1. **Lobby** — players join; the host starts the match.
-2. **Buying (30s)** — a quick shopping window. Everyone starts with 100 credits; the shop opens automatically. It's a mock-up for now (placeholder items, nothing purchasable yet). Nobody can move, shoot or build yet. *While testing, the host can skip the wait by closing the shop popup, which starts the match immediately.*
-3. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them, shoot other players, build structures on hexes you own, and earn credits. The shop stays available from the **Shop** button (or `B`) — the game keeps running while it's open.
+2. **Buying (30s)** — a quick shopping window. Everyone starts with 100 credits; the shop opens automatically. You can buy **ammo** (30 shots for 30 credits) and the **Expander** (100 credits). Nobody can move, shoot or build yet. *While testing, the host can skip the wait by closing the shop popup, which starts the match immediately.*
+3. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot other players, build structures on hexes you own, and earn credits. The shop stays available from the **Shop** button (or `B`) — the game keeps running while it's open.
 4. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
+
+**Shop** — **Ammo pack**: 30 credits for 30 shots (1 credit per shot). **Expander**: 100 credits, one per player — greatly enlarges the radius in which you claim hexes (4 × the player radius), and shows as a large tinted circle in your color around you. Hexes with another player's structure on them can't be claimed. More items (better guns, armor, structures) are planned.
 
 **Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. A hit does 50 damage against 100 health, so two hits kill. Structures are solid: other players can't walk through yours (they slide around it), but you can.
 
-Every 10 seconds each player earns 1 credit per hex they own (credits will be spent in a buy menu that doesn't exist yet). Defeated players respawn at the map center with full health, keeping their tiles and kills.
+Every 10 seconds each player earns 1 credit per hex they own, to spend in the shop. Defeated players respawn at the map center with full health, keeping their tiles and kills.
 
 ## Project layout
 

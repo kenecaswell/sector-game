@@ -18,7 +18,7 @@ export const PLAYER_SPEED = 200; // pixels/sec, top on-screen speed (see SCREEN_
 // re-sends its input at least every 250ms while active, so this leaves generous margin.
 export const INPUT_STALE_MS = 750;
 export const PLAYER_ACCEL = 1200; // pixels/sec^2 — speeding up, slowing down, and turning all use this, so movement eases instead of snapping
-export const PLAYER_RADIUS = 16; // pixels, for projectile collision
+export const PLAYER_RADIUS = 20; // pixels: body size, projectile hit radius, structure collision
 
 export const PROJECTILE_RADIUS = 6; // pixels, for player collision
 export const PROJECTILE_DAMAGE = 50; // players start at 100 health, so two hits kill (armor and better guns come later)
@@ -33,6 +33,14 @@ export const MATCH_DURATION_MS = 5 * 60_000 * PHASE_TIME_SCALE; // the `playing`
 // After the match ends the room is locked (no new players) and kept open this long so players can
 // look at the results, then closed. It closes sooner if everyone leaves.
 export const RESULTS_DURATION_MS = 60_000 * PHASE_TIME_SCALE;
+
+// Claiming: a player claims the hex they're standing on plus every hex whose center is within this
+// radius (world px) of them. The Expander upgrade multiplies it (see ShopSystem). The client draws a
+// tinted circle of the player's current `claimRadius` once they own the upgrade.
+export const BASE_CLAIM_RADIUS = HEX_SIZE;
+// The Expander's claim radius scales with the player's size: 4x the player radius (80px at 20;
+// it was 64px, twice the base radius, when the player radius was 16).
+export const EXPANDER_CLAIM_RADIUS = PLAYER_RADIUS * 4;
 
 export const STARTING_CREDITS = 100; // credits each player begins with (to spend in the buy menu)
 

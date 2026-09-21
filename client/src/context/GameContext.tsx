@@ -16,11 +16,12 @@ import {
     sendInput,
     sendEndBuying,
     sendPlaceStructure,
+    sendPurchase,
     sendShoot,
     sendStartGame,
     type GameRoom,
 } from '../net/GameConnection';
-import type { GameOverEvent, GamePhase } from '../types/shared';
+import type { GameOverEvent, GamePhase, ShopItemId } from '../types/shared';
 import type { PlayerState } from '../types/gameState';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -45,6 +46,7 @@ interface GameContextValue {
     placeStructure: (tileX: number, tileY: number) => void;
     startGame: () => void;
     endBuying: () => void;
+    purchase: (itemId: ShopItemId) => void;
     // Leave the finished match and join a fresh lobby / just go back to the start screen.
     playAgain: () => void;
     exitResults: () => void;
@@ -117,7 +119,24 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 setPhaseEndsAt(joinedRoom.state.phase.endsAt);
 
                 const $ = getStateCallbacks(joinedRoom);
-                const syncPlayers = () => setPlayers(Array.from(joinedRoom.state.players.values()));
+                // Position, velocity and aim change every server tick for every moving player,
+                // but the React UI (HUD, leaderboard, lobby, results) never shows them, and
+                // re-rendering everything on each tick was wasted work. So only publish a new
+                // roster when a field the UI actually displays has changed. (The Player objects
+                // are live, so a component that does re-render always reads current values.)
+                let lastSignature = '';
+                const syncPlayers = () => {
+                    const roster = Array.from(joinedRoom.state.players.values());
+                    const signature = roster
+                        .map(
+                            (p) =>
+                                `${p.id}|${p.name}|${p.color}|${p.health}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.credits}|${p.claimRadius}|${p.connected}`
+                        )
+                        .join(';');
+                    if (signature === lastSignature) return;
+                    lastSignature = signature;
+                    setPlayers(roster);
+                };
 
                 $(joinedRoom.state).players.onAdd((player) => {
                     $(player).onChange(syncPlayers);
@@ -219,6 +238,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
         sendStartGame(room);
     }, [room]);
 
+    const purchase = useCallback(
+        (itemId: ShopItemId) => {
+            if (!room) return;
+            sendPurchase(room, itemId);
+        },
+        [room]
+    );
+
     const endBuying = useCallback(() => {
         if (!room) return;
         sendEndBuying(room);
@@ -242,6 +269,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             placeStructure,
             startGame,
             endBuying,
+            purchase,
             playAgain,
             exitResults,
         }),
@@ -261,6 +289,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             placeStructure,
             startGame,
             endBuying,
+            purchase,
             playAgain,
             exitResults,
         ]

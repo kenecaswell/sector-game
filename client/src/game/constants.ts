@@ -1,7 +1,12 @@
 // Mirrors server/src/constants.ts — keep hex/entity sizes in sync so
 // rendering lines up with the server's authoritative collision math.
 export const HEX_SIZE = 32; // circumradius in world pixels (flat-top)
-export const PLAYER_RADIUS = 16;
+export const PLAYER_RADIUS = 20;
+// Mirrors server BASE_CLAIM_RADIUS: a claim radius above this means the player owns the Expander.
+export const BASE_CLAIM_RADIUS = HEX_SIZE;
+// The tinted ground circle showing an Expander owner's claim radius (in the player's color).
+export const CLAIM_RING_FILL_ALPHA = 0.3;
+export const CLAIM_RING_STROKE_ALPHA = 0.4;
 export const PROJECTILE_RADIUS = 6;
 
 // --- Isometric look (render-only; the server never sees any of this) ---
@@ -51,6 +56,11 @@ export const MOVE_RELATIVE_TO_AIM = false;
 // space, so straight up/down the screen looks ~40% slower than sideways.
 export const UNIFORM_SCREEN_SPEED = true;
 
+// --- Terrain rendering ---
+// The claim (ownership) layer is split into square RenderTexture chunks this many scene pixels
+// wide, so a change re-bakes only the chunk(s) it touches rather than every claimed hex.
+export const CLAIM_CHUNK_SIZE = 512;
+
 // --- Colors ---
 export const BACKGROUND_COLOR = 0x1a1a2e;
 export const HEX_TOP_COLOR = 0x3a4763;
@@ -58,5 +68,5 @@ export const HEX_SIDE_COLOR = 0x262f45;
 export const HEX_SIDE_DARK_COLOR = 0x1d2436;
 export const HEX_OUTLINE_COLOR = 0x1a1a2e;
 export const CLAIM_BLEND = 0.65; // how strongly an owner's color tints a claimed hex top
-export const CLAIM_BORDER_DARKEN = 0.45; // border of a claimed hex: its fill, darkened by this much
-export const CLAIM_BORDER_WIDTH = 2;
+export const CLAIM_BORDER_DARKEN = 0.3; // border of a claimed hex: its fill, darkened by this much
+export const CLAIM_BORDER_WIDTH = 1.5;

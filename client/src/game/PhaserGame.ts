@@ -17,6 +17,11 @@ export function createPhaserGame(
         scale: {
             mode: Phaser.Scale.RESIZE,
         },
+        render: {
+            // Laptops with two GPUs make browsers default to the weaker integrated one; ask for
+            // the fast one. (Ignored where there's only one GPU.)
+            powerPreference: 'high-performance',
+        },
         // No `scene` entry here — GameScene needs init data (the room/sessionId/
         // callbacks), so it's added and started explicitly below rather than
         // auto-started by the config, which would run init() with no data first.

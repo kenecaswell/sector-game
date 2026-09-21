@@ -1,5 +1,5 @@
 import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
-import { STARTING_CREDITS } from '../constants';
+import { BASE_CLAIM_RADIUS, STARTING_CREDITS } from '../constants';
 
 export class Player extends Schema {
     @type('string') id: string = '';
@@ -15,6 +15,7 @@ export class Player extends Schema {
     @type('number') kills: number = 0;
     @type('number') score: number = 0; // computed by ScoreSystem: tiles + kills x 50 + structures
     @type('number') credits: number = STARTING_CREDITS;
+  @type('number') claimRadius: number = BASE_CLAIM_RADIUS; // world px; larger once the Expander is owned
     @type('boolean') connected: boolean = true;
     @type('string') color: string = '';
 }

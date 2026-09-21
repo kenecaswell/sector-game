@@ -123,7 +123,8 @@
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
 │   │   │   ├── PhaseSystem.ts      # Phase transitions, timer management
 │   │   │   ├── EconomySystem.ts    # Credit payouts (1/tile/10s)
-│   │   │   └── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
+│   │   │   ├── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
+│   │   │   └── ShopSystem.ts       # Validates and applies purchases (ammo pack, Expander)
 │   │   └── types/
 │   │       └── shared.ts           # Shared message types (copy into client too)
 │   ├── tsconfig.json
@@ -154,7 +155,7 @@
 │   │   ├── components/
 │   │   │   ├── HUD.tsx             # Own player's health/ammo/tiles/credits + phase countdown (top left)
 │   │   │   ├── ScoreBadge.tsx      # Always-visible own score (top center)
-│   │   │   ├── BuyMenu.tsx         # Shop popup — MOCK-UP (placeholder items, nothing purchasable yet)
+│   │   │   ├── BuyMenu.tsx         # Shop popup: real ammo/Expander purchases + "coming soon" placeholders
 │   │   │   ├── Leaderboard.tsx     # Popup listing all players by score; toggled from GameScreen
 │   │   │   ├── MobileJoystick.tsx  # Drag-based virtual joystick (touch input)
 │   │   │   └── FireButton.tsx      # Hold-to-fire button (touch, during the match only)
@@ -218,6 +219,10 @@ WebSocket via Colyseus protocol. Colyseus handles:
 // TEMPORARY testing shortcut, host only: end the buying phase early (sent when the host closes the
 // shop popup during buying). Ignored from anyone else or outside the buying phase. No payload.
 { type: "endBuying" }
+
+// Buy an item (allowed during `buying` and `playing`). itemId is "ammo" or "expander"; the server
+// checks credits, phase and (for one-per-player upgrades) ownership. See Shop below.
+{ type: "purchase", itemId: ShopItemId }
 
 // Reconnect (sent automatically by Colyseus client)
 { type: "reconnect", reconnectionToken: string }
@@ -530,7 +535,8 @@ export class Player extends Schema {
   @type('number')  tilesOwned: number = 0;
   @type('number')  kills: number = 0;
   @type('number')  score: number = 0;            // computed by ScoreSystem: tiles + kills x 50 + structures (no credits)
-  @type('number')  credits: number = 100;        // STARTING_CREDITS            // see EconomySystem
+  @type('number')  credits: number = 100;        // STARTING_CREDITS
+  @type('number')  claimRadius: number = 32;     // world px (BASE_CLAIM_RADIUS); 64 once the Expander is owned            // see EconomySystem
   @type('boolean') connected: boolean = true;
   @type('string')  color: string = '';           // hex color for tile ownership
 }
@@ -601,7 +607,9 @@ The isometric view is **purely a render-time transform**. The server never sees 
 Known limitation: the map's pixel bounds are a rectangle, but the hex edge is jagged, so a player can stand at a corner over *no* hex. Claiming simply ignores those spots.
 
 ### Tile Claiming
-- Players claim tiles by moving over unclaimed tiles or enemy tiles while the match is in the `playing` phase — "over" meaning `pixelToHex(player.x, player.y)` lands on a valid hex
+- Players claim tiles by moving over unclaimed tiles or enemy tiles while the match is in the `playing` phase. Each tick a player claims **the hex they're standing on plus every hex whose center is within their `claimRadius`** of them (`CollisionSystem.claimTiles`). The base radius is `BASE_CLAIM_RADIUS = HEX_SIZE` (32 world px) — in the open that's just the hex under you (neighbor centers are ~55 px away), though standing near a hex edge can also claim the neighbor. The **Expander** raises it to `EXPANDER_CLAIM_RADIUS` = 4 × `PLAYER_RADIUS` = 80 px (it was 64 px when the player radius was 16), which claims 7 hexes when centered on one (own + 6 neighbors) and up to 9 depending on position; radius claiming steals enemy tiles exactly like walking over them does.
+- **A hex holding another player's structure can't be claimed** — the structure protects its tile (`isProtectedFrom`). Without this rule a large claim radius would routinely flip tiles out from under structures, breaking "you own the tile your structure is on"; the owner can still claim it, and anyone can still shoot the structure down.
+- Verified 2026-09-20: the search window matches a brute-force scan of every hex exactly (1,200 random positions incl. map edges, 0 mismatches; at 80 px the Expander claims 2–9 hexes per tick depending on position — 1–7 at the earlier 64 px); a base-radius player at a hex center claims 1, an Expander owner claims 7 when centered on a hex; stolen tiles keep both players' `tilesOwned` consistent with the tile array.
 - Tile ownership stored as `ownerId` string in the flat `tiles` array
 - On claim: update tile, increment player's `tilesOwned`, decrement the previous owner's if any
 - `CollisionSystem` batches every tile claimed in a tick into a single `tilesClaimed` broadcast rather than one broadcast per tile
@@ -655,13 +663,26 @@ Movement is continuous, at **any angle**, and eased rather than snapping between
 - Colyseus syncs a field only when its value changes, so recomputing every tick costs nothing on the wire. The client's `scoreFor()` just reads `Player.score`.
 - Verified with scripts (10 tiles + 2 kills + 2 structures + 9999 credits = 160; losing a structure → 135) and end to end with two clients (6 tiles → score 6; building a structure → +25).
 
+### Shop
+Buying works through one message, `purchase { itemId }`, handled by `GameRoom.handlePurchase` → `ShopSystem.purchase`. It is allowed in the `buying` and `playing` phases only, for connected players. The server re-validates everything (unknown ids, credits, ownership); the client's disabled buttons are just a convenience.
+
+| Item | Cost | Effect |
+|---|---|---|
+| **Ammo pack** | **30 credits** (1 credit per shot × a pack of 30) | +30 ammo. Repeatable; **no ammo cap** yet. |
+| **Expander** | **100 credits** | Claim radius becomes 80 world px (from 32; **4 × the player radius**), permanently — it survives respawns. **One per player** (a second purchase is rejected). The client draws a semi-transparent circle in the player's color on the ground at that radius, visible to everyone. |
+
+- **Shared catalog:** the item list, prices and pack size live in `SHOP_ITEMS` / `AMMO_PACK_SIZE` / `AMMO_CREDITS_PER_SHOT` in `types/shared.ts`, a block that must stay **identical** in `server/src/types/shared.ts` and `client/src/types/shared.ts` (hand-copied, like the rest of that file). Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS` and `EXPANDER_RADIUS_MULTIPLIER` are server constants; the client only sees the resulting `Player.claimRadius` (and mirrors the base value to decide when to show the circle).
+- **Starting budget:** 100 credits buys the Expander outright, or three ammo packs plus change. (Players also still spawn with 30 ammo for testing.)
+- **The circle** (`GameScene.updateClaimRing`): an ellipse of the claim-radius diameter, squashed by `ISO_SQUASH` like everything on the ground (160×96 scene px for 80 world px), filled with the player's color at `CLAIM_RING_FILL_ALPHA` and outlined at `CLAIM_RING_STROKE_ALPHA`, at depth −0.4 so it sits above the terrain but under every entity. It's created when the radius exceeds the base, resized if the radius changes, and destroyed with the player.
+- Verified: unit script (affordability, ammo math, second Expander rejected, junk ids like `__proto__`/`toString`/`null` rejected with credits untouched); browser (buying ammo took credits 100 → 70 and ammo 30 → 60, and the Expander button disabled at 70; buying the Expander at 100 left "Owned", the ring appeared in the player's color at 128×77, and a short walk claimed a two-hex-wide swath).
+
 ### Economy (Credits)
 - Every player with `tilesOwned > 0` earns 1 credit per owned tile, once every `CREDIT_PAYOUT_INTERVAL_MS` (10s)
 - `EconomySystem` runs only during `playing` — no payouts in `lobby` (no tiles are ownable yet) or `results` (match is already decided)
-- Credits are a spendable currency for the buy menu and are **not part of the score**. Every player **starts with 100** (`STARTING_CREDITS`) so they can shop in the `buying` phase. There is nothing purchasable yet (the menu is a mock-up), so they only accumulate.
+- Credits are a spendable currency for the shop and are **not part of the score**. Every player **starts with 100** (`STARTING_CREDITS`) so they can shop in the `buying` phase; they then earn more during play. See [Shop](#shop) for what they buy.
 - Uses a wall-clock `GameState.nextPayoutAt` timestamp rather than counting ticks, so it stays correct if `TICK_RATE` ever changes — same pattern as `GamePhaseState.endsAt`
 - No discrete broadcast event for a payout — `Player.credits` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
-- Credits currently have no purpose beyond accruing (no spending, no scoring) — see [Planned Features #3](#planned-features) for the scoring formula that will consume them
+- Spending is the only sink: credits leave when a purchase succeeds (`ShopSystem.purchase`). Nothing else consumes them.
 
 ---
 
@@ -750,7 +771,7 @@ export function createPhaserGame(
 
 ### `game/scenes/GameScene.ts` — responsibilities
 
-- **Isometric hex terrain**: two **baked `RenderTexture` layers** plus a small `Graphics` for the hover outline. (Both big layers were `Graphics` objects at first; a `Graphics` re-runs its entire command list every frame, so the 4,096-hex base cost **~53 ms of JS per frame — under 20 fps** — and made movement look jumpy. Baking dropped that to ~0.75 ms/frame. In Phaser 4 a `RenderTexture` needs `draw(...)` *then* `render()`, which `GameScene.bake` does.) (1) *Base* — every hex drawn once into its texture at scene create: cliff faces on the three lower edges (`HEX_DEPTH` px tall), then the top face and outline, tiles sorted back-to-front by center y so a nearer tile's top covers the face of the tile behind it. It never redraws. (2) *Claims* — re-baked into its texture only when ownership changes (≈2.5 ms with a few dozen hexes; cost grows with claimed count, but only on frames where a claim actually changed) — the top face of each claimed hex tinted with its owner's color (`CLAIM_BLEND`) **and outlined with a darker shade of that fill** (`CLAIM_BORDER_DARKEN`/`CLAIM_BORDER_WIDTH`) — the fill would otherwise paint over the base layer's outline and a group of same-colored hexes would merge into one blob — redrawn from `room.state.tiles` when a dirty flag is set (by `tilesClaimed`, or a player leaving — their tiles are released without an event), at most once per frame. (3) *Hover* — an outline of the hex under the mouse, which doubles as a visual check that pointer picking matches the drawn grid. Hex corner points are cached per tile (as `Vector2`s, which is what `Graphics.fillPoints` is typed for in Phaser 4). With uniform heights, cliff faces only show on the map edge; per-tile elevation would need the base layer split by height (see Planned Features).
+- **Isometric hex terrain**: two **baked `RenderTexture` layers** plus a small `Graphics` for the hover outline. (Both big layers were `Graphics` objects at first; a `Graphics` re-runs its entire command list every frame, so the 4,096-hex base cost **~53 ms of JS per frame — under 20 fps** — and made movement look jumpy. Baking dropped that to ~0.75 ms/frame. In Phaser 4 a `RenderTexture` needs `draw(...)` *then* `render()`, which `GameScene.bake` does.) (1) *Base* — every hex drawn once into its texture at scene create: cliff faces on the three lower edges (`HEX_DEPTH` px tall), then the top face and outline, tiles sorted back-to-front by center y so a nearer tile's top covers the face of the tile behind it. It never redraws. (2) *Claims* — the top face of each claimed hex tinted with its owner's color (`CLAIM_BLEND`) **and outlined with a darker shade of that fill** (`CLAIM_BORDER_DARKEN`/`CLAIM_BORDER_WIDTH`; the fill would otherwise paint over the base outline and merge same-colored hexes into a blob). This layer is split into **512×512-px chunk textures** (`CLAIM_CHUNK_SIZE`, 35 chunks, ≤215 hexes each; a hex straddling a chunk edge is drawn into both). `syncClaims()` compares each tile's owner with what was last drawn (`renderedOwners`), and re-bakes only the chunks containing a change (`rebakeChunk`), so the cost of a claim is bounded by one chunk however many hexes are claimed, and off-screen chunks are culled. It runs when a dirty flag is set (by `tilesClaimed`, or a player leaving — their tiles are released without an event), at most once per frame. (3) *Hover* — an outline of the hex under the mouse (a check that pointer picking matches the drawn grid), redrawn only when the hovered hex or build mode changes. Hex corner points are cached per tile (as `Vector2`s, which is what `Graphics.fillPoints` is typed for in Phaser 4). With uniform heights, cliff faces only show on the map edge; per-tile elevation would need the base layer split by height (see Planned Features).
 - **Entity lifecycle**: `getStateCallbacks(room)`'s `onAdd`/`onRemove` on `players`/`projectiles`/`structures` create/destroy the corresponding Phaser game object. Existing entities at scene-create time are handled with one explicit `forEach`, since `onAdd` only fires for changes *after* the callback is registered — full state sent on join doesn't retroactively fire it.
 - **Entity views and depth**: each entity remembers its smoothed *world* position (`wx`, `wy`); the Phaser object sits at `project(wx, wy)` with `setDepth(projectedY)` so things lower on screen draw in front. A player is a `Container` of a flattened shadow ellipse, a body circle lifted `BODY_LIFT` px off the ground, and a small "nose" dot on the facing direction (your own from local input so it never lags the mouse; others' from the synced `angle`). Projectiles float at body height; structures are boxes raised `STRUCTURE_LIFT`.
 - **Smoothing**: `update()` reads `room.state` directly every frame (not through React) and moves each entity's world position toward `serverPosition + velocity × EXTRAPOLATION_S` by `1 − exp(−SMOOTHING_RATE × dt)` — exponential smoothing that's frame-rate independent, unlike the old fixed per-frame lerp. Jumps larger than `SNAP_DISTANCE` (a respawn) teleport instead of gliding across the map. Projectiles use the same chase with their `speed`/`angle` as the extrapolation.
@@ -865,7 +886,7 @@ player.connected = true again      promote a new host if needed (cleanupPlayer)
 **All collision detection runs server-side.** Client does no authoritative collision resolution.
 
 ### Projectile vs Player (swept circle-circle)
-The test uses the path the projectile travelled this tick (`prev` → `proj`), not just its end point. Shots move 20–33 world px per tick and the combined hit radius is only 22 px, so an end-point-only check lets grazing shots skip over a player — measured with a Monte Carlo script on 2026-09-20, hit rate at the edge of the hitbox fell to 56–75% for vertical shots (33 px steps) vs 92% sideways before the fix, and is 100% in both directions after it. Omit `prev` to test a single point.
+The test uses the path the projectile travelled this tick (`prev` → `proj`), not just its end point. Shots move 20–33 world px per tick and the combined hit radius is only 26 px (`PLAYER_RADIUS` 20 + `PROJECTILE_RADIUS` 6; it was 22 px when the player radius was 16), so an end-point-only check lets grazing shots skip over a player — measured with a Monte Carlo script on 2026-09-20, hit rate at the edge of the hitbox fell to 56–75% for vertical shots (33 px steps) vs 92% sideways before the fix, and is 100% in both directions after it. Omit `prev` to test a single point.
 ```typescript
 // CollisionSystem.ts
 function checkProjectilePlayerCollision(
@@ -1019,6 +1040,26 @@ Testing notes from this pass: (1) synthetic key *taps* from browser automation a
 **Performance check (2026-09-20).** Phaser is left at its defaults (WebGL, target 60 fps, one frame per display refresh — no fps cap in `PhaserGame.ts`). Per-frame JS cost is measurable even when the pane's rAF is throttled: listen to the game's `'prestep'` and `'postrender'` events and diff `performance.now()`; toggle a layer's visibility to attribute cost. This found the terrain-`Graphics` problem above. Press the backtick key in game for an on-screen FPS readout (`DebugStats.tsx`); green ≥ 50, yellow ≥ 30, red below.
 
 Testing tips from this pass, for the browser pane used here: (1) the pane can be **hidden or throttled** — it renders only ~3 fps, so `requestAnimationFrame`/Phaser-driven behavior (held-key firing rates, smoothing) reads low and screenshots can lag tens of seconds behind actions; timers longer than ~45s in one script call time out, so wait in ≤10s steps; (2) to catch a short-lived thing like a projectile in a screenshot, grab the Phaser game (React fiber of the canvas's parent → the `gameRef` hook value), wait for the scene state you want, then call `game.loop.sleep()` to freeze the frame before screenshotting (`game.loop.wake()` to resume); (3) a reload rejoins whatever room is alive — including one in `results` (see Known Issues) — so restart the private server for a clean lobby; (4) emulating a phone with the pane's mobile preset sets touch points, so `isTouchDevice()` turns on the joystick and fire button after a reload.
+
+### Performance pass — 2026-09-20
+
+Prompted by a report of ~19 fps and choppy play with two browsers open on the developer's machine. **Not reproduced** — in the test pane (WebGL, ~50–60 fps, DPR 2) the game held 60 fps — so the findings below are about scaling problems that were measurable, not a confirmed explanation of that report. Method: a headless bot script (`colyseus.js`, 4 bots wandering and claiming) joined a match while a real browser client was profiled by timing Phaser's `'prestep'`→`'postrender'` per frame, wrapping the claims code, and counting React provider renders with temporary counters (since removed).
+
+| Measurement (5 players) | Before | After |
+|---|---|---|
+| Claim re-bake cost | 7.7 ms per claim at 442 claimed hexes (~64 ms/s), **growing with every claimed hex** — projected ~20 ms per claim at ~1,100 hexes | 2.3 ms per claim, **flat** (2.3 ms at 288 hexes and at 1,141 hexes) |
+| Phaser JS per frame (avg / p95) | 3.06 / 10.7 ms | 1.3–1.8 / 2.6–4.5 ms |
+| React `setPlayers` calls per second | 14.9 | 3.2 |
+| React provider re-renders per second (dev build, StrictMode doubles them) | 29.8 | 6.4 |
+
+What changed:
+- **Chunked claims layer** (above): re-bake cost is bounded instead of growing with the number of claimed hexes.
+- **React roster updates deduplicated:** `GameContext` published a new `players` array on *every* Colyseus `onChange`, i.e. on every server tick for every moving player (x, y, vx, vy, angle), re-rendering the whole tree ~20–30×/s. It now builds a signature of only the fields the UI shows (id, name, color, health, ammo, tiles, kills, score, credits, connected) and skips the update when unchanged. The `Player` objects are live, so components that do re-render read current values.
+- **Hover outline** redraws only when the hovered hex changes (it was cleared and redrawn every frame).
+- **`powerPreference: 'high-performance'`** in the Phaser render config: on laptops with two GPUs browsers default to the integrated one. Verified it lands in `game.config`.
+- **Performance readout** (backtick): now shows fps, average JS ms per frame, renderer, canvas size and pixel ratio. **If fps is low but ms/frame is small, the bottleneck is the GPU or the rest of the browser, not our code** — that is the number to report back if the slowness persists.
+
+Not the cause, as measured: the canvas is at CSS resolution (not scaled by devicePixelRatio), the display list has ~9 objects, and terrain is two 27 MB textures drawn as a handful of quads. Things that could still explain a slow machine and are **untested here**: no hardware WebGL (software rendering), two visible browsers sharing one GPU, a running dev-tools/profiler, and React's dev build.
 
 ### Multiple Browser Instances
 - Open the game in multiple browser windows or profiles
@@ -1238,6 +1279,7 @@ _As of 2026-09-20 (after the hex/isometric prototype, phase merge and buying pha
 
 ### Working (browser- or script-verified)
 - Join/lobby, host `startGame`, phase timers, credits payout, HUD, leaderboard (browser).
+- **Shop: ammo and Expander** (unit + brute-force scripts and the browser, 2026-09-20): purchases validated (affordability, one Expander per player, junk ids rejected); radius claiming matches a brute-force scan; the shop UI buys ammo and the Expander, the tinted ring appears in the player's color, and enemy structures protect their hexes from claiming.
 - **Results screen, right-click move, shop-close-starts-match** (server scripts + browser, 2026-09-20): the server broadcasts a correctly ordered `gameOver` snapshot to everyone; the results screen shows it, counts down, persists after the room closes, and *Play again* joins a fresh lobby; closing the shop during buying starts play (host only — a non-host's `endBuying` is ignored); right-click walks to a spot and stops without overshoot, and arrow keys/WASD cancel it.
 - **Buying phase, shop mock-up and room closing** (scripts with scaled phase times, plus the browser): starting credits are 100; during `buying` nothing moves, shoots or claims and no credits accrue; play starts on schedule; the shop opens by itself in `buying`, closes when play begins, and toggles with the Shop button / `B` (`Esc` closes; only one popup at a time); at the end the finished room is locked, closes on its 60s timer (or at once when the last player leaves), and the client returns to the connect screen without a reconnect loop.
 - **Merged `playing` phase, new score, 50 damage, solid structures** (scripts + a two-client end-to-end run on 2026-09-20): shooting works the instant the match starts; score = tiles (+25 per structure, +50 per kill) with credits excluded; a structure blocks other players, who slide around it (744-approach sweep: 0 overlaps, 0 frozen), while its owner passes through; two hits kill. The merged-phase UI has had only a short browser look (see Testing).
@@ -1257,9 +1299,10 @@ Structure *destruction* by shots, projectile hits on other players, the mobile j
 - **No client-side prediction.** Rendering is smoothed and extrapolated, but your own movement still waits for the server round trip (see Movement). Fine on localhost; needs work before real-world latency.
 - **Map corners aren't hex-covered:** movement is clamped to the map rectangle, but the hex edge is jagged, so a player can stand over no hex (claiming ignores it).
 - **Everything is one height:** the reference art has elevation, cliffs, water and mountains; the prototype has a single flat height, so cliff faces show only on the map edge. Structures are plain boxes and players are circles.
-- **Credits have nothing to spend on yet** — they accumulate (1 per hex per 10s) until the buy menu exists (Planned Features #9).
-- **Players spawn armed with 30 ammo** purely for testing; the plan is to make guns/ammo purchases. Ammo still never regenerates.
-- **Ammo never regenerates** (30 shots for the whole match) — see PvP Shooting.
+- **Little to spend credits on yet** — only ammo packs and the Expander (the rest of the shop is a "coming soon" list). See Planned Features #9.
+- **Players spawn armed with 30 ammo** purely for testing; the plan is for guns/ammo to be purchases only.
+- **A ~19 fps report on the developer's machine (two browsers open) is unexplained.** The measurable scaling problems were fixed (see Performance pass), but it was never reproduced. Next step: the backtick readout's fps, ms/frame and renderer line from that machine — low fps with small ms/frame points at the GPU/browser (software WebGL, two windows sharing a GPU), not the game code.
+- **Ammo never regenerates and has no cap** — the only source is buying packs (30 credits per 30 shots).
 - **No reconnect retry cap/backoff** in `GameContext`.
 - **Client bundle ~1.7MB** (Phaser) — Vite chunk-size warning, no code-splitting yet.
 - **Mobile:** aiming on touch is limited to the movement direction or a tapped point (no second stick); phone-width layout only spot-checked at 375px (see Testing).
@@ -1330,20 +1373,20 @@ Driven by reference art showing hex tiles with mountains, trees, water and cliff
 
 Simulate the local player with the same acceleration model as `MovementSystem` (share the step function between client and server), replay unacknowledged inputs against each authoritative update (the `seq`/`inputAck` plumbing already exists for this), and correct smoothly. Do this once latency is a real concern; the extrapolation/smoothing already in place hides tick-rate stepping but not round-trip delay.
 
-### 9. Buy menu — mock-up built; real menu not implemented
+### 9. Shop and upgrades — ammo and Expander built; the rest planned
 
-**Where it lives (decided 2026-09-20):** a short **30-second `buying` phase** right after the lobby and before play, *plus* the same shop available during play on the player's own time (a Shop button or `B`; nothing pauses while it's open). Players start with **100 credits**. (An earlier idea to have no buying phase at all was reversed the same day.)
+**Where it lives (decided 2026-09-20):** a short **30-second `buying` phase** right after the lobby and before play, *plus* the same shop available during play on the player's own time (a Shop button or `B`; nothing pauses while it's open). Players start with **100 credits**.
 
-**Temporary testing shortcut:** while the shop is a mock-up nothing can be done in it, so **closing the shop popup during the buying phase (× / Esc / backdrop / Shop button) ends buying and starts the match** — the client sends `endBuying`, which only the host's message can trigger (`GameRoom.handleEndBuying`). Remove it once the real menu gives players a reason to stay in the buying phase.
+**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures).
 
-**Built:** `BuyMenu.tsx` is a **mock-up** popup: it opens by itself when the buying phase starts (with a live countdown), closes when play begins, and can be toggled with the Shop button or `B`. It shows the player's credits and placeholder items (better gun, ammo pack, armor, fort/house/school/city hall) with disabled "— cr" buttons and a banner saying nothing can be bought yet. The item list is a single `MOCK_CATEGORIES` array to replace.
+**Temporary testing shortcut:** closing the shop popup during the buying phase (× / Esc / backdrop / Shop button) ends buying and starts the match — the client sends `endBuying`, which only the host's message can trigger (`GameRoom.handleEndBuying`). Remove it once there's a reason to stay in the buying phase.
 
 **Still to design and build:**
-- The real items, prices and effects; a server `purchase` message (item id) validated against credits (and location, if we add that rule); ammo/gun/armor stats in the schema; structure types (see #3).
+- More items: better guns (damage / fire rate), armor, and the structure types (see #3), each as an entry in the shared `SHOP_ITEMS` catalog plus an effect in `ShopSystem`.
+- **Ammo:** decide on a cap; ammo still never regenerates (buying is the only source). Players eventually start *without* a gun or ammo and buy them; for now everyone spawns armed with 30 so combat can be tested.
 - **Candidate constraint:** only allow buying/upgrading during play while standing on your own territory (or near a city hall) so shopping carries risk. Not decided.
-- **Loadout:** players will eventually start *without* a gun or ammo and buy them; for now everyone spawns armed so combat can be tested.
 - The server-side fire-rate limit belongs here too (per-gun fire rate).
-- Watch for snowballing: territory income plus purchases compound for whoever leads; consider cost scaling or caps.
+- Balance: the Expander is strong (up to 9× claiming per step) for 100 credits — the price of one purchase at the start. Watch for snowballing (territory income plus purchases compound for whoever leads); consider cost scaling, a radius cap, or making upgrades stackable with rising prices.
 - Mobile: the Shop button and popup fit a 375px viewport in principle but haven't been tried on a real device.
 
 ---
@@ -1414,6 +1457,17 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 | Results screen actions | *Play again* (new lobby) and *Main menu* | Auto-drop players into a new lobby when the room closes; rematch in the same room | Deliberate choice rather than a surprise. The 60s room timer plus a persisted screen means nothing is lost when the room closes. Same-room rematch would need a reset flow and is deferred |
 | Click-to-move | Right-click sets a world-space target the client walks toward via the normal `input` vector; eases off near it; cancels on arrival, no progress for 1.2 s, or any movement key/joystick | Server-side pathing/targets; left-click to move | Requested. Doing it client-side needs no server change and reuses smoothing, screen-uniform speed and structure sliding. Speed is scaled by distance (not a hard stop) to avoid overshoot despite ~100–200 ms input latency; a no-progress timeout stops it chasing an unreachable spot |
 | Ending buying early (temporary) | Closing the shop during `buying` sends `endBuying`; only the host's is honored | Waiting out the 30s; letting any player end it | Requested testing shortcut: with a mock shop there's nothing to do while buying. Host-only so one player closing their popup can't start the match for everyone; to be removed when the real buy menu exists |
+| Claim layer rendering | 512-px chunk `RenderTexture`s, re-baking only chunks whose hex owners changed (diff against `renderedOwners`) | One full-map claim texture re-baked on every change (previous); per-hex incremental stamping | Re-bake cost grew with every claimed hex (7.7 ms at 442 → projected ~20 ms at ~1,100) and would spike late in a match; chunks bound it (2.3 ms flat). Per-hex stamping was rejected: the 2px claim border spills onto neighbors, so un-claiming a hex would leave artifacts unless its neighbors were repainted too. Chunks keep the exact previous visuals and the same "redraw what's claimed here from state" logic |
+| React roster updates | Publish a new `players` array only when a *displayed* field changes (signature check) | Publish on every Colyseus `onChange` (previous) | Positions/velocity/aim change every tick per moving player and are never shown in React, yet each one re-rendered the whole provider tree (~30 renders/s measured). Now ~6/s |
+| GPU selection | `powerPreference: 'high-performance'` | Browser default | Dual-GPU laptops default to the integrated GPU; the game is a good reason to ask for the discrete one. Harmless elsewhere |
+| Claim radius | Claim the hex you stand on plus every hex whose center is within `claimRadius` (base 32 px = `HEX_SIZE`; Expander 80 px = 4 × `PLAYER_RADIUS`) | Keep "only the hex under you" and make the Expander a different mechanic; a fixed ring of neighbors | A radius makes "2× radius" literal and scales naturally for future upgrades. At base radius it's effectively the old behavior (own hex, occasionally a neighbor near an edge). Implemented as a small search window around the player, verified against a brute-force scan |
+| Structures protect their tile | A hex with another player's structure can't be claimed | Let radius claiming flip any tile | With a large radius, tiles under structures would flip constantly, leaving a structure on a tile its owner doesn't own (and placing requires owning the tile). Rejected the alternative of destroying the structure on flip |
+| Expander | 100 credits, claim radius 4 × the player radius (80 px), permanent (kept on respawn), one per player, visible to everyone as a tinted circle | Stackable levels; lost on death; visible only to its owner | Matches the requested spec (one item, 2×). One-per-player keeps the first version simple and bounded; the circle doubles as a warning to opponents. Balance is untested — see Planned Features #9 |
+| Ammo pricing | 1 credit per shot, sold in packs of 30 (30 credits), no cap | Per-shot purchase; capped magazine | Requested. No cap is a known gap; tune with playtesting |
+| Shop catalog location | One `SHOP_ITEMS` block in `types/shared.ts`, mirrored on both sides | Prices hard-coded in the server and duplicated in the client menu | Server validation and the menu read the same numbers, so a price change is one edit (in both hand-synced copies) instead of a silent mismatch |
+| Player size | `PLAYER_RADIUS` raised from 16 to 20 (body, projectile hit radius, structure collision); the Expander's claim radius is *defined* as 4 × `PLAYER_RADIUS` | Keep 16; keep the Expander at 2 × the base claim radius | Requested playtest of a bigger player. The Expander used to be 2 × a 32 px base claim radius, which is independent of body size, so it wouldn't have grown; tying it to `PLAYER_RADIUS` (4 × = 64 at 16, 80 at 20) makes the two move together while the base claim radius (and so base tile-claiming pace) stays put. If instead the base claim radius should also follow the player size, that is a one-line change but speeds up base claiming (~50% more hexes per step at 40 px) |
+| Claimed-hex border strength | `CLAIM_BORDER_DARKEN` 0.3, `CLAIM_BORDER_WIDTH` 1.5 (was 0.45 / 2) | Original stronger border; no border | Requested subtler lines: still enough to tell same-colored hexes apart, without a heavy grid over the owner's color. Both are single constants to tune |
+| Shop button feedback | Real CSS (`:hover`, `:active`) plus a 700 ms green "✓" confirmation on press | Inline styles only; toast messages | Inline styles can't express hover/pressed states. The confirmation is shown when the button is pressed (the server accepts any purchase the button allowed); a server acknowledgment isn't sent, so a lost race would still flash |
 | Host reassignment | Promote the next connected player as soon as the host disconnects; a newcomer also takes over if the recorded host is disconnected; keep a lone disconnected host so a reconnect restores them | Promote only when the reconnect window expires (previous behavior); always keep the original host | A disconnected host can't send `startGame`, and the old behavior blocked a lobby for up to 3 minutes (it also made the shared dev room confusing) |
 | Stale input | Server discards input older than `INPUT_STALE_MS` (750ms); client keeps alive every 250ms | Trust the last input indefinitely (previous behavior) | A backgrounded tab pauses Phaser's loop, so "key released" never got sent and the player ran on forever. Any silent client (tab hidden, network stall) now coasts to a stop |
 | Client smoothness | Frame-rate-independent exponential smoothing toward `state + velocity × EXTRAPOLATION_S`; snap on large jumps | Fixed per-frame lerp (previous); full client-side prediction now | Hides the 20Hz tick stepping at any frame rate for little code. Prediction/reconciliation is deferred (Planned Features #8) until latency actually matters |

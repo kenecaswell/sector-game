@@ -23,6 +23,7 @@ export interface PlayerState {
     kills: number;
     score: number; // computed server-side: tiles + kills x 50 + structures (credits excluded)
     credits: number;
+    claimRadius: number; // world px; above the base radius means the Expander is owned
     connected: boolean;
     color: string;
 }

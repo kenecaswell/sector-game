@@ -6,6 +6,7 @@ import { CombatSystem } from '../systems/CombatSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
 import { EconomySystem } from '../systems/EconomySystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
+import { ShopSystem } from '../systems/ShopSystem';
 import { hexIndex, isValidHex, mapPixelSize } from '../hex';
 import type { Broadcast } from '../systems/Broadcast';
 import {
@@ -20,6 +21,7 @@ import type {
     PlaceStructureMessage,
     InputAckEvent,
     GameOverEvent,
+    PurchaseMessage,
 } from '../types/shared';
 
 const PLAYER_COLORS = [
@@ -66,6 +68,9 @@ export class GameRoom extends Room<GameState> {
         );
         this.onMessage('startGame', (client) => this.handleStartGame(client));
         this.onMessage('endBuying', (client) => this.handleEndBuying(client));
+        this.onMessage<PurchaseMessage>('purchase', (client, msg) =>
+            this.handlePurchase(client, msg)
+        );
     }
 
     onJoin(client: Client): void {
@@ -248,6 +253,16 @@ export class GameRoom extends Room<GameState> {
         if (client.sessionId !== this.hostId) return;
         if (this.state.phase.phase !== 'buying') return;
         PhaseSystem.transitionTo(this.state, 'playing', this.broadcastEvent);
+    }
+
+    /** Buying is allowed while shopping (`buying`) and during the match (`playing`), never otherwise. */
+    private handlePurchase(client: Client, msg: PurchaseMessage): void {
+        const player = this.state.players.get(client.sessionId);
+        if (!player || !player.connected) return;
+        const phase = this.state.phase.phase;
+        if (phase !== 'buying' && phase !== 'playing') return;
+
+        ShopSystem.purchase(player, msg?.itemId);
     }
 
     private handleStartGame(client: Client): void {

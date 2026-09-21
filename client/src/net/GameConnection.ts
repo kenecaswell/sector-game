@@ -15,6 +15,7 @@ import type {
     InputAckEvent,
     InputMessage,
     PlaceStructureMessage,
+    PurchaseMessage,
     PlayerDisconnectedEvent,
     PlayerHitEvent,
     PlayerReconnectedEvent,
@@ -152,6 +153,10 @@ export function sendPlaceStructure(
     seq: number
 ): void {
     room.send<PlaceStructureMessage>('placeStructure', { tileX, tileY, seq });
+}
+
+export function sendPurchase(room: GameRoom, itemId: PurchaseMessage['itemId']): void {
+    room.send<PurchaseMessage>('purchase', { itemId });
 }
 
 export function sendStartGame(room: GameRoom): void {

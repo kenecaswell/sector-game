@@ -3,10 +3,14 @@ import { getStateCallbacks, type GameRoom } from '../../net/GameConnection';
 import type { PlayerState, ProjectileState, StructureState } from '../../types/gameState';
 import {
     BACKGROUND_COLOR,
+    BASE_CLAIM_RADIUS,
     BODY_LIFT,
     CLAIM_BLEND,
     CLAIM_BORDER_DARKEN,
     CLAIM_BORDER_WIDTH,
+    CLAIM_CHUNK_SIZE,
+    CLAIM_RING_FILL_ALPHA,
+    CLAIM_RING_STROKE_ALPHA,
     EXTRAPOLATION_S,
     FIRE_INTERVAL_MS,
     HEX_DEPTH,
@@ -59,6 +63,11 @@ export interface GameSceneInitData {
 interface PlayerView {
     container: Phaser.GameObjects.Container;
     nose: Phaser.GameObjects.Arc;
+    color: number;
+    // Tinted circle on the ground showing the claim radius; exists only while the player owns the
+    // Expander. A separate scene object (not part of `container`) so it sits under every entity.
+    ring: Phaser.GameObjects.Ellipse | null;
+    ringRadius: number;
     wx: number;
     wy: number;
 }
@@ -92,12 +101,19 @@ export class GameScene extends Phaser.Scene {
     private sessionId = '';
     private callbacks!: GameSceneCallbacks;
 
-    // Both terrain layers are baked into textures. A Graphics object re-runs its whole command
-    // list every frame, so drawing 4,096 hexes that way cost ~50ms per frame (~19fps); a baked
-    // texture is one quad per frame.
+    // Terrain is baked into textures. A Graphics object re-runs its whole command list every
+    // frame, so drawing 4,096 hexes that way cost ~50ms per frame (~19fps); a baked texture is
+    // one quad per frame.
     private baseLayer!: Phaser.GameObjects.RenderTexture; // static hex terrain, baked once
-    private claimLayer!: Phaser.GameObjects.RenderTexture; // ownership tint, re-baked when dirty
+    // Ownership tint, in square chunks so a claim re-bakes only the chunk(s) it touches (bounded
+    // cost) instead of every claimed hex on the map, and off-screen chunks are culled.
+    private claimChunks: Phaser.GameObjects.RenderTexture[] = [];
+    private chunkHexes: number[][] = []; // hex indices overlapping each chunk
+    private hexChunks: number[][] = []; // chunk indices overlapping each hex
+    private renderedOwners: string[] = []; // owner each hex was last drawn with, to find what changed
+    private claimScratch!: Phaser.GameObjects.Graphics; // reused for every chunk bake
     private hoverGraphics!: Phaser.GameObjects.Graphics; // outline of the hex under the cursor
+    private hoverKey = ''; // which hex/mode the hover outline currently shows
     // Corner points as Vector2s because Graphics.fillPoints/strokePoints are typed for them.
     private hexCornerCache: Phaser.Math.Vector2[][] = [];
     private claimsDirty = true;
@@ -147,6 +163,11 @@ export class GameScene extends Phaser.Scene {
         this.moveTarget = null;
         this.claimsDirty = true;
         this.hexCornerCache = [];
+        this.claimChunks = [];
+        this.chunkHexes = [];
+        this.hexChunks = [];
+        this.renderedOwners = [];
+        this.hoverKey = '';
         this.playerViews.clear();
         this.projectileViews.clear();
         this.structureSprites.clear();
@@ -164,8 +185,6 @@ export class GameScene extends Phaser.Scene {
         const layerHeight = Math.ceil(world.height * ISO_SQUASH + HEX_DEPTH) + 1;
         this.baseLayer = this.add.renderTexture(0, 0, layerWidth, layerHeight);
         this.baseLayer.setOrigin(0, 0).setDepth(-3);
-        this.claimLayer = this.add.renderTexture(0, 0, layerWidth, layerHeight);
-        this.claimLayer.setOrigin(0, 0).setDepth(-2);
         this.hoverGraphics = this.add.graphics().setDepth(-1);
         // A ring on the ground where a right-click told the player to go.
         this.targetMarker = this.add.ellipse(0, 0, HEX_SIZE * 1.2, HEX_SIZE * 1.2 * ISO_SQUASH);
@@ -175,6 +194,7 @@ export class GameScene extends Phaser.Scene {
             .setVisible(false);
         this.buildHexCornerCache();
         this.drawBase();
+        this.buildClaimChunks(layerWidth, layerHeight);
 
         const $ = getStateCallbacks(this.room);
 
@@ -228,7 +248,7 @@ export class GameScene extends Phaser.Scene {
 
         if (this.claimsDirty) {
             this.claimsDirty = false;
-            this.drawClaims();
+            this.syncClaims();
         }
         this.drawHover();
     }
@@ -479,7 +499,7 @@ export class GameScene extends Phaser.Scene {
     /**
      * Draws every hex once: cliff faces first, then the top, tiles sorted from
      * back (top of screen) to front so a nearer tile's top covers the face of
-     * the tile behind it. Claim tints are a separate layer (drawClaims), so this
+     * the tile behind it. Claim tints are separate chunked layers (syncClaims), so this
      * never has to be redrawn.
      */
     private drawBase(): void {
@@ -533,13 +553,88 @@ export class GameScene extends Phaser.Scene {
         source.destroy();
     }
 
-    /** Tints the top face of every claimed hex with its owner's color. */
-    private drawClaims(): void {
-        const { tiles, players } = this.room.state;
-        const g = this.make.graphics({}, false);
+    /** Creates the claim chunk textures and records which hexes overlap which chunk. */
+    private buildClaimChunks(layerWidth: number, layerHeight: number): void {
+        const { mapWidth, mapHeight } = this.room.state;
+        const chunkCols = Math.ceil(layerWidth / CLAIM_CHUNK_SIZE);
+        const chunkRows = Math.ceil(layerHeight / CLAIM_CHUNK_SIZE);
 
-        for (let i = 0; i < tiles.length; i++) {
-            const ownerId = tiles[i]?.ownerId;
+        for (let row = 0; row < chunkRows; row++) {
+            for (let col = 0; col < chunkCols; col++) {
+                const chunk = this.add.renderTexture(
+                    col * CLAIM_CHUNK_SIZE,
+                    row * CLAIM_CHUNK_SIZE,
+                    CLAIM_CHUNK_SIZE,
+                    CLAIM_CHUNK_SIZE
+                );
+                chunk.setOrigin(0, 0).setDepth(-2);
+                this.claimChunks.push(chunk);
+                this.chunkHexes.push([]);
+            }
+        }
+
+        // A hex belongs to every chunk its bounding box (plus a little margin for the border
+        // stroke) touches, so hexes straddling a chunk edge are drawn in both halves.
+        const margin = CLAIM_BORDER_WIDTH;
+        for (let i = 0; i < mapWidth * mapHeight; i++) {
+            const corners = this.hexCornerCache[i];
+            const minX = Math.min(...corners.map((c) => c.x)) - margin;
+            const maxX = Math.max(...corners.map((c) => c.x)) + margin;
+            const minY = Math.min(...corners.map((c) => c.y)) - margin;
+            const maxY = Math.max(...corners.map((c) => c.y)) + margin;
+
+            const chunks: number[] = [];
+            for (
+                let cr = Math.floor(minY / CLAIM_CHUNK_SIZE);
+                cr <= Math.floor(maxY / CLAIM_CHUNK_SIZE);
+                cr++
+            ) {
+                for (
+                    let cc = Math.floor(minX / CLAIM_CHUNK_SIZE);
+                    cc <= Math.floor(maxX / CLAIM_CHUNK_SIZE);
+                    cc++
+                ) {
+                    if (cc < 0 || cr < 0 || cc >= chunkCols || cr >= chunkRows) continue;
+                    const chunkIndex = cr * chunkCols + cc;
+                    chunks.push(chunkIndex);
+                    this.chunkHexes[chunkIndex].push(i);
+                }
+            }
+            this.hexChunks[i] = chunks;
+        }
+
+        this.renderedOwners = new Array<string>(mapWidth * mapHeight).fill('');
+        this.claimScratch = this.make.graphics({}, false);
+    }
+
+    /**
+     * Brings the claim textures up to date with room state: finds hexes whose owner changed since
+     * they were last drawn and re-bakes only the chunks containing them. The cost of a claim is
+     * therefore bounded by one chunk's worth of hexes, however many hexes are claimed overall.
+     */
+    private syncClaims(): void {
+        const { tiles, players } = this.room.state;
+        const dirtyChunks = new Set<number>();
+
+        for (let i = 0; i < this.renderedOwners.length; i++) {
+            const ownerId = tiles[i]?.ownerId ?? '';
+            if (ownerId === this.renderedOwners[i]) continue;
+            this.renderedOwners[i] = ownerId;
+            for (const chunk of this.hexChunks[i]) dirtyChunks.add(chunk);
+        }
+
+        for (const chunk of dirtyChunks) this.rebakeChunk(chunk, players);
+    }
+
+    /** Redraws every claimed hex overlapping one chunk: owner-tinted top face plus a darker border. */
+    private rebakeChunk(chunkIndex: number, players: ReadonlyMap<string, PlayerState>): void {
+        const chunk = this.claimChunks[chunkIndex];
+        const g = this.claimScratch;
+        g.clear();
+        g.setPosition(-chunk.x, -chunk.y); // draw in the chunk's local coordinates
+
+        for (const i of this.chunkHexes[chunkIndex]) {
+            const ownerId = this.renderedOwners[i];
             if (!ownerId) continue;
             const owner = players.get(ownerId);
             if (!owner) continue;
@@ -547,7 +642,7 @@ export class GameScene extends Phaser.Scene {
             const ownerColor = Phaser.Display.Color.HexStringToColor(
                 owner.color || '#ffffff'
             ).color;
-            // Fill covers the base layer's outline, so draw a border again — otherwise
+            // The fill covers the base layer's outline, so draw a border again — otherwise
             // a group of same-colored hexes merges into one blob.
             const fill = blendColors(HEX_TOP_COLOR, ownerColor, CLAIM_BLEND);
             g.fillStyle(fill, 1);
@@ -556,23 +651,37 @@ export class GameScene extends Phaser.Scene {
             g.strokePoints(this.hexCornerCache[i], true);
         }
 
-        this.bake(this.claimLayer, g);
+        chunk.clear();
+        chunk.draw(g);
+        chunk.render();
     }
 
-    /** Outlines the hex under the mouse — also a visual check that pointer picking matches the drawn grid. */
+    /**
+     * Outlines the hex under the mouse — also a visual check that pointer picking matches the
+     * drawn grid. Only redraws when the hovered hex (or build mode) actually changes.
+     */
     private drawHover(): void {
         const pointer = this.input.activePointer;
+        const { mapWidth, mapHeight } = this.room.state;
+
+        let key = '';
+        let hovered: { col: number; row: number } | null = null;
+        if (!pointer.wasTouch) {
+            const target = this.pointerToWorld(pointer);
+            const { col, row } = pixelToHex(target.x, target.y);
+            if (isValidHex(col, row, mapWidth, mapHeight)) {
+                hovered = { col, row };
+                key = `${col},${row},${this.buildMode}`;
+            }
+        }
+        if (key === this.hoverKey) return;
+        this.hoverKey = key;
+
         const g = this.hoverGraphics;
         g.clear();
-        if (pointer.wasTouch) return;
-
-        const { mapWidth, mapHeight } = this.room.state;
-        const target = this.pointerToWorld(pointer);
-        const { col, row } = pixelToHex(target.x, target.y);
-        if (!isValidHex(col, row, mapWidth, mapHeight)) return;
-
+        if (!hovered) return;
         g.lineStyle(2, this.buildMode ? 0xf1c40f : 0xffffff, this.buildMode ? 0.9 : 0.35);
-        g.strokePoints(this.hexCornerCache[hexIndex(col, row, mapWidth)], true);
+        g.strokePoints(this.hexCornerCache[hexIndex(hovered.col, hovered.row, mapWidth)], true);
     }
 
     // --- Entities ----------------------------------------------------------
@@ -599,12 +708,50 @@ export class GameScene extends Phaser.Scene {
         const container = this.add.container(start.x, start.y, [shadow, body, nose]);
         container.setDepth(start.y);
 
-        this.playerViews.set(player.id, { container, nose, wx: player.x, wy: player.y });
+        this.playerViews.set(player.id, {
+            container,
+            nose,
+            color,
+            ring: null,
+            ringRadius: 0,
+            wx: player.x,
+            wy: player.y,
+        });
         if (isSelf) this.cameras.main.startFollow(container, true, 0.15, 0.15);
     }
 
+    /**
+     * Shows a semi-transparent circle, tinted with the player's color, at their claim radius once
+     * they own the Expander (a claim radius above the base one). It's a circle on the ground, so on
+     * screen it's an ellipse squashed by ISO_SQUASH like everything else on the map.
+     */
+    private updateClaimRing(view: PlayerView, player: PlayerState, at: Point): void {
+        const hasExpander = player.claimRadius > BASE_CLAIM_RADIUS + 0.5;
+        if (!hasExpander) {
+            if (view.ring) {
+                view.ring.destroy();
+                view.ring = null;
+            }
+            return;
+        }
+
+        if (!view.ring || view.ringRadius !== player.claimRadius) {
+            view.ring?.destroy();
+            const diameter = player.claimRadius * 2;
+            const ring = this.add.ellipse(0, 0, diameter, diameter * ISO_SQUASH, view.color);
+            ring.setFillStyle(view.color, CLAIM_RING_FILL_ALPHA);
+            ring.setStrokeStyle(2, view.color, CLAIM_RING_STROKE_ALPHA);
+            ring.setDepth(-0.4); // above the terrain and hover outline, below every entity
+            view.ring = ring;
+            view.ringRadius = player.claimRadius;
+        }
+        view.ring.setPosition(at.x, at.y).setVisible(view.container.visible);
+    }
+
     private removePlayerView(sessionId: string): void {
-        this.playerViews.get(sessionId)?.container.destroy();
+        const view = this.playerViews.get(sessionId);
+        view?.container.destroy();
+        view?.ring?.destroy();
         this.playerViews.delete(sessionId);
     }
 
@@ -682,6 +829,7 @@ export class GameScene extends Phaser.Scene {
             const at = project(view.wx, view.wy);
             view.container.setPosition(at.x, at.y).setDepth(at.y);
             view.container.setVisible(player.connected || id === this.sessionId);
+            this.updateClaimRing(view, player, at);
 
             // Your own facing is drawn from local input so it never lags the mouse.
             const facing = id === this.sessionId ? this.aimAngle : player.angle;
