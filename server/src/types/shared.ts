@@ -52,13 +52,18 @@ export interface PhaseChangedEvent {
     endsAt: number;
 }
 
+// Sent to everyone when a player's connection drops without them leaving on purpose. Their
+// player, tiles and structures stay put (frozen) for `reconnectWindowMs`.
 export interface PlayerDisconnectedEvent {
     playerId: string;
+    name: string;
     reconnectWindowMs: number;
 }
 
+// Sent to everyone else when a dropped player gets back in within their window.
 export interface PlayerReconnectedEvent {
     playerId: string;
+    name: string;
 }
 
 // One player's final standing.

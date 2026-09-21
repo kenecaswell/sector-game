@@ -122,7 +122,9 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 **Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. A hit does 50 damage against 100 health, so two hits kill. Structures are solid: other players can't walk through yours (they slide around it), but you can.
 
-Every 10 seconds each player earns 1 credit per hex they own, to spend in the shop. Defeated players respawn at the map center with full health, keeping their tiles and kills.
+Every 10 seconds each player earns 1 credit per hex they own, to spend in the shop. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
+
+Defeated players respawn at the map center with full health, keeping their tiles and kills.
 
 ## Project layout
 

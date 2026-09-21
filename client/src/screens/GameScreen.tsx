@@ -5,6 +5,7 @@ import { createPhaserGame } from '../game/PhaserGame';
 import type { GameScene } from '../game/scenes/GameScene';
 import { BuyMenu } from '../components/BuyMenu';
 import { HUD } from '../components/HUD';
+import { NoticeStack } from '../components/NoticeStack';
 import { Leaderboard } from '../components/Leaderboard';
 import { MobileJoystick } from '../components/MobileJoystick';
 import { DebugStats } from '../components/DebugStats';
@@ -23,6 +24,7 @@ export function GameScreen() {
         phase,
         phaseEndsAt,
         players,
+        notices,
         input,
         shoot,
         placeStructure,
@@ -125,6 +127,7 @@ export function GameScreen() {
             <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
 
             <HUD me={me} phase={phase} phaseEndsAt={phaseEndsAt} />
+            <NoticeStack notices={notices} />
             <ScoreBadge score={me ? scoreFor(me) : 0} />
 
             <TopButton

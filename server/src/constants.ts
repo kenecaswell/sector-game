@@ -18,6 +18,9 @@ export const PLAYER_SPEED = 200; // pixels/sec, top on-screen speed (see SCREEN_
 // re-sends its input at least every 250ms while active, so this leaves generous margin.
 export const INPUT_STALE_MS = 750;
 export const PLAYER_ACCEL = 1200; // pixels/sec^2 — speeding up, slowing down, and turning all use this, so movement eases instead of snapping
+// Players are kept this far inside the map rectangle, so their whole body stays on the terrain
+// (rather than half hanging over the edge).
+export const MAP_EDGE_MARGIN = 20;
 export const PLAYER_RADIUS = 20; // pixels: body size, projectile hit radius, structure collision
 
 export const PROJECTILE_RADIUS = 6; // pixels, for player collision

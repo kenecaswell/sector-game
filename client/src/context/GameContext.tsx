@@ -21,12 +21,29 @@ import {
     sendStartGame,
     type GameRoom,
 } from '../net/GameConnection';
-import type { GameOverEvent, GamePhase, ShopItemId } from '../types/shared';
+import type {
+    GameOverEvent,
+    GamePhase,
+    PlayerDisconnectedEvent,
+    PlayerReconnectedEvent,
+    ShopItemId,
+} from '../types/shared';
 import type { PlayerState } from '../types/gameState';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 const RECONNECT_RETRY_MS = 1500;
+// Keep retrying for about as long as the server holds a dropped player's seat (3 minutes).
+const MAX_RECONNECT_ATTEMPTS = 120;
+const NOTICE_MS = 6000;
+const MAX_NOTICES = 4;
+
+/** A short message shown to everyone in the match (e.g. a player disconnected). */
+export interface Notice {
+    id: number;
+    kind: 'warning' | 'success';
+    text: string;
+}
 
 interface GameContextValue {
     status: ConnectionStatus;
@@ -35,6 +52,7 @@ interface GameContextValue {
     sessionId: string | null;
     // Kept after the room closes so the results screen can still say who "you" were.
     lastSessionId: string | null;
+    notices: Notice[];
     phase: GamePhase;
     phaseEndsAt: number;
     players: PlayerState[];
@@ -63,6 +81,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const [players, setPlayers] = useState<PlayerState[]>([]);
     const [gameOver, setGameOver] = useState<GameOverEvent | null>(null);
     const [lastSessionId, setLastSessionId] = useState<string | null>(null);
+    const [notices, setNotices] = useState<Notice[]>([]);
+    const noticeIdRef = useRef(0);
+    const noticeTimersRef = useRef<number[]>([]);
+    // True from an unexpected connection drop until we're back in a room (or gave up / left).
+    const reconnectingRef = useRef(false);
+    const reconnectAttemptsRef = useRef(0);
 
     const roomRef = useRef<GameRoom | null>(null);
     const connectingRef = useRef(false);
@@ -85,6 +109,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const pushNotice = useCallback((kind: Notice['kind'], text: string) => {
+        const id = ++noticeIdRef.current;
+        setNotices((current) => [...current, { id, kind, text }].slice(-MAX_NOTICES));
+        noticeTimersRef.current.push(
+            window.setTimeout(() => {
+                setNotices((current) => current.filter((notice) => notice.id !== id));
+            }, NOTICE_MS)
+        );
+    }, []);
+
     const connect = useCallback(() => {
         if (connectingRef.current || roomRef.current) return;
         connectingRef.current = true;
@@ -98,6 +132,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 setPhaseEndsAt(event.endsAt);
             },
             onGameOver: (event) => setGameOver(event),
+            onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
+                const minutes = Math.max(1, Math.round(event.reconnectWindowMs / 60000));
+                pushNotice(
+                    'warning',
+                    `${event.name} disconnected — their spot is held for ${minutes} min`
+                );
+            },
+            onPlayerReconnected: (event: PlayerReconnectedEvent) => {
+                if (event.playerId === roomRef.current?.sessionId) return; // that's us
+                pushNotice('success', `${event.name} reconnected`);
+            },
         })
             .then(async (joinedRoom) => {
                 // The join handshake resolves before the server's initial full-state
@@ -110,6 +155,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     );
                 }
 
+                reconnectingRef.current = false;
+                reconnectAttemptsRef.current = 0;
                 roomRef.current = joinedRoom;
                 setRoom(joinedRoom);
                 setLastSessionId(joinedRoom.sessionId);
@@ -158,6 +205,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     // Unexpected drop (network blip, server restart mid-session) —
                     // keep retrying; connectToGame will use the saved reconnection
                     // token automatically as long as one is still in sessionStorage.
+                    reconnectingRef.current = true;
+                    reconnectAttemptsRef.current = 0;
                     setStatus('reconnecting');
                     retryTimeoutRef.current = window.setTimeout(
                         () => connectRef.current(),
@@ -166,6 +215,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 });
             })
             .catch((err: unknown) => {
+                // A failed reconnect (server unreachable for a moment, laptop just woke up...) is
+                // not the end: keep trying for the length of the server's reconnect window.
+                if (
+                    reconnectingRef.current &&
+                    reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
+                ) {
+                    reconnectAttemptsRef.current++;
+                    setStatus('reconnecting');
+                    retryTimeoutRef.current = window.setTimeout(
+                        () => connectRef.current(),
+                        RECONNECT_RETRY_MS
+                    );
+                    return;
+                }
+                reconnectingRef.current = false;
                 setStatus('error');
                 setError(
                     err instanceof Error ? err.message : 'Failed to connect to the game server'
@@ -174,14 +238,39 @@ export function GameProvider({ children }: { children: ReactNode }) {
             .finally(() => {
                 connectingRef.current = false;
             });
-    }, []);
+    }, [pushNotice]);
 
     useEffect(() => {
         connectRef.current = connect;
     }, [connect]);
 
+    // A hidden tab has its timers throttled (or is frozen outright), so a dropped connection can sit
+    // waiting on a slow retry timer. The moment the tab is visible again (or the network comes
+    // back), skip the wait and reconnect now.
+    useEffect(() => {
+        const retryNow = () => {
+            if (document.visibilityState === 'hidden' || !reconnectingRef.current) return;
+            window.clearTimeout(retryTimeoutRef.current);
+            retryTimeoutRef.current = undefined;
+            connectRef.current(); // no-op if an attempt is already in flight
+        };
+        document.addEventListener('visibilitychange', retryNow);
+        window.addEventListener('online', retryNow);
+        return () => {
+            document.removeEventListener('visibilitychange', retryNow);
+            window.removeEventListener('online', retryNow);
+        };
+    }, []);
+
+    // Pending notice timers must not fire after the provider is gone.
+    useEffect(() => {
+        const timers = noticeTimersRef;
+        return () => timers.current.forEach((timer) => window.clearTimeout(timer));
+    }, []);
+
     const leave = useCallback(() => {
         clearRetryTimeout();
+        reconnectingRef.current = false;
         leavingRef.current = true;
         const current = roomRef.current;
         roomRef.current = null;
@@ -258,6 +347,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             room,
             sessionId: room?.sessionId ?? null,
             lastSessionId,
+            notices,
             phase,
             phaseEndsAt,
             players,
@@ -278,6 +368,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             error,
             room,
             lastSessionId,
+            notices,
             phase,
             phaseEndsAt,
             players,

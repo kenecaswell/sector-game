@@ -10,6 +10,7 @@ import {
     CLAIM_BORDER_WIDTH,
     CLAIM_CHUNK_SIZE,
     CLAIM_RING_FILL_ALPHA,
+    DISCONNECTED_ALPHA,
     CLAIM_RING_STROKE_ALPHA,
     EXTRAPOLATION_S,
     FIRE_INTERVAL_MS,
@@ -178,7 +179,8 @@ export class GameScene extends Phaser.Scene {
         const { mapWidth, mapHeight } = this.room.state;
         const world = mapPixelSize(mapWidth, mapHeight);
 
-        this.cameras.main.setBounds(0, 0, world.width, world.height * ISO_SQUASH + HEX_DEPTH);
+        // Deliberately no camera bounds: the camera always centers on your player, even at the
+        // map's edge (showing empty space beyond it), so you can never walk off the screen.
         this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
 
         const layerWidth = Math.ceil(world.width) + 1;
@@ -717,7 +719,10 @@ export class GameScene extends Phaser.Scene {
             wx: player.x,
             wy: player.y,
         });
-        if (isSelf) this.cameras.main.startFollow(container, true, 0.15, 0.15);
+        if (isSelf) {
+            this.cameras.main.startFollow(container, true, 0.15, 0.15);
+            this.cameras.main.centerOn(start.x, start.y); // start on the player, no fly-in from the corner
+        }
     }
 
     /**
@@ -745,7 +750,7 @@ export class GameScene extends Phaser.Scene {
             view.ring = ring;
             view.ringRadius = player.claimRadius;
         }
-        view.ring.setPosition(at.x, at.y).setVisible(view.container.visible);
+        view.ring.setPosition(at.x, at.y).setAlpha(view.container.alpha);
     }
 
     private removePlayerView(sessionId: string): void {
@@ -828,7 +833,10 @@ export class GameScene extends Phaser.Scene {
 
             const at = project(view.wx, view.wy);
             view.container.setPosition(at.x, at.y).setDepth(at.y);
-            view.container.setVisible(player.connected || id === this.sessionId);
+            // Disconnected players are frozen in place on the server, so keep drawing them, dimmed.
+            view.container.setAlpha(
+                player.connected || id === this.sessionId ? 1 : DISCONNECTED_ALPHA
+            );
             this.updateClaimRing(view, player, at);
 
             // Your own facing is drawn from local input so it never lags the mouse.

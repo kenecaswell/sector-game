@@ -21,6 +21,8 @@ import type {
     PlaceStructureMessage,
     InputAckEvent,
     GameOverEvent,
+    PlayerDisconnectedEvent,
+    PlayerReconnectedEvent,
     PurchaseMessage,
 } from '../types/shared';
 
@@ -103,12 +105,34 @@ export class GameRoom extends Room<GameState> {
             return;
         }
 
+        // Tell everyone this player dropped (and that they can still come back).
+        if (player) {
+            this.broadcast('playerDisconnected', {
+                playerId: player.id,
+                name: player.name,
+                reconnectWindowMs: RECONNECT_WINDOW_SECONDS * 1000,
+            } satisfies PlayerDisconnectedEvent);
+        }
+
         try {
             // Freezes the player entity in place — tiles/structures are retained
             // — while this client has a chance to reconnect.
             await this.allowReconnection(client, RECONNECT_WINDOW_SECONDS);
             const reconnected = this.state.players.get(client.sessionId);
-            if (reconnected) reconnected.connected = true;
+            if (reconnected) {
+                reconnected.connected = true;
+                // Everyone else hears about it; the returning player knows already. `client` is the
+                // old, closed connection, so find the new one by session id to leave it out.
+                const returning = this.clients.find((c) => c.sessionId === reconnected.id);
+                this.broadcast(
+                    'playerReconnected',
+                    {
+                        playerId: reconnected.id,
+                        name: reconnected.name,
+                    } satisfies PlayerReconnectedEvent,
+                    returning ? { except: returning } : undefined
+                );
+            }
         } catch {
             // Reconnection window expired.
             this.cleanupPlayer(client.sessionId);

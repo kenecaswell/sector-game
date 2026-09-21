@@ -5,8 +5,12 @@ export const PLAYER_RADIUS = 20;
 // Mirrors server BASE_CLAIM_RADIUS: a claim radius above this means the player owns the Expander.
 export const BASE_CLAIM_RADIUS = HEX_SIZE;
 // The tinted ground circle showing an Expander owner's claim radius (in the player's color).
+// A player whose connection dropped stays on the map, frozen (the server holds their seat and tiles
+// for the reconnect window). They're drawn dimmed by this much so they read as "not here right now"
+// rather than disappearing.
+export const DISCONNECTED_ALPHA = 0.4;
 export const CLAIM_RING_FILL_ALPHA = 0.3;
-export const CLAIM_RING_STROKE_ALPHA = 0.4;
+export const CLAIM_RING_STROKE_ALPHA = 0.7;
 export const PROJECTILE_RADIUS = 6;
 
 // --- Isometric look (render-only; the server never sees any of this) ---
@@ -68,5 +72,5 @@ export const HEX_SIDE_COLOR = 0x262f45;
 export const HEX_SIDE_DARK_COLOR = 0x1d2436;
 export const HEX_OUTLINE_COLOR = 0x1a1a2e;
 export const CLAIM_BLEND = 0.65; // how strongly an owner's color tints a claimed hex top
-export const CLAIM_BORDER_DARKEN = 0.3; // border of a claimed hex: its fill, darkened by this much
-export const CLAIM_BORDER_WIDTH = 1.5;
+export const CLAIM_BORDER_DARKEN = 0.1; // border of a claimed hex: its fill, darkened by this much
+export const CLAIM_BORDER_WIDTH = 2;

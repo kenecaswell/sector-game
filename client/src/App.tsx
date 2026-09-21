@@ -1,5 +1,6 @@
 import { useGameConnection } from './context/GameContext';
 import { GameScreen } from './screens/GameScreen';
+import { NoticeStack } from './components/NoticeStack';
 import { ResultsScreen } from './screens/ResultsScreen';
 import { scoresFromPlayers } from './utils/results';
 import './App.css';
@@ -13,6 +14,7 @@ function App() {
         players,
         sessionId,
         lastSessionId,
+        notices,
         gameOver,
         connect,
         startGame,
@@ -62,6 +64,7 @@ function App() {
 
     return (
         <section id="center">
+            <NoticeStack notices={notices} />
             <div>
                 <h1>Sector 42</h1>
                 <p>Waiting in lobby…</p>

@@ -1,6 +1,7 @@
 import type { GameState } from '../state/GameState';
 import {
     INPUT_STALE_MS,
+    MAP_EDGE_MARGIN,
     PLAYER_ACCEL,
     PLAYER_RADIUS,
     PLAYER_SPEED,
@@ -89,8 +90,8 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
 
         const nextX = player.x + player.vx * dt;
         const nextY = player.y + player.vy * dt;
-        let x = Math.max(0, Math.min(width, nextX));
-        let y = Math.max(0, Math.min(height, nextY));
+        let x = Math.max(MAP_EDGE_MARGIN, Math.min(width - MAP_EDGE_MARGIN, nextX));
+        let y = Math.max(MAP_EDGE_MARGIN, Math.min(height - MAP_EDGE_MARGIN, nextY));
 
         // Sliding along a map edge shouldn't keep building velocity into it.
         if (x !== nextX) player.vx = 0;
@@ -118,8 +119,8 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
             }
         }
 
-        player.x = Math.max(0, Math.min(width, x));
-        player.y = Math.max(0, Math.min(height, y));
+        player.x = Math.max(MAP_EDGE_MARGIN, Math.min(width - MAP_EDGE_MARGIN, x));
+        player.y = Math.max(MAP_EDGE_MARGIN, Math.min(height - MAP_EDGE_MARGIN, y));
     });
 }
 
