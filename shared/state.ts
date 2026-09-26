@@ -7,7 +7,7 @@
 // satisfy `ReadonlyMap` / `readonly T[]` structurally, so a straight cast is safe.
 // (A field the server adds but these don't list isn't flagged — add it here when the client needs it.)
 
-import type { GamePhase } from './types';
+import type { GamePhase, Terrain } from './types';
 
 export interface PlayerState {
     id: string;
@@ -37,6 +37,7 @@ export interface PlayerState {
 
 export interface TileState {
     ownerId: string; // empty string = unclaimed
+    terrain: Terrain; // TERRAIN.ground / mountain / water; fixed for the match
 }
 
 export interface ProjectileState {

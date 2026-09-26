@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { getStateCallbacks, type GameRoom } from '../../net/GameConnection';
 import type { PlayerState, ProjectileState, StructureState } from '../../types/gameState';
-import { GUN_DAMAGE } from '../../types/shared';
+import { GUN_DAMAGE, TERRAIN } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
+import { isShallowWater } from '../terrain';
 import {
     BACKGROUND_COLOR,
     BASE_CLAIM_RADIUS,
@@ -18,6 +19,13 @@ import {
     FIRE_INTERVAL_MS,
     HEX_DEPTH,
     HEX_OUTLINE_COLOR,
+    MOUNTAIN_BORDER_COLOR,
+    MOUNTAIN_BORDER_WIDTH,
+    MOUNTAIN_TOP_COLOR,
+    WATER_DOT_RADIUS,
+    WATER_DOT_SPACING,
+    SHALLOW_WATER_TOP_COLOR,
+    WATER_TOP_COLOR,
     HEX_SIDE_COLOR,
     HEX_SIDE_DARK_COLOR,
     HEX_SIZE,
@@ -52,6 +60,7 @@ import {
     hexCenter,
     hexCorners,
     hexIndex,
+    hexNeighbors,
     inStructureFootprint,
     isValidHex,
     mapPixelSize,
@@ -528,9 +537,26 @@ export class GameScene extends Phaser.Scene {
      * the tile behind it. Claim tints are separate chunked layers (syncClaims), so this
      * never has to be redrawn.
      */
+    /**
+     * Bakes the terrain into the base layer once: every hex's cliff face and top (colored by its
+     * terrain), then borders. Ground hexes outline only edges shared with other ground; the edges
+     * of mountain and water hexes are drawn in a second pass in their own style (thin gray for
+     * mountains, dotted for water), so a neighbor's solid outline never paints over them.
+     */
     private drawBase(): void {
-        const { mapWidth, mapHeight } = this.room.state;
+        const { mapWidth, mapHeight, tiles } = this.room.state;
         const g = this.make.graphics({}, false);
+        const terrainAt = (col: number, row: number): number =>
+            isValidHex(col, row, mapWidth, mapHeight)
+                ? (tiles[hexIndex(col, row, mapWidth)]?.terrain ?? TERRAIN.ground)
+                : TERRAIN.ground;
+        const isWater = (col: number, row: number) => terrainAt(col, row) === TERRAIN.water;
+        // Shallow (wadeable) water is derived from its shape, the same way the server decides it.
+        const topColor = (terrain: number, col: number, row: number): number => {
+            if (terrain === TERRAIN.mountain) return MOUNTAIN_TOP_COLOR;
+            if (terrain !== TERRAIN.water) return HEX_TOP_COLOR;
+            return isShallowWater(isWater, col, row) ? SHALLOW_WATER_TOP_COLOR : WATER_TOP_COLOR;
+        };
 
         const order: Array<{ col: number; row: number; y: number }> = [];
         for (let row = 0; row < mapHeight; row++) {
@@ -542,6 +568,7 @@ export class GameScene extends Phaser.Scene {
 
         for (const { col, row } of order) {
             const corners = this.hexCornerCache[hexIndex(col, row, mapWidth)];
+            const terrain = terrainAt(col, row);
 
             // Only the three lower edges (right, bottom, left) show a cliff face.
             for (let i = 0; i < 3; i++) {
@@ -559,13 +586,62 @@ export class GameScene extends Phaser.Scene {
                 );
             }
 
-            g.fillStyle(HEX_TOP_COLOR, 1);
+            g.fillStyle(topColor(terrain, col, row), 1);
             g.fillPoints(corners, true);
+            if (terrain !== TERRAIN.ground) continue; // bordered in the second pass
             g.lineStyle(1, HEX_OUTLINE_COLOR, 0.6);
-            g.strokePoints(corners, true);
+            this.forEachEdge(col, row, corners, (a, b, neighbor) => {
+                if (terrainAt(neighbor.col, neighbor.row) === TERRAIN.ground)
+                    g.lineBetween(a.x, a.y, b.x, b.y);
+            });
+        }
+
+        for (const { col, row } of order) {
+            const terrain = terrainAt(col, row);
+            if (terrain === TERRAIN.ground) continue;
+            const corners = this.hexCornerCache[hexIndex(col, row, mapWidth)];
+            if (terrain === TERRAIN.mountain) {
+                g.lineStyle(MOUNTAIN_BORDER_WIDTH, MOUNTAIN_BORDER_COLOR, 1);
+                g.strokePoints(corners, true);
+            } else {
+                g.fillStyle(HEX_OUTLINE_COLOR, 1);
+                this.forEachEdge(col, row, corners, (a, b) => {
+                    // Dots centered along the edge, so a shared edge drawn from either side lines up.
+                    const dots = Math.max(
+                        1,
+                        Math.round(Math.hypot(b.x - a.x, b.y - a.y) / WATER_DOT_SPACING)
+                    );
+                    for (let k = 0; k < dots; k++) {
+                        const t = (k + 0.5) / dots;
+                        g.fillCircle(
+                            a.x + (b.x - a.x) * t,
+                            a.y + (b.y - a.y) * t,
+                            WATER_DOT_RADIUS
+                        );
+                    }
+                });
+            }
         }
 
         this.bake(this.baseLayer, g);
+    }
+
+    /**
+     * Calls `visit` for each of a hex's six edges with its two (projected) corners and the hex on
+     * the other side. Edge i runs from corner i to corner i + 1, which faces hexNeighbors index i + 1.
+     */
+    private forEachEdge(
+        col: number,
+        row: number,
+        corners: Phaser.Math.Vector2[],
+        visit: (
+            a: Phaser.Math.Vector2,
+            b: Phaser.Math.Vector2,
+            neighbor: { col: number; row: number }
+        ) => void
+    ): void {
+        const neighbors = hexNeighbors(col, row);
+        for (let i = 0; i < 6; i++) visit(corners[i], corners[(i + 1) % 6], neighbors[(i + 1) % 6]);
     }
 
     /** Replaces a layer's contents with what `source` draws, then frees `source`. */

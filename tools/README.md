@@ -18,10 +18,13 @@ cd server && npm run build
 |---|---|---|---|
 | `e2e.js` | Real `colyseus.js` clients against its own throwaway server (port 2598, phase times scaled down): the lobby (names, ready-up, countdown and its cancelling), match lifecycle with character kits, guns and the structure inventory, room closing, shop over the wire, mid-match joins, disconnect/reconnect notices, map edge | It starts its own | ~1 min |
 | `bots.js` | Load bots for profiling a browser client; not a pass/fail check | Yes (yours) | as long as you run it |
+| `map-preview.js` | Renders generated maps to PNG, whole map top-down, one image per seed — for judging terrain generation; not a pass/fail check | No | ~1 s per map |
 
 ```bash
 node tools/e2e.js
 node tools/bots.js 4 120            # then profile the browser; see ARCHITECTURE.md, Performance pass
+node tools/map-preview.js           # seeds 1-6 into map-previews/ (git-ignored)
+node tools/map-preview.js 7 42 --out /tmp/maps   # chosen seeds, chosen folder
 ```
 
 `e2e.js` needs `client/node_modules` installed (it borrows `colyseus.js`) and port 2598 free, or
@@ -48,3 +51,11 @@ This is what made "the dropped player is marked disconnected" fail about once in
 - **A real backgrounded browser tab** (the tab-visibility reconnect was checked by simulating the
   visibility change).
 - **Real network conditions** (latency, loss).
+
+## Map previews
+
+`map-preview.js` colors: ground slate; mountains warm white (large mountains) and gray (small),
+alternating shades so each mountain piece stands out; deep water dark blue, shallow water lighter;
+the spawn hex red. Fixed seeds always give the same picture, so render a few seeds, change the
+generator (`server/src/terrain.ts`, tunables in `server/src/constants.ts`), rebuild, and render
+the same seeds again to compare.

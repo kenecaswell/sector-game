@@ -81,6 +81,14 @@ export const HEX_TOP_COLOR = 0x3a4763;
 export const HEX_SIDE_COLOR = 0x262f45;
 export const HEX_SIDE_DARK_COLOR = 0x1d2436;
 export const HEX_OUTLINE_COLOR = 0x1a1a2e;
+// Terrain (placeholder look until there are sprites; see docs/GAME_DESIGN.md → Look and feel).
+export const MOUNTAIN_TOP_COLOR = 0xe6e2d8; // off-white
+export const MOUNTAIN_BORDER_COLOR = 0x8a8f99; // thin gray border
+export const MOUNTAIN_BORDER_WIDTH = 1;
+export const WATER_TOP_COLOR = 0x17356f; // dark blue: deep water
+export const SHALLOW_WATER_TOP_COLOR = 0x174c6f; // lighter blue: shallow, wadeable water (isShallowWater)
+export const WATER_DOT_SPACING = 5; // screen px between the dots of water's dotted border
+export const WATER_DOT_RADIUS = 1.1; // the dots use HEX_OUTLINE_COLOR, the normal border color
 export const CLAIM_BLEND = 0.65; // how strongly an owner's color tints a claimed hex top
 export const CLAIM_BORDER_DARKEN = 0.1; // border of a claimed hex: its fill, darkened by this much
 export const CLAIM_BORDER_WIDTH = 2;

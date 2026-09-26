@@ -19,18 +19,19 @@
 2. [Setting and story](#setting-and-story)
 3. [Match flow](#match-flow)
 4. [The map](#the-map)
-5. [Players](#players)
-6. [Teams](#teams)
-7. [Characters](#characters)
-8. [Territory](#territory)
-9. [Combat](#combat)
-10. [Structures](#structures)
-11. [Economy and shop](#economy-and-shop)
-12. [Scoring and winning](#scoring-and-winning)
-13. [Controls](#controls)
-14. [Look and feel](#look-and-feel)
-15. [Open design questions and plans](#open-design-questions-and-plans)
-16. [Design decisions log](#design-decisions-log)
+5. [Terrain](#terrain)
+6. [Players](#players)
+7. [Teams](#teams)
+8. [Characters](#characters)
+9. [Territory](#territory)
+10. [Combat](#combat)
+11. [Structures](#structures)
+12. [Economy and shop](#economy-and-shop)
+13. [Scoring and winning](#scoring-and-winning)
+14. [Controls](#controls)
+15. [Look and feel](#look-and-feel)
+16. [Open design questions and plans](#open-design-questions-and-plans)
+17. [Design decisions log](#design-decisions-log)
 
 ---
 
@@ -92,7 +93,7 @@ Implementation: [Game Phases](ARCHITECTURE.md#game-phases), [Room Lifecycle](ARC
 
 ## The map
 
-✅ A **64 × 64 grid of flat-top hexes**, viewed at an isometric tilt. The map is one flat height for now; terrain is planned ([Open design questions](#open-design-questions-and-plans)).
+✅ A **64 × 64 grid of flat-top hexes**, viewed at an isometric tilt, all at one flat height (no elevation). 📝 Each match gets a freshly generated layout of ground, mountains and water; see [Terrain](#terrain).
 
 - **Size in play:** crossing the map takes about **15 s left to right** and **11 s top to bottom** at normal speed. (The vertical trip is shorter because the tilted view squashes the map vertically and speed is measured on screen.)
 - **Edges:** you can walk right up to the edge but not off it. The camera always keeps you centered, even at the edge.
@@ -100,6 +101,52 @@ Implementation: [Game Phases](ARCHITECTURE.md#game-phases), [Room Lifecycle](ARC
 - **Spawning:** everyone starts and respawns at the **center of the map** for now. 📝 See [Open design questions](#open-design-questions-and-plans) for the planned spawn line.
 
 Implementation: [Map — hex grid and coordinate spaces](ARCHITECTURE.md#map--hex-grid-and-coordinate-spaces).
+
+## Terrain
+
+🧪 **Generated and drawn; the rules aren't built yet** (2026-09-26). Every match gets a random layout, shown on the map, but mountains and water don't block anyone, can still be claimed, and don't stop shots until step 2; Wings come in step 3. Every hex is one of three terrain types. There's **no elevation**: mountains are a kind of hex, not a height.
+
+| Terrain | Walk on it? | Claim it? | Shots |
+|---|---|---|---|
+| **Ground** | Yes | Yes | Pass |
+| **Mountain** | Only with **Wings** | Never | **Blocked** |
+| **Water, shallow** (1 hex across: narrow river stretches) | Yes | Never | Pass |
+| **Water, deep** (lakes, and rivers 2+ hexes wide) | Only with **Wings** | Never | Pass |
+
+- **Most of the map is ground.** About **10%** of the hexes (roughly 410 of 4,096) are mountains or water (`TERRAIN_COVERAGE`). A typical map has about 10 mountain ranges, 8 lakes and 5 rivers. These are first-pass and tunable (`TERRAIN_FEATURE_WEIGHTS` and the size constants in `server/src/constants.ts`). To see what the generator makes, render whole maps with `node tools/map-preview.js` (see [tools/README.md](../tools/README.md)).
+- **A new map every match.** The layout is generated randomly when the match is created, so no two matches play the same.
+
+### Features
+
+Terrain comes in features, each a contiguous group of hexes (every hex touches another in the group):
+
+- **Mountain ranges:** **3–35** hexes (`MOUNTAIN_SIZE`), built from two sizes of mountain, which will get different sprites: a **small mountain** is 3 hexes that all touch each other; a **large mountain** is 7, a hex and its 6 neighbors (the size of a structure). A range is one mountain or several touching ones, never overlapping. Each new mountain goes where it touches the range on the most sides, so ranges are compact clumps, not lacy branches. About 40% of the mountains placed are large (`MOUNTAIN_LARGE_CHANCE`), when one still fits.
+- **Lakes:** **3–32** water hexes (`LAKE_SIZE`), grown a hex at a time where they touch the lake most, so they're round and solid, with no holes.
+- **Rivers:** a course of water **2–20 hexes long** (`RIVER_LENGTH`) and **1–4 hexes wide** (`RIVER_WIDTH`). The width **changes along the river**, a hex at a time. Where a wide river bends, gaps between its banks are filled in, so rivers have no holes.
+- **Features stay apart.** At least **3 ground hexes** separate any two features (`FEATURE_GAP`), so every feature keeps its size, features never merge, and there's always room to walk between them.
+
+### Moving through terrain
+
+- **Mountains** are solid: you slide along their edge, the way enemies slide around a structure.
+- **Water** is **shallow** where it's only one hex across — you could step straight over it — and **deep** everywhere else. Precisely: a water hex is shallow if it has at most two water neighbors and those two don't touch each other. In practice that's the 1-wide stretches of rivers (bends included; about 6% of all water). Lakes and 2–4-wide river stretches are deep and solid like a mountain. Shallow water is drawn a lighter blue.
+- **Wings** (upgrade, [shop](#economy-and-shop)) let you walk over mountains and deep water. Winged or not, you still can't claim them.
+
+### Claiming and building
+
+- **Nobody can claim mountain or water hexes**, Wings or not. They stay neutral all match and never count toward anyone's hexes or income.
+- **Structures can't sit on terrain.** A structure needs all 7 hexes of its footprint to be yours, and terrain can't be yours. So a structure never covers a mountain or water hex.
+
+### Combat
+
+- **Mountains block shots.** A shot stops at the first mountain hex it enters, so ranges make cover to hide behind.
+- **Water doesn't block shots.** Shots fly over lakes and rivers.
+
+### Fairness
+
+- **The spawn area is always open ground.** Everyone starts and respawns at the map center, and the generator keeps that area clear.
+- **Every ground hex can be reached on foot.** The generator never walls off ground with mountains or deep water (shallow water counts as walkable), so players without Wings can always get anywhere a structure could be built.
+
+Implementation: [Terrain](ARCHITECTURE.md#terrain) (generation and drawing); the movement, claiming, shooting and Wings rules are still to come.
 
 ## Players
 
@@ -152,6 +199,7 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 - **Claiming:** during the match, every moment you claim the hex you're standing on **plus every hex whose center is within your claim radius**. The normal radius is about one hex (`BASE_CLAIM_RADIUS`, the hex size): in practice just the hex under you, occasionally a neighbor when you're near an edge.
 - **Expander:** 🧪 raises your claim radius to 4 × your body radius (`EXPANDER_CLAIM_RADIUS`, 80). That claims 7 hexes when you stand in the middle of one, and up to 9 depending on where you are. Everyone can see an Expander owner's claim radius as a tinted circle around them.
 - **Stealing:** walking over (or near, with the Expander) an **enemy's** hex takes it from them. A **teammate's** hex is never taken.
+- **Terrain:** 📝 mountain and water hexes can never be claimed ([Terrain](#terrain)).
 - **Protected hexes:** the 7 hexes under an **enemy's structure** can't be claimed. Destroy the structure first.
 - **Ties:** if two players reach the same hex at the same moment, the one who joined the room first gets it. 📝 Not a deliberate rule; see open questions.
 - **When a player leaves for good,** their hexes go back to unclaimed.
@@ -172,7 +220,7 @@ Implementation: [Tile Claiming](ARCHITECTURE.md#tile-claiming).
   You have at most one gun. The Big gun replaces the Basic gun, and you can buy it without owning the Basic gun first. You can't go back to the Basic gun.
 - **Ammo:** each shot uses 1. You can buy ammo before you have a gun. 📝 Ammo **never regenerates and has no cap**; the only source is buying ammo packs. Running out means you can't shoot until you buy more.
 - **Fire rate:** up to 5 shots per second while you hold the fire control (200 ms apart, `FIRE_INTERVAL_MS`). 📝 This limit is currently enforced only by the game client; the server should own it.
-- **Shots:** travel in a straight line at the same on-screen speed in every direction, and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`), which is roughly a quarter of the map's width sideways. A shot stops at the first enemy player or enemy structure it hits. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
+- **Shots:** travel in a straight line at the same on-screen speed in every direction, and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`), which is roughly a quarter of the map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or 📝 at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
 - **Friendly fire:** none. Shots pass through teammates and teammates' structures.
 - **Kills:** the shooter's kill count goes up and the victim respawns at the center (see [Players](#players)). Kills are permanent and count toward score.
 
@@ -184,7 +232,7 @@ Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detecti
 
 - **Getting them:** each structure-starting character begins with one, and the shop sells more (100 credits each). You hold them in a **structure inventory** until you place them.
 - **Footprint:** a structure sits on a center hex and **covers that hex plus its 6 neighbors**.
-- **Placing:** press Build, then pick a spot. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can build there, red if not.
+- **Placing:** press Build, then pick a spot. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, 📝 structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can build there, red if not.
 - **Solid:** enemies can't walk through your structure; they slide around it. You and your teammates can walk over it.
 - **Protection:** enemies can't claim any of its 7 hexes.
 - **Health and destruction:** 🧪 100 health. Enemy shots damage it, and at 0 it's destroyed and removed. 📝 There's no visible damage state yet (planned: intact → cracked → heavily damaged).
@@ -214,6 +262,7 @@ Open the shop any time during the match (**Shop** button or `E`). The game keeps
 | Upgrades | **Speed boost** | 100 | +25% top speed (`BOOST_SPEED_MULTIPLIER`). | One (the Robot already has it) |
 | Upgrades | **Armor** | 100 | Max health 100 → 200, and +100 health right away. | One |
 | Upgrades | **Expander** | 100 | Claim radius becomes 80 (4 × your body radius), shown as a tinted circle. | One |
+| Upgrades | 📝 **Wings** | 100 | Walk over mountains and deep water ([Terrain](#terrain)). You still can't claim them. | One |
 | Structures | **Farm**, **Mine**, **Fort**, **Power plant** | 100 each | One more of that structure to place. | Unlimited |
 
 - **Upgrades are permanent for the match**, and survive respawns.
@@ -253,6 +302,10 @@ Implementation: [Input — desktop and mobile share one message contract](ARCHIT
 📝 **Everything is placeholder art** until real art exists.
 
 - **Players:** a circle in the team color with a shadow and a small dot showing which way they face. Disconnected players are drawn faded.
+- **Terrain** 🧪 (colors and borders until there are sprites):
+  - **Ground:** the current slate-blue hex top.
+  - **Mountain:** off-white, with a thin gray border.
+  - **Water:** dark blue when deep, a lighter blue when shallow (wadeable), with a dotted border in the normal border color.
 - **Hexes:** claimed hexes are tinted in the owner's color, with a slightly darker border so neighboring hexes of one color stay distinguishable.
 - **Structures:** a raised hexagonal slab. The **top shows the type** (farm pale lime, mine dark brown, fort sandstone, power plant pale cyan, muted so they don't read as team colors) and the **sides and border show the owner's team color**.
 - **Shots:** Basic-gun shots are small white bolts; Big-gun shots are larger yellow bolts.
@@ -285,7 +338,12 @@ Things that need a design decision, not just code. Where one is also tracked in 
 
 ### Map and spawning
 - **Starting positions:** players should start in a line on the right side of the map, as if "going west". Needs spawn spots for up to 10 players, and a decision on whether respawns use them too (today: the center).
-- **Terrain (Planned Features #7):** is water, mountains and cliffs **gameplay** (blocking movement or shots, maybe unclaimable) or **decoration**? Decide this before building terrain, because gameplay terrain changes movement, combat and claiming.
+- **Terrain (Planned Features #7):** decided 2026-09-26: gameplay terrain (ground, mountain, water), no elevation; see [Terrain](#terrain). Still open:
+  - Mountain sprites: small and large mountains will map to different sprites; the generator already records which hexes form each one.
+  - Should terrain slow you down (wading through water, say) rather than only allow or block you?
+  - Should rivers connect to lakes or run off the map edge, so they read as rivers rather than long lakes?
+  - Should maps be shareable or replayable (a visible seed)?
+  - Should the planned spawn line on the east side stay clear of terrain too?
 - **Map outline:** the jagged hex edge versus the rectangular walkable area could be fixed at the same time.
 
 ### Art and presentation (Planned Features #7, #10)
@@ -347,3 +405,18 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Hotkeys | B = build mode, E = shop, L = leaderboard, Esc = leave build mode / close popups | B = shop (previous) | Requested |
 | Prices and new items | Basic gun 100, Big gun 200 (100 damage), Speed boost 100, Armor 100 (200 max health), structures 100 each, ammo 30, Expander 100 | — | Prices requested; the Big gun's effect (double damage) and the gun rules (no downgrade, can skip the basic gun) are first-pass choices |
 | Shot looks by gun | Basic: small white bolt; big: the original yellow bolt, 1.3× larger. Chosen by `Projectile.damage` (already synced); hit radius unchanged | Syncing the gun id on the projectile; a bigger hit radius for big shots | Requested. Damage is already on the projectile, so no protocol change; the hit radius was left alone since only the look was asked for |
+| Terrain types | Three types (ground, mountain, water), one flat height; mountain and water can't be claimed by anyone | Elevation and cliffs; decorative terrain only | Requested (2026-09-26). Gameplay terrain gives the map routes and choke points; no elevation keeps the iso view and the rules simple |
+| Water passability — **superseded 2026-09-26 (shallow water, below)** | A lone water hex is wadeable; water with any water neighbor is impassable without Wings. Since lakes became 3+ (below), all generated water is deep | All water impassable; all water passable | Requested. Small ponds shouldn't block anyone; lakes and rivers should |
+| Terrain features — **superseded 2026-09-26 (sizes revised the same day)** | Mountain ranges 1 or 2–18 hexes; lakes 1 or 2–10; rivers 2–20 long, 1–2 wide with the width varying along the river; features never touch | Features allowed to merge; fixed river width | Sizes and the varying width requested. Keeping features apart (the separation rule is my addition) keeps each feature's size as generated and stops a lone water hex joining a lake or river and turning deep |
+| Terrain density | About 10% of the map; features are added until that's covered, so the counts follow (with the revised sizes, typically ~10 mountain ranges, ~8 lakes, ~5 rivers) | ~5%; ~20%; fixed feature counts | Chosen by the developer as enough to shape routes without crowding. The coverage target is the knob. Tune in playtests |
+| Random map per match | A new layout is generated when each match is created | One fixed map; a map picked from a set | Requested: every match should play differently |
+| Terrain and shots | Mountains block shots; water doesn't | Neither blocks; both block | Chosen by the developer: ranges become cover, water stays a pure movement barrier |
+| Wings | Upgrade, 100 credits, one per player: walk over mountains and deep water (still can't claim them) | 150 or 200 credits | Price chosen by the developer, in line with the other upgrades |
+| Terrain fairness | The spawn area is always ground, and every ground hex is reachable on foot | No guarantee (retry-free generation) | My addition: a player without Wings must never spawn trapped, and no buildable ground may be walled off |
+| Terrain look (until sprites) | Mountain: off-white with a thin gray border. Water: dark blue with a dotted border in the normal border color | — | Requested; distinct from each other, from ground and from every team color |
+| Terrain features (revised) — **superseded the same day (mountain pieces, gap, compact lakes, below)** | Mountain ranges 3–32 hexes; lakes 3–32; rivers 2–20 long and 1–4 wide, the width changing by one hex at a time; holes at river bends filled; features never touch | The first sizes (singles allowed, rivers 1–2 wide) | Requested: bigger, more substantial features with no single hexes. Filling holes (my addition) stops wide bending rivers leaving ground pockets inside them |
+| Shallow water | Water one hex across is shallow and walkable: a water hex with at most two water neighbors that don't touch each other (1-wide river stretches, bends included). Everything else is deep | Only lone water is shallow (previous); a river that's 1 wide along its whole length | Requested (2026-09-26): "single" water meant water you can step across. The rule is purely about shape, so both sides compute it the same way (`shared/terrain.ts`) |
+| Mountain pieces | Ranges of 3–35 hexes built from small mountains (3 hexes that all touch) and large ones (a hex and its 6 neighbors), touching but not overlapping; ~40% large | Free-form blobs (previous) | Requested: small and large mountains will map to different sprites |
+| Compact ranges and lakes | Each new mountain (every placement beside the range, every orientation) and each new lake hex goes where it touches the most, ties at random | Random placement beside the feature (previous, lacy with arms and holes); also pulling toward the middle (tried: made ranges smaller and more scattered) | Requested: chunky, not lacy. Measured on 40 maps: ~3.9 same-feature neighbors per hex for both, vs ~3.45 for the lacy version |
+| Feature gap | At least 3 ground hexes between any two features (`FEATURE_GAP`) | 1 (previous); 2 | Requested ("at least 3 tiles away"); 3 hexes between chosen by the developer |
+| Shallow vs deep, small vs large: stored or derived? | Shallow/deep is derived from the water's shape wherever it's needed; small/large mountain pieces are recorded by the generator but not synced yet | Enumerate them as extra terrain values | Deriving shallow water keeps one source of truth. Which hexes form a mountain piece can't be derived, so it'll be synced when the sprites need it |

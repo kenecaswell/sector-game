@@ -11,6 +11,7 @@ import { LobbySystem } from '../systems/LobbySystem';
 import { CharacterSystem } from '../systems/CharacterSystem';
 import { StructureSystem } from '../systems/StructureSystem';
 import { mapPixelSize } from '../hex';
+import { generateTerrain, seededRandom } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
 import {
     TICK_RATE,
@@ -50,8 +51,16 @@ export class GameRoom extends Room<GameState> {
 
     onCreate(): void {
         const state = new GameState();
+        // A fresh random layout for every match (the seed only matters for reproducing one).
+        const { terrain } = generateTerrain(
+            state.mapWidth,
+            state.mapHeight,
+            seededRandom(Math.floor(Math.random() * 2 ** 32))
+        );
         for (let i = 0; i < state.mapWidth * state.mapHeight; i++) {
-            state.tiles.push(new Tile());
+            const tile = new Tile();
+            tile.terrain = terrain[i];
+            state.tiles.push(tile);
         }
         state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
         this.setState(state);

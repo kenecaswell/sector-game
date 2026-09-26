@@ -80,6 +80,18 @@ export function hexIndex(col: number, row: number, cols: number): number {
     return row * cols + col;
 }
 
+/** Steps between two hexes on the grid (0 = the same hex, 1 = neighbors). */
+export function hexDistance(a: HexCoord, b: HexCoord): number {
+    // Odd-q offset -> cube coordinates, where distance is the largest axis difference.
+    const cube = ({ col, row }: HexCoord) => {
+        const z = row - (col - (col & 1)) / 2;
+        return { x: col, z, y: -col - z };
+    };
+    const p = cube(a);
+    const q = cube(b);
+    return Math.max(Math.abs(p.x - q.x), Math.abs(p.y - q.y), Math.abs(p.z - q.z));
+}
+
 // --- Structures ----------------------------------------------------------------------------------
 // A structure is centered on a hex and occupies it plus its 6 neighbors (its "footprint"). Its
 // solid, drawn shape is a flat-top hexagon (like the tiles) with twice a tile's radius: the largest

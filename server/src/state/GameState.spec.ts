@@ -1,8 +1,8 @@
 import { Decoder, Encoder } from '@colyseus/schema';
 import { describe, expect, it } from 'vitest';
 import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
-import { DEFAULT_CHARACTER, GUN_DAMAGE } from '../types/shared';
-import { GameState, Player, Projectile, Structure } from './GameState';
+import { DEFAULT_CHARACTER, GUN_DAMAGE, TERRAIN } from '../types/shared';
+import { GameState, Player, Projectile, Structure, Tile } from './GameState';
 
 describe('GameState schema', () => {
     // Guards the setup gotcha in ARCHITECTURE.md: without `useDefineForClassFields: false` the field
@@ -27,6 +27,23 @@ describe('GameState schema', () => {
         decoder.decode(encoder.encode());
         expect(client.players.get('a')?.health).toBe(42);
         expect(Array.from(client.players.get('a')!.upgrades)).toEqual(['armor']);
+    });
+
+    it("syncs each tile's terrain (sent once with the full state)", () => {
+        const state = new GameState();
+        for (const terrain of [TERRAIN.ground, TERRAIN.mountain, TERRAIN.water]) {
+            const tile = new Tile();
+            tile.terrain = terrain;
+            state.tiles.push(tile);
+        }
+        const client = new GameState();
+        new Decoder(client).decode(new Encoder(state).encodeAll());
+        expect(client.tiles.map((t) => t.terrain)).toEqual([
+            TERRAIN.ground,
+            TERRAIN.mountain,
+            TERRAIN.water,
+        ]);
+        expect(new Tile().terrain).toBe(TERRAIN.ground);
     });
 
     it('starts players unarmed and broke, at full base health, as the default character', () => {

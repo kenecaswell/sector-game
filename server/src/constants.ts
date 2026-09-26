@@ -55,3 +55,27 @@ export const KILL_POINTS = 50;
 export const STRUCTURE_POINTS = 25;
 
 export const CREDIT_PAYOUT_INTERVAL_MS = 10_000; // 1 credit per owned tile, every 10s
+
+// Terrain generation (see terrain.ts and docs/GAME_DESIGN.md → Terrain). A new layout is made for
+// every match. Features keep at least one ground hex between them, so these sizes are exact.
+export const TERRAIN_COVERAGE = 0.1; // share of the map that ends up mountain or water (~410 hexes)
+// How often each kind of feature is picked while filling up to TERRAIN_COVERAGE.
+export const TERRAIN_FEATURE_WEIGHTS = { mountain: 0.4, lake: 0.35, river: 0.25 };
+// A range or lake that gets boxed in before reaching `min` is dropped. (With lakes of 3+ and rivers
+// of 2+, no water hex is ever alone, so the "lone water is wadeable" rule never comes up.)
+// Mountain ranges are built from mountain pieces (each will get its own sprite): a small mountain is
+// 3 hexes that all touch, a large one is 7 (a hex and its 6 neighbors, like a structure). Pieces
+// touch but never overlap, so a range is 3 hexes (one small mountain) up to MOUNTAIN_SIZE.max.
+export const MOUNTAIN_SIZE = { min: 3, max: 35 }; // hexes, contiguous
+export const MOUNTAIN_LARGE_CHANCE = 0.4; // chance each piece is a large mountain (when it fits)
+export const LAKE_SIZE = { min: 3, max: 32 }; // hexes, contiguous
+export const RIVER_LENGTH = { min: 2, max: 20 }; // hexes along its course
+export const RIVER_WIDTH = { min: 1, max: 4 }; // hexes across; varies along the river
+export const RIVER_TURN_CHANCE = 0.3; // per step, the river bends 60° left or right
+export const RIVER_WIDTH_CHANGE_CHANCE = 0.25; // per step, the width goes up or down by 1
+// A ground hex with at least this many neighbors in one river is filled in (no holes at bends).
+export const RIVER_POCKET_FILL = 4;
+// At least this many ground hexes separate any two features (mountain ranges, lakes, rivers).
+export const FEATURE_GAP = 3;
+// Hexes within this many steps of the spawn hex (the map center) are always ground.
+export const SPAWN_CLEAR_RADIUS = 4;

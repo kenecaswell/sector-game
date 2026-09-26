@@ -141,6 +141,18 @@ async function lobby() {
         const client = new Client(URL);
         const a = await join(client);
         const b = await join(client);
+        const terrainShare =
+            Array.from(a.state.tiles).filter((t) => t.terrain !== shared.TERRAIN.ground).length /
+            a.state.tiles.length;
+        check(
+            'each room has a generated map: about TERRAIN_COVERAGE of the hexes are terrain',
+            Math.abs(terrainShare - C.TERRAIN_COVERAGE) < 0.01,
+            `${(terrainShare * 100).toFixed(1)}%`
+        );
+        check(
+            '...and a newcomer sees the same map as everyone else',
+            Array.from(b.state.tiles).every((t, i) => t.terrain === a.state.tiles[i].terrain)
+        );
         check(
             'players start in the lobby as unready Farmers, each on their own team',
             phaseOf(a) === 'lobby' &&

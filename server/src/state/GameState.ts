@@ -1,6 +1,12 @@
 import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
 import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
-import { DEFAULT_CHARACTER, GUN_DAMAGE, type GamePhase } from '../types/shared';
+import {
+    DEFAULT_CHARACTER,
+    GUN_DAMAGE,
+    TERRAIN,
+    type GamePhase,
+    type Terrain,
+} from '../types/shared';
 import type {
     GamePhaseStateShape,
     GameStateShape,
@@ -43,6 +49,7 @@ export class Player extends Schema implements PlayerState {
 
 export class Tile extends Schema implements TileState {
     @type('string') ownerId: string = ''; // empty string = unclaimed
+    @type('uint8') terrain: Terrain = TERRAIN.ground; // set once when the room is created (terrain.ts)
 }
 
 export class Projectile extends Schema implements ProjectileState {

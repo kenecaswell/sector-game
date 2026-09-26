@@ -5,6 +5,7 @@ import {
     STRUCTURE_CORNER_OFFSETS,
     STRUCTURE_RADIUS,
     hexCenter,
+    hexDistance,
     hexIndex,
     hexNeighbors,
     inStructureFootprint,
@@ -47,6 +48,18 @@ describe('hex grid', () => {
         expect(isValidHex(-1, 0, 64, 64)).toBe(false);
         expect(isValidHex(1.5, 0, 64, 64)).toBe(false);
         expect(hexIndex(3, 2, 64)).toBe(2 * 64 + 3);
+    });
+
+    it('hexDistance counts steps between hexes, on even and odd columns', () => {
+        expect(hexDistance({ col: 10, row: 10 }, { col: 10, row: 10 })).toBe(0);
+        for (const [col, row] of [
+            [10, 10],
+            [11, 10],
+        ]) {
+            for (const n of hexNeighbors(col, row)) expect(hexDistance({ col, row }, n)).toBe(1);
+        }
+        expect(hexDistance({ col: 0, row: 0 }, { col: 0, row: 5 })).toBe(5);
+        expect(hexDistance({ col: 0, row: 0 }, { col: 6, row: 0 })).toBe(6);
     });
 
     it('sizes the map to include the half-hex drop of odd columns', () => {

@@ -418,3 +418,9 @@ export function ownsShopItem(
 export interface PurchaseMessage {
     itemId: ShopItemId;
 }
+
+// --- Terrain -----------------------------------------------------------------------------------
+// Each hex's terrain, synced once as a byte per tile (Tile.terrain). The server generates a new
+// layout for every match (server/src/terrain.ts); see docs/GAME_DESIGN.md → Terrain for the rules.
+export const TERRAIN = { ground: 0, mountain: 1, water: 2 } as const;
+export type Terrain = (typeof TERRAIN)[keyof typeof TERRAIN];
