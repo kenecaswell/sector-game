@@ -4,7 +4,7 @@
         {
             "name": "server-private",
             "runtimeExecutable": "bash",
-            "runtimeArgs": ["-c", "cd server && PORT=2599 node dist/index.js"],
+            "runtimeArgs": ["-c", "cd server && PORT=2599 node dist/server/src/index.js"],
             "port": 2599
         },
         {

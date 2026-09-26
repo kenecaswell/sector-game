@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 // Checks the game rules directly against the compiled server modules — no server or client needed.
 // Covers: hex math, movement, phases and the lobby, characters, teams, combat, score, economy, the
-// shop, claim radius, and that the hand-copied shared types match on both sides.
+// shop, claim radius, and structures. (Code shared with the client lives in shared/, one copy, so
+// there's nothing to compare between the two sides any more.)
 //
 //   cd server && npm run build && cd .. && node tools/check-rules.js
 //
 // Backs the claims in docs/ARCHITECTURE.md under Game Mechanics (Map, Movement, Score, Shop, ...).
 
-const fs = require('fs');
-const path = require('path');
-const { root, dist, section, check, finish } = require('./lib');
+const { dist, section, check, finish } = require('./lib');
 
 const { GameState, Player, Tile, Structure, Projectile } = dist('state/GameState.js');
 const { MovementSystem } = dist('systems/MovementSystem.js');
@@ -999,32 +998,6 @@ section('Structures (7-hex footprint)');
         'shots hit anywhere inside the hexagon and nowhere outside it',
         inner.every((p) => CollisionSystem.checkProjectileStructureCollision(p, s)) &&
             outer.every((p) => !CollisionSystem.checkProjectileStructureCollision(p, s))
-    );
-}
-
-// ---------------------------------------------------------------------------------------------
-section('Shared types');
-{
-    // types/shared.ts is hand-copied to the client; everything after the header comment must match.
-    const body = (file) => {
-        const text = fs.readFileSync(path.join(root, file), 'utf8');
-        return text.slice(text.indexOf('export type GamePhase')).replace(/\r\n/g, '\n');
-    };
-    check(
-        'server and client types/shared.ts are identical (apart from the header comment)',
-        body('server/src/types/shared.ts') === body('client/src/types/shared.ts')
-    );
-    // The hand-copied part of hex.ts: everything from the first export down to where each side's
-    // own code begins (server-only collisions / client-only projection).
-    const hexShared = (file, end) => {
-        const text = fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
-        const shared = text.slice(text.indexOf('export const HEX_HEIGHT'), text.indexOf(end));
-        return shared.replace(/\/\/ -+\n$/, ''); // drop the separator line above the marker
-    };
-    check(
-        'server and client hex.ts share identical grid and structure math',
-        hexShared('server/src/hex.ts', '// Server-only') ===
-            hexShared('client/src/game/hex.ts', '// Isometric projection')
     );
 }
 

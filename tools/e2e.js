@@ -11,7 +11,7 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
-const { root, dist, colyseusClient, section, check, finish, sleep } = require('./lib');
+const { root, serverDist, dist, colyseusClient, section, check, finish, sleep } = require('./lib');
 
 const { Client } = colyseusClient();
 const { pixelToHex, hexCenter, hexNeighbors, structureFootprint } = dist('hex.js');
@@ -41,7 +41,7 @@ function healthy() {
 /** Runs `fn` against a fresh server whose phases are `scale` times their normal length. */
 async function withServer(scale, fn) {
     if (await healthy()) throw new Error(`port ${PORT} is already in use`);
-    const child = spawn(process.execPath, [path.join(root, 'server', 'dist', 'index.js')], {
+    const child = spawn(process.execPath, [path.join(serverDist, 'index.js')], {
         env: { ...process.env, PORT: String(PORT), PHASE_TIME_SCALE: String(scale) },
         stdio: 'ignore',
     });

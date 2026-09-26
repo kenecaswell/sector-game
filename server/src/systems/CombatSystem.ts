@@ -1,7 +1,8 @@
 import type { GameState, Player } from '../state/GameState';
 import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
-import { PROJECTILE_LIFETIME_MS, SCREEN_Y_SCALE } from '../constants';
+import { PROJECTILE_LIFETIME_MS } from '../constants';
+import { projectileVelocity } from '../../../shared/projectiles';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
@@ -33,15 +34,12 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
     const toRemove = new Set<string>();
 
     state.projectiles.forEach((proj, id) => {
-        // Speed is measured on-screen (see SCREEN_Y_SCALE), like player movement: a shot
-        // fired up the screen covers more world y per second than one fired sideways
-        // covers world x, so both look equally fast.
+        // Speed is measured on-screen (see projectileVelocity, shared with the client's
+        // extrapolation), so shots look equally fast in every direction.
         const prev = { x: proj.x, y: proj.y };
-        const cos = Math.cos(proj.angle);
-        const sin = Math.sin(proj.angle);
-        const onScreenLength = Math.hypot(cos, sin * SCREEN_Y_SCALE);
-        proj.x += (cos / onScreenLength) * proj.speed * dt;
-        proj.y += (sin / onScreenLength) * proj.speed * dt;
+        const velocity = projectileVelocity(proj.angle, proj.speed);
+        proj.x += velocity.x * dt;
+        proj.y += velocity.y * dt;
 
         state.players.forEach((player) => {
             if (toRemove.has(id) || !player.connected) return;

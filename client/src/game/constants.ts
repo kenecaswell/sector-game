@@ -1,9 +1,11 @@
-// Mirrors server/src/constants.ts — keep hex/entity sizes in sync so
-// rendering lines up with the server's authoritative collision math.
-export const HEX_SIZE = 32; // circumradius in world pixels (flat-top)
-export const PLAYER_RADIUS = 20;
-// Mirrors server BASE_CLAIM_RADIUS: a claim radius above this means the player owns the Expander.
-export const BASE_CLAIM_RADIUS = HEX_SIZE;
+// Client tunables. Sizes the server must agree on (HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS,
+// BASE_CLAIM_RADIUS, SCREEN_Y_SCALE) live in shared/constants.ts and are re-exported here, so
+// rendering always lines up with the server's collision math. A claim radius above
+// BASE_CLAIM_RADIUS means the player owns the Expander.
+import { HEX_SIZE, SCREEN_Y_SCALE } from '../../../shared/constants';
+
+export * from '../../../shared/constants';
+
 // The tinted ground circle showing an Expander owner's claim radius (in the player's color).
 // A player whose connection dropped stays on the map, frozen (the server holds their seat and tiles
 // for the reconnect window). They're drawn dimmed by this much so they read as "not here right now"
@@ -11,7 +13,6 @@ export const BASE_CLAIM_RADIUS = HEX_SIZE;
 export const DISCONNECTED_ALPHA = 0.4;
 export const CLAIM_RING_FILL_ALPHA = 0.3;
 export const CLAIM_RING_STROKE_ALPHA = 0.7;
-export const PROJECTILE_RADIUS = 6; // the server's hit radius (same for both guns)
 // Shot looks, by gun (told apart by the projectile's damage). Drawn radius = PROJECTILE_RADIUS x scale.
 export const BASIC_SHOT_SCALE = 0.7; // a small white bolt
 export const BASIC_SHOT_COLORS = { core: 0xffffff, stroke: 0xdfe6ee, glow: 0xffffff };
@@ -20,8 +21,9 @@ export const BIG_SHOT_COLORS = { core: 0xfff2a8, stroke: 0xffb300, glow: 0xffe06
 
 // --- Isometric look (render-only; the server never sees any of this) ---
 // The world is simulated top-down. On screen, y is multiplied by ISO_SQUASH to
-// tilt the map away from the viewer (1 = straight top-down, ~0.5 = steep 2:1).
-export const ISO_SQUASH = 0.6;
+// tilt the map away from the viewer (1 = straight top-down, ~0.5 = steep 2:1). It *is* the server's
+// SCREEN_Y_SCALE, since speeds are measured on screen.
+export const ISO_SQUASH = SCREEN_Y_SCALE;
 export const HEX_DEPTH = 12; // screen px of the cliff face under each hex
 export const BODY_LIFT = 10; // screen px a player/projectile floats above the ground
 // Structures are drawn as a raised slab in the shape of their 7-hex hexagon (see hex.ts): a top face
@@ -62,9 +64,10 @@ export const MOVE_RELATIVE_TO_AIM = false;
 
 // true: movement is equally fast in every on-screen direction. Because the map is
 // tilted, that means covering more *world* distance per second up/down than
-// sideways (the server measures speed with the same tilt — SCREEN_Y_SCALE in
-// server/src/constants.ts must equal ISO_SQUASH). false: speed is uniform in world
-// space, so straight up/down the screen looks ~40% slower than sideways.
+// sideways (the server measures speed with the same tilt: ISO_SQUASH is the shared
+// SCREEN_Y_SCALE). false: speed is uniform in world space, so straight up/down the
+// screen looks ~40% slower than sideways. This only changes how the client turns
+// input into a direction; the server's speed rules are the same either way.
 export const UNIFORM_SCREEN_SPEED = true;
 
 // --- Terrain rendering ---

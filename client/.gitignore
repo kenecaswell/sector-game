@@ -1,3 +1,6 @@
 dist/
 node_modules/
 *.tsbuildinfo
+# vite.config.ts is type-checked only (tsconfig.node.json has noEmit); never commit compiled copies
+vite.config.js
+vite.config.d.ts

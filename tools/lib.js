@@ -4,9 +4,12 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 
-/** require() a module from the compiled server (server/dist), e.g. dist('systems/MovementSystem.js'). */
+// The server compiles server/src and shared/ together, so its output mirrors the repo layout.
+const serverDist = path.join(root, 'server', 'dist', 'server', 'src');
+
+/** require() a module from the compiled server, e.g. dist('systems/MovementSystem.js'). */
 function dist(relativePath) {
-    return require(path.join(root, 'server', 'dist', relativePath));
+    return require(path.join(serverDist, relativePath));
 }
 
 /** The colyseus.js client, borrowed from the client's node_modules. */
@@ -39,4 +42,4 @@ function finish() {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-module.exports = { root, dist, colyseusClient, section, check, finish, sleep };
+module.exports = { root, serverDist, dist, colyseusClient, section, check, finish, sleep };

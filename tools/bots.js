@@ -7,7 +7,7 @@
 //
 // The bots join whatever room is open, so start a match in the browser first (join, Start Game,
 // close the shop) and then run this. For a private setup that doesn't touch your dev server, run
-// a second server (`PORT=2599 node server/dist/index.js`), a second client pointed at it
+// a second server (`PORT=2599 node server/dist/server/src/index.js`), a second client pointed at it
 // (`VITE_SERVER_URL=ws://localhost:2599 npx vite --port 5199`), and pass ws://localhost:2599.
 
 const { colyseusClient, sleep } = require('./lib');

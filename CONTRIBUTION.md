@@ -75,7 +75,7 @@ Keep each pull request focused on one change. Unrelated refactors or reformattin
 Please read these before touching the related code:
 
 - **Two coordinate spaces.** The server simulates in flat top-down coordinates; the isometric look is only a client render transform. Read [Map — hex grid and coordinate spaces](docs/ARCHITECTURE.md#map--hex-grid-and-coordinate-spaces) before changing positions, movement or input.
-- **Hand-copied shared files.** `client/src/types/shared.ts` and `client/src/game/hex.ts` are copies of the matching server files. Change both sides in the same PR.
+- **Shared code lives in `shared/`.** Messages, catalogs, hex math, the sizes both sides must agree on and the synced state's shape are in one place, imported by both the server and the client (through their usual `types/shared.ts`, `hex.ts` and constants files, which re-export it). Keep `shared/` free of npm imports and decorators; `npm run lint` / `npm run format` in `server/` cover it.
 - **Matching constants.** Hex and entity sizes in `client/src/game/constants.ts` must match `server/src/constants.ts`.
 - **Server authority.** Clients send inputs; the server decides outcomes. Don't let the client decide hits, claims, credits or scores.
 - **Pinned Colyseus versions.** `colyseus`, `@colyseus/core`, `@colyseus/schema` and `@colyseus/ws-transport` are pinned exactly in `server/package.json` because the only published client (`colyseus.js` 0.16.x) doesn't work with newer lines. Don't add `^` or bump them without discussing it in an issue first.

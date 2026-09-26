@@ -53,7 +53,7 @@ Run these inside `server/` or `client/`.
 |---|---|
 | `npm run dev` | Run with hot restart (`ts-node-dev`, transpile-only — no type checking) |
 | `npm run build` | Type-check and compile to `dist/` (`tsc`) |
-| `npm start` | Run the compiled server (`node dist/index.js`) — run `build` first |
+| `npm start` | Run the compiled server (`node dist/server/src/index.js`) — run `build` first |
 | `npm run lint` / `npm run lint:fix` | ESLint (flat config) |
 | `npm run format` / `npm run format:check` | Prettier write / check |
 
@@ -180,7 +180,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 
 - **Colyseus versions are pinned exactly** (no `^`) in `server/package.json`: `colyseus` 0.16.5, `@colyseus/core` 0.16.26, `@colyseus/schema` 3.0.76, `@colyseus/ws-transport` 0.16.5. The only published client, `colyseus.js` 0.16.x, works with that line and nothing newer. `@colyseus/core` is only a peer dependency, so an unpinned install silently jumps to 0.18 and breaks the build. After any dependency change run `rm -rf node_modules && npm ci && npm run build` in `server/`, then **join a game from a real browser** — several past bugs passed build and lint on each side and only appeared when a client and server ran together.
 - `server/tsconfig.json` must keep `"useDefineForClassFields": false`. Without it the server crashes on the first client join (`Cannot read properties of undefined (reading 'Symbol(Symbol.metadata)')`).
-- `client/src/types/shared.ts` and `client/src/game/hex.ts` are hand-copies of the matching server files. Change both sides together.
+- Code both sides need (messages, catalogs, hex math, shared sizes, the synced state's shape) lives once in `shared/`. Each side's `types/shared.ts`, `hex.ts` and constants files re-export it, so imports look the same as before. `shared/` can't import npm packages. `npm run lint` and `npm run format` in `server/` cover it.
 
 ## Troubleshooting
 

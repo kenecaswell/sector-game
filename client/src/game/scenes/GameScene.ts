@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { getStateCallbacks, type GameRoom } from '../../net/GameConnection';
 import type { PlayerState, ProjectileState, StructureState } from '../../types/gameState';
 import { GUN_DAMAGE } from '../../types/shared';
+import { projectileVelocity } from '../../../../shared/projectiles';
 import {
     BACKGROUND_COLOR,
     BASE_CLAIM_RADIUS,
@@ -936,7 +937,7 @@ export class GameScene extends Phaser.Scene {
             const view = this.projectileViews.get(id);
             if (!view) return;
 
-            const velocity = this.projectileWorldVelocity(projectile.angle, projectile.speed);
+            const velocity = projectileVelocity(projectile.angle, projectile.speed);
             this.chase(
                 view,
                 projectile.x + velocity.x * EXTRAPOLATION_S,
@@ -947,19 +948,6 @@ export class GameScene extends Phaser.Scene {
             const at = project(view.wx, view.wy);
             view.sprite.setPosition(at.x, at.y).setDepth(at.y);
         });
-    }
-
-    /**
-     * World-space velocity of a projectile, mirroring CombatSystem: `speed` is
-     * on-screen, so a shot heading up/down the screen moves faster in world
-     * units than one heading sideways. Used to extrapolate between server ticks.
-     */
-    private projectileWorldVelocity(angle: number, speed: number): { x: number; y: number } {
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
-        const yScale = UNIFORM_SCREEN_SPEED ? ISO_SQUASH : 1;
-        const onScreenLength = Math.hypot(cos, sin * yScale);
-        return { x: (cos / onScreenLength) * speed, y: (sin / onScreenLength) * speed };
     }
 
     private chase(

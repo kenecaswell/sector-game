@@ -1,8 +1,19 @@
 import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
 import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
-import { DEFAULT_CHARACTER, GUN_DAMAGE } from '../types/shared';
+import { DEFAULT_CHARACTER, GUN_DAMAGE, type GamePhase } from '../types/shared';
+import type {
+    GamePhaseStateShape,
+    GameStateShape,
+    PlayerState,
+    ProjectileState,
+    StructureState,
+    TileState,
+} from '../../../shared/state';
 
-export class Player extends Schema {
+// Each class implements its interface in shared/state.ts (what the client reads), so dropping or
+// retyping a field the client relies on is a compile error here.
+
+export class Player extends Schema implements PlayerState {
     @type('string') id: string = '';
     @type('string') name: string = '';
     @type('number') x: number = 0;
@@ -30,11 +41,11 @@ export class Player extends Schema {
     @type(['string']) upgrades = new ArraySchema<string>(); // UpgradeIds owned, e.g. 'boost'
 }
 
-export class Tile extends Schema {
+export class Tile extends Schema implements TileState {
     @type('string') ownerId: string = ''; // empty string = unclaimed
 }
 
-export class Projectile extends Schema {
+export class Projectile extends Schema implements ProjectileState {
     @type('string') id: string = '';
     @type('string') ownerId: string = '';
     @type('number') x: number = 0;
@@ -45,7 +56,7 @@ export class Projectile extends Schema {
     @type('number') damage: number = GUN_DAMAGE.basic; // set from the shooter's gun when fired
 }
 
-export class Structure extends Schema {
+export class Structure extends Schema implements StructureState {
     @type('string') id: string = '';
     @type('string') ownerId: string = '';
     @type('number') tileX: number = 0;
@@ -55,12 +66,18 @@ export class Structure extends Schema {
     @type('number') maxHealth: number = 100;
 }
 
-export class GamePhaseState extends Schema {
-    @type('string') phase: string = 'lobby'; // lobby | countdown | playing | results
+export class GamePhaseState extends Schema implements GamePhaseStateShape {
+    @type('string') phase: GamePhase = 'lobby'; // lobby | countdown | playing | results
     @type('number') endsAt: number = 0; // server timestamp ms
 }
 
-export class GameState extends Schema {
+// GameState checks everything but its four collections: MapSchema/ArraySchema don't match
+// ReadonlyMap / readonly T[] exactly for the compiler (they do structurally at runtime, which is
+// what the client's cast relies on), and their element classes above are checked individually.
+export class GameState
+    extends Schema
+    implements Omit<GameStateShape, 'players' | 'structures' | 'projectiles' | 'tiles'>
+{
     @type({ map: Player }) players = new MapSchema<Player>();
     @type({ map: Structure }) structures = new MapSchema<Structure>();
     @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();

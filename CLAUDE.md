@@ -17,7 +17,7 @@ Use 4-space indentation (Prettier `tabWidth: 4`, see `client/.prettierrc.json` a
 ## Project docs — read these first
 
 - `README.md`: how to run, build and lint; controls; troubleshooting.
-- `docs/ARCHITECTURE.md`: the source of truth for the design, protocol, decisions and status. It is long, so read its **"Start here"** section first (includes a next-steps proposal and the list of files that must be kept in sync by hand), then search for only the sections you need. The Decisions Log at the end explains why things are the way they are.
+- `docs/ARCHITECTURE.md`: the source of truth for the design, protocol, decisions and status. It is long, so read its **"Start here"** section first (includes a next-steps proposal and how the `shared/` folder both sides import is set up), then search for only the sections you need. The Decisions Log at the end explains why things are the way they are.
 - `tools/README.md`: verification scripts. After server changes, build (`cd server && npm run build`) and run `node tools/check-rules.js`, `node tools/check-collisions.js` and `node tools/e2e.js`. When you add or change a rule, add or update a check there.
 - When you change behavior, update `docs/ARCHITECTURE.md` (and the README for anything user-facing) in the same change, including a Decisions Log row for design choices.
 

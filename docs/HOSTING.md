@@ -23,7 +23,7 @@ Player's browser
    │
    └── WSS ────► game.kenecaswell.com ──► Lightsail static IP
                                             └─ Caddy :443 (TLS)
-                                                 └─ node dist/index.js :2567
+                                                 └─ node dist/server/src/index.js :2567
 ```
 
 **Why the server can't go on Amplify:** Amplify, Lambda and other serverless hosts run short request/response functions. The Colyseus server needs one process that stays up for the whole match: it runs the 20 Hz tick loop, keeps room state in memory and holds each player's WebSocket open. That requires an always-on machine.
@@ -155,7 +155,7 @@ User=ubuntu
 WorkingDirectory=/opt/sector42/server
 Environment=NODE_ENV=production
 Environment=PORT=2567
-ExecStart=/usr/bin/node dist/index.js
+ExecStart=/usr/bin/node dist/server/src/index.js
 Restart=always
 RestartSec=3
 

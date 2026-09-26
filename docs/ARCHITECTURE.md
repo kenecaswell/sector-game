@@ -25,18 +25,20 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 
 **Verify after changes.** Server changes: `cd server && npm run build && npm run lint`, then `node tools/check-rules.js`, `node tools/check-collisions.js`, `node tools/e2e.js` (they run against the compiled server; `tools/README.md` explains each). Client changes: `cd client && npx tsc -b && npx eslint src`, then look at it in a browser — nothing under `tools/` covers rendering. `PHASE_TIME_SCALE=0.05` on the server shrinks every phase so a whole match runs in seconds.
 
-**Kept in sync by hand** (there is no shared package). Change both sides together:
-- `server/src/types/shared.ts` ⇄ `client/src/types/shared.ts` — messages, events and the **shop catalog** (`SHOP_ITEMS`). Checked automatically by `tools/check-rules.js`.
-- `server/src/hex.ts` ⇄ `client/src/game/hex.ts` — shared hex math, including the structure footprint and hexagon (the server-only `structureContact` collision code is not copied; the client adds the iso projection). The shared part is also checked by `tools/check-rules.js`.
-- `SCREEN_Y_SCALE` (server constants) = `ISO_SQUASH` (client constants); `HEX_SIZE` and `PLAYER_RADIUS` mirror across the two constants files.
-- `client/src/types/gameState.ts` mirrors the server's `GameState` schema.
-- Projectile velocity: `CombatSystem` ⇄ the client's `projectileWorldVelocity`.
-- The lobby catalogs (`TEAMS`, `CHARACTERS`, structure/gun/upgrade names) live in `types/shared.ts`, so they're covered by the first bullet.
+**Shared code lives in `shared/`** (since 2026-09-26; before that, these were hand-copied between the two sides). One copy, imported by both:
+- `shared/types.ts` — messages, events, and the catalogs (shop, teams, characters, structure/gun/upgrade names, player-name rules).
+- `shared/hex.ts` — hex grid math and the structure footprint/hexagon.
+- `shared/constants.ts` — `HEX_SIZE`, `PLAYER_RADIUS`, `PROJECTILE_RADIUS`, `SCREEN_Y_SCALE` (the client's `ISO_SQUASH` *is* this), `BASE_CLAIM_RADIUS`.
+- `shared/projectiles.ts` — `projectileVelocity`, used by the server's `CombatSystem` and the client's extrapolation.
+- `shared/state.ts` — the synced state's shape as plain interfaces. The server's schema classes `implement` them (all but `GameState`'s four collections, which the compiler can't match structurally), so dropping or retyping a field the client reads is a compile error. A field the server *adds* isn't flagged; add it to the interface when the client needs it.
+
+Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/src/hex.ts`, `server/src/constants.ts`, `client/src/types/shared.ts`, `client/src/types/gameState.ts`, `client/src/game/hex.ts` and `client/src/game/constants.ts` re-export `shared/` and add only what's theirs (the server's structure collision code, the client's isometric projection and render constants). **Rules for `shared/`:** plain TypeScript with no npm imports (it has no `node_modules`); type-only imports use `import type` (the client compiles it with `verbatimModuleSyntax`); nothing that needs decorators. How it's wired: the server's `tsconfig.json` has `rootDir: ".."` and includes `../shared`, so the compiled server is at `server/dist/server/src/index.js`; the client's `tsconfig.app.json` includes `../shared` and `vite.config.ts` allows the dev server to read `..`; `npm run lint` / `format` in `server/` also cover `shared/` (ESLint runs from inside `shared/` through its one-line `eslint.config.mjs`).
 
 **Gotchas learned the hard way.**
 - Pin all four Colyseus packages exactly and keep `useDefineForClassFields: false` in `server/tsconfig.json`; a client/server version mismatch or a missing flag shows up only when a real client joins (see Tech Stack).
 - Node 20.19+/22.13+/24+ is required; the shell default may be too old.
 - `npm run dev` on the server restarts on any file change and **drops every room**.
+- `client/tsconfig.node.json` must stay type-check only (`noEmit`). It used to emit `vite.config.js`/`.d.ts` next to `vite.config.ts`, and Vite loads a `vite.config.js` *first*, so config edits were silently ignored until `tsc -b` regenerated it. Those files are now git-ignored (2026-09-26).
 - Test on private ports (server `PORT=2599`, client `VITE_SERVER_URL=ws://localhost:2599 npx vite --port 5199`) and don't touch 2567/5173 — the developer often has their own dev server running. The browser test pane is throttled and its screenshots lag; techniques for working around that are in the Testing section.
 
 **Working agreements** (also in `CLAUDE.md`): the developer runs all git commands themselves (ask them to commit); 4-space indentation; update this doc (and the README for user-facing changes) in the same change, including a Decisions Log row for design choices.
@@ -158,11 +160,20 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 
 ```
 /
+├── shared/                         # Code both sides import (plain TS, no npm imports)
+│   ├── types.ts                    # Messages, events, shop/teams/characters catalogs, name rules
+│   ├── hex.ts                      # Hex grid math, structure footprint and hexagon
+│   ├── constants.ts                # Sizes both sides must agree on (HEX_SIZE, radii, SCREEN_Y_SCALE, ...)
+│   ├── projectiles.ts              # projectileVelocity (server movement + client extrapolation)
+│   ├── state.ts                    # Synced state interfaces (server schema implements them)
+│   ├── eslint.config.mjs           # Re-exports the server's ESLint config (linted by server's npm run lint)
+│   └── .prettierrc.json
+│
 ├── server/                         # Node.js + Colyseus server
 │   ├── src/
 │   │   ├── index.ts                # Entry point — Colyseus Server + Express health route
-│   │   ├── constants.ts            # Shared tunables (tick rate, hex size, speed/accel, damage, etc.)
-│   │   ├── hex.ts                  # Flat-top hex grid math: pixel<->hex, hex centers, map bounds
+│   │   ├── constants.ts            # Server tunables (tick rate, speed/accel, health, phases...) + re-exports shared/constants.ts
+│   │   ├── hex.ts                  # Re-exports shared/hex.ts + structureContact() (structure collisions)
 │   │   ├── teams.ts                # areAllies(): same player or same team
 
 │   │   ├── rooms/
@@ -182,7 +193,7 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 │   │   │   ├── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
 │   │   │   └── ShopSystem.ts       # Validates and applies purchases (ammo pack, Basic gun, Expander)
 │   │   └── types/
-│   │       └── shared.ts           # Shared message types (copy into client too)
+│   │       └── shared.ts           # Re-exports shared/types.ts
 │   ├── tsconfig.json
 │   ├── eslint.config.mjs           # ESLint 10 flat config (Node globals)
 │   ├── .prettierrc.json
@@ -201,8 +212,8 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 │   │   │   ├── config.ts           # SERVER_URL from VITE_SERVER_URL env var
 │   │   │   └── GameConnection.ts   # Client/Room wrapper, typed send helpers, reconnection-token persistence
 │   │   ├── types/
-│   │   │   ├── shared.ts           # Hand-copy of server/src/types/shared.ts
-│   │   │   └── gameState.ts        # Plain interfaces typing the decoded room.state shape
+│   │   │   ├── shared.ts           # Re-exports shared/types.ts
+│   │   │   └── gameState.ts        # Re-exports shared/state.ts (the decoded room.state shape)
 │   │   ├── utils/
 │   │   │   ├── device.ts           # isTouchDevice() — picks keyboard vs. virtual-joystick input
 │   │   │   ├── score.ts            # scoreFor(player) — reads the server-computed Player.score
@@ -221,8 +232,8 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 │   │   │   └── ResultsScreen.tsx   # Final standings + Play again / Main menu (stays up after the room closes)
 │   │   └── game/
 │   │       ├── PhaserGame.ts       # Phaser.Game config and init
-│   │       ├── constants.ts        # Client render/smoothing/iso constants; hex/entity sizes mirror server/src/constants.ts
-│   │       ├── hex.ts              # Hand-copy of server/src/hex.ts + isometric project()/unproject()/hexCorners()
+│   │       ├── constants.ts        # Client render/smoothing/iso constants + re-exports shared/constants.ts
+│   │       ├── hex.ts              # Re-exports shared/hex.ts + isometric project()/unproject()/hexCorners()/structureCorners()
 │   │       └── scenes/
 │   │           └── GameScene.ts    # Iso hex terrain, entities, smoothing, mouse-aim/joystick input — see Client — Phaser Game
 │   ├── index.html
@@ -686,7 +697,7 @@ There are two coordinate spaces, and mixing them up is the main way to introduce
 
 The isometric view is **purely a render-time transform**. The server never sees it, so hex math, collision, and movement stay simple top-down. The client `project()`s everything it reads from the server before it touches a Phaser object, and `unproject()`s everything it reads from the pointer or joystick before sending it back (otherwise "aim at the cursor" and "walk where the stick points" come out wrong vertically).
 
-`server/src/hex.ts` provides `hexCenter(col,row)`, `pixelToHex(x,y)` (axial cube-rounding, returns coords that may be off-map), `mapPixelSize(cols,rows)`, `isValidHex`, and `hexIndex`. `client/src/game/hex.ts` is a **hand-copy** of it plus the projection helpers — keep the shared part in sync by hand, like `types/shared.ts`. Verified 2026-09-20: `hexCenter`→`pixelToHex` round-trips exactly for all 4,096 tiles, including points offset toward each hex's edge.
+`shared/hex.ts` provides `hexCenter(col,row)`, `pixelToHex(x,y)` (axial cube-rounding, returns coords that may be off-map), `mapPixelSize(cols,rows)`, `isValidHex`, and `hexIndex`. Both sides import it (the server through `server/src/hex.ts`, which adds structure collisions; the client through `client/src/game/hex.ts`, which adds the projection helpers). Verified 2026-09-20: `hexCenter`→`pixelToHex` round-trips exactly for all 4,096 tiles, including points offset toward each hex's edge.
 
 Known limitation: the map's pixel bounds are a rectangle, but the hex edge is jagged, so a player can stand at a corner over *no* hex. Claiming simply ignores those spots.
 
@@ -812,7 +823,7 @@ Rebuilt 2026-09-26 as a data-driven catalog: each `SHOP_ITEMS` entry has a `cate
 
 All upgrades are permanent for the match (they survive respawns).
 
-- **Shared catalog:** the item list, prices and what each gives live in `SHOP_ITEMS` (plus `AMMO_PACK_SIZE`, `AMMO_CREDITS_PER_SHOT`, `STRUCTURE_COST`, `GUN_DAMAGE`, `ownsShopItem`) in `types/shared.ts`, a block that must stay **identical** in `server/src/types/shared.ts` and `client/src/types/shared.ts` (hand-copied, like the rest of that file). Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS`, `EXPANDER_CLAIM_RADIUS` and the health values are server constants; the client only sees the resulting `Player.claimRadius` / `maxHealth` (and mirrors the base radius to decide when to show the circle).
+- **Shared catalog:** the item list, prices and what each gives live in `SHOP_ITEMS` (plus `AMMO_PACK_SIZE`, `AMMO_CREDITS_PER_SHOT`, `STRUCTURE_COST`, `GUN_DAMAGE`, `ownsShopItem`) in `shared/types.ts`, the one copy both sides import. Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS`, `EXPANDER_CLAIM_RADIUS` and the health values are server constants; the client only sees the resulting `Player.claimRadius` / `maxHealth` (and uses the shared base radius to decide when to show the circle).
 - **Starting budget:** set by the character (50 for most, 15 for the Smuggler). 50 buys one ammo pack; everything else (100+) takes a while of territory income (1 credit per hex every 10 s).
 - **The circle** (`GameScene.updateClaimRing`): an ellipse of the claim-radius diameter, squashed by `ISO_SQUASH` like everything on the ground (160×96 scene px for 80 world px), filled with the player's color at `CLAIM_RING_FILL_ALPHA` and outlined at `CLAIM_RING_STROKE_ALPHA`, at depth −0.4 so it sits above the terrain but under every entity. It's created when the radius exceeds the base, resized if the radius changes, and destroyed with the player.
 - Verified: unit script (affordability, ammo math, second Expander rejected, junk ids like `__proto__`/`toString`/`null` rejected with credits untouched); browser (buying ammo took credits 100 → 70 and ammo 30 → 60, and the Expander button disabled at 70; buying the Expander at 100 left "Owned", the ring appeared in the player's color at 128×77, and a short walk claimed a two-hex-wide swath).
@@ -833,7 +844,7 @@ All upgrades are permanent for the match (they survive respawns).
 
 The client's networking code is built and has been exercised end-to-end against the live server (see the Tech Stack note): join, full-state decode, reactive state callbacks, `startGame`, `input`/`inputAck`, movement, and `tilesClaimed` all confirmed working. It's split into three pieces:
 
-- **`src/types/shared.ts`** — hand-copied mirror of `server/src/types/shared.ts` (the client/server message contract). Keep both files in sync by hand; there's no shared package between the two yet.
+- **`src/types/shared.ts`** — re-exports `shared/types.ts`, the client/server message contract (one copy, shared with the server).
 - **`src/types/gameState.ts`** — plain TypeScript interfaces (`PlayerState`, `TileState`, `ProjectileState`, `StructureState`, `GameStateShape`, etc.) describing the shape of the decoded root state, typed as `ReadonlyMap`/`readonly T[]` rather than importing the server's schema classes. `colyseus.js` decodes `@colyseus/schema` state by **reflection** at connect time, so the client never needs the server's actual `Schema` subclasses — these interfaces exist purely for TypeScript, and the real decoded `MapSchema`/`ArraySchema` instances satisfy them structurally at runtime.
 - **`src/net/GameConnection.ts`** — a thin wrapper around `colyseus.js`'s `Client`/`Room`: `connectToGame(handlers)` joins (or rejoins via a `sessionStorage`-persisted `reconnectionToken`) the `GameRoom` and wires up discrete server→client message handlers; `sendInput`/`sendShoot`/`sendPlaceStructure`/`sendStartGame` are typed send helpers; `leaveGame`/`clearReconnectionToken`/`isNormalClose` support a clean, consented leave. High-frequency gameplay state (positions, tile ownership) is **not** modeled as discrete messages — it's plain Colyseus state, read directly off `room.state` by the Phaser layer's render loop — see [Client — Phaser Game](#client--phaser-game).
 - **`src/main.tsx` must wrap `<App />` in `<GameProvider>`.** `useGameConnection()` throws if there's no provider above it, and because `App` calls it on its very first render, omitting the wrapper produces a completely blank page (React unmounts the tree; the only trace is an uncaught `useGameConnection must be used within a GameProvider` in the console). This was the cause of the "dev server runs but no UI" report on 2026-09-20.
@@ -1320,11 +1331,12 @@ npm install --save-dev typescript@~6.0.2 @types/node @types/express @types/cors 
   "scripts": {
     "dev":          "ts-node-dev --respawn --transpile-only src/index.ts",
     "build":        "tsc",
-    "start":        "node dist/index.js",
-    "lint":         "eslint .",
-    "lint:fix":     "eslint . --fix",
-    "format":       "prettier --write .",
-    "format:check": "prettier --check ."
+    "start":        "node dist/server/src/index.js",
+    "lint":         "eslint . && npm run lint:shared",
+    "lint:shared":  "cd ../shared && ../server/node_modules/.bin/eslint .",
+    "lint:fix":     "eslint . --fix && cd ../shared && ../server/node_modules/.bin/eslint . --fix",
+    "format":       "prettier --write . ../shared",
+    "format:check": "prettier --check . ../shared"
   }
 }
 ```
@@ -1387,7 +1399,7 @@ export default tseslint.config(
 );
 ```
 
-### `.prettierrc.json` (client and server, identical)
+### `.prettierrc.json` (client, server and shared, identical)
 
 > **Indentation is 4 spaces** (`tabWidth: 4`) — this is the project standard for all new and edited code (earlier drafts of this doc said 2). Files written before that was settled are still 2-space, which is why `npm run format:check` flags them; run `npm run format` in each of `client/` and `server/` to bring everything in line, ideally as its own commit so the whitespace churn doesn't bury real changes. `CLAUDE.md` records the convention for Claude Code sessions.
 ```json
@@ -1670,3 +1682,5 @@ Replace the lobby's native `<select>`s (currently restyled with `appearance: non
 | Shop catalog | Data-driven `SHOP_ITEMS` with categories; each item names what it gives; shared `ownsShopItem` decides "already have it" for both server and menu | A hand-written case per item in `ShopSystem` and the menu (previous) | With ten items, keeping the rules in one table stops the server and the menu drifting apart |
 | Prices and new items | Basic gun 100, Big gun 200 (100 damage), Speed boost 100, Armor 100 (200 max health), structures 100 each, ammo 30, Expander 100 | — | Prices requested; the Big gun's effect (double damage) and the gun rules (no downgrade, can skip the basic gun) are first-pass choices |
 | Shot looks by gun | Basic: small white bolt; big: the original yellow bolt, 1.3× larger. Chosen by `Projectile.damage` (already synced); hit radius unchanged | Syncing the gun id on the projectile; a bigger hit radius for big shots | Requested. Damage is already on the projectile, so no protocol change; the hit radius was left alone since only the look was asked for |
+| Shared code | A plain top-level `shared/` folder of TypeScript source, imported by relative path; each side's old files re-export it | Keep hand-copying (previous, with `check-rules` comparing copies); an npm workspaces package | One copy of everything both sides must agree on. Workspaces would hoist dependencies into one `node_modules`, and the project's worst bugs so far were Colyseus client/server version mismatches, so a dependency-free folder is the lower-risk option. Cost: the compiled server moved to `server/dist/server/src/` |
+| Typing the synced state | Plain interfaces in `shared/state.ts` that the schema classes `implement`; the client casts `room.state` to them | The client importing the schema classes; keeping `gameState.ts` in sync by hand (previous) | The schema classes need decorators and `useDefineForClassFields: false`, which the client build shouldn't depend on. `implements` still catches the server dropping or retyping a field the client reads |

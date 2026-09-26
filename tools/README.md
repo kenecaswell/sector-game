@@ -13,7 +13,7 @@ cd server && npm run build
 
 | Script | What it does | Needs a server? | Time |
 |---|---|---|---|
-| `check-rules.js` | Hex math, structure footprints and shape, movement, phases and the lobby, player names, characters, teams, combat, score, economy, shop, claim radius, and that the hand-copied `types/shared.ts` files match | No | ~1 s |
+| `check-rules.js` | Hex math, structure footprints and shape, movement, phases and the lobby, player names, characters, teams, combat, score, economy, shop, claim radius, structures | No | ~1 s |
 | `check-collisions.js` | Players vs. structures (792 approaches to the 7-hex hexagon), projectile speed and tunneling | No | ~2 s |
 | `e2e.js` | Real `colyseus.js` clients against its own throwaway server (port 2598, phase times scaled down): the lobby (names, ready-up, countdown and its cancelling), match lifecycle with character kits, guns and the structure inventory, room closing, shop over the wire, mid-match joins, disconnect/reconnect notices, map edge | It starts its own | ~1 min |
 | `bots.js` | Load bots for profiling a browser client; not a pass/fail check | Yes (yours) | as long as you run it |
