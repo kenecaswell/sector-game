@@ -171,7 +171,8 @@ client/                     React + Phaser client
   src/game/                 Phaser scene, iso/hex helpers, render constants
   src/components/           HUD, score badge, leaderboard popup, joystick, fire button (React overlays)
   src/screens/              Game screen hosting the canvas and overlays
-docs/ARCHITECTURE.md        Architecture, protocol, decisions, status
+docs/ARCHITECTURE.md        How it's built: architecture, protocol, technical decisions, status
+docs/GAME_DESIGN.md         What the game is: rules, numbers, open design questions, design decisions
 docs/HOSTING.md             AWS hosting plan
 ```
 
@@ -200,6 +201,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 
 ## More documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture, network protocol, state schema, game mechanics, testing notes, current status and known issues, planned features, and a decisions log explaining *why* things are the way they are.
+- [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) — what the game is: match flow, teams, characters, territory, combat, structures, economy, scoring and controls, open design questions, and a log of gameplay decisions.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it's built: architecture, network protocol, state schema, how each game mechanic is implemented, testing notes, current status and known issues, planned features, and a log of technical decisions.
 - [`docs/HOSTING.md`](docs/HOSTING.md) — how the game will be hosted on AWS under `kenecaswell.com`.
 - [`CONTRIBUTION.md`](CONTRIBUTION.md) — how to report bugs, set up, and submit changes.

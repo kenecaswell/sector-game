@@ -17,9 +17,10 @@ Use 4-space indentation (Prettier `tabWidth: 4`, see `client/.prettierrc.json` a
 ## Project docs — read these first
 
 - `README.md`: how to run, build and lint; controls; troubleshooting.
-- `docs/ARCHITECTURE.md`: the source of truth for the design, protocol, decisions and status. It is long, so read its **"Start here"** section first (includes a next-steps proposal and how the `shared/` folder both sides import is set up), then search for only the sections you need. The Decisions Log at the end explains why things are the way they are.
+- `docs/GAME_DESIGN.md`: what the game is — the rules and their current numbers, open design questions, and the gameplay decisions log. Read it before changing any rule or balance value.
+- `docs/ARCHITECTURE.md`: the source of truth for how it's built — protocol, state, systems, technical decisions and status. It is long, so read its **"Start here"** section first (includes a next-steps proposal and how the `shared/` folder both sides import is set up), then search for only the sections you need. The Decisions Log at the end explains why things are built the way they are.
 - `tools/README.md`: verification scripts. After server changes, build (`cd server && npm run build`) and run `node tools/check-rules.js`, `node tools/check-collisions.js` and `node tools/e2e.js`. When you add or change a rule, add or update a check there. After client changes, run `cd client && npm test` (Vitest; spec files sit next to the code) and add or update specs for what you changed.
-- When you change behavior, update `docs/ARCHITECTURE.md` (and the README for anything user-facing) in the same change, including a Decisions Log row for design choices.
+- When you change behavior, update the docs in the same change: `docs/GAME_DESIGN.md` for rules and numbers, `docs/ARCHITECTURE.md` for implementation, and the README for anything user-facing. Add a Decisions Log row to the matching doc for deliberate choices (gameplay in GAME_DESIGN, technical in ARCHITECTURE). The code is the source of truth for numbers; keep GAME_DESIGN's values in step with it.
 
 ## Testing
 
