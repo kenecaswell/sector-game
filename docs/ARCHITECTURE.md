@@ -284,6 +284,10 @@ WebSocket via Colyseus protocol. Colyseus handles:
 { type: "selectTeam", teamId: TeamId }             // "red" | "blue" | ... (TEAMS)
 { type: "selectCharacter", characterId: CharacterId } // "farmer" | "miner" | ... (CHARACTERS)
 { type: "setReady", ready: boolean }
+{ type: "setName", name: string }                   // 2–25 characters; allowed while ready
+
+// Join options (colyseus joinOrCreate('GameRoom', options)); not sent on a reconnect.
+{ name?: string }  // the player's saved name (localStorage); falls back to "Player N" if missing/invalid
 
 // Buy an item (allowed during `playing` only). itemId is "ammo", "basicGun" or "expander"; the
 // server checks credits, phase and (for one-per-player items) ownership. See Shop below.
@@ -718,6 +722,7 @@ History: `claiming` (90s) and `combat` (120s) were merged into `playing` on 2026
 Implemented 2026-09-26. Everything below is validated server-side in `LobbySystem`; the client's locked controls are a convenience.
 
 - **Messages** (lobby and countdown phases only): `selectTeam { teamId }`, `selectCharacter { characterId }`, `setReady { ready }`. Unknown ids and non-boolean `ready` are ignored. **Team and character are locked while you're ready** — un-ready to change them — so what everyone saw when they readied is what starts.
+- **Names** (added 2026-09-26): `normalizePlayerName` (shared) collapses whitespace runs to one space, strips control characters and trims, then requires **2–25 characters** counted as people count them (an emoji is one; `nameLength` uses code points). Anything else is allowed. The client sends its saved name as a join option, and `setName` renames in the lobby (not locked by being ready — it changes nothing that matters). **Names are unique:** if another player already has the name (ignoring case), the server gives you the first free `name (1)`, `name (2)`, … — shortening the name if needed so it still fits in 25 (`LobbySystem.uniqueName`). This also fixed the old duplicate `Player N` names after someone left. Invalid names are ignored; renaming is refused once the match starts.
 - **Disconnected players don't hold the lobby up** (they're left out of `everyoneReady`). If they reconnect during the match they play whatever they'd picked.
 - **Joining mid-match** (the room is only locked in `results`): the newcomer plays the default character (Farmer) with its kit applied immediately.
 
@@ -830,8 +835,10 @@ return <GameScreen />;                                       // playing
 ### Lobby screen
 
 Built 2026-09-26 (`screens/LobbyScreen.tsx`; rules in [Lobby, characters and teams](#lobby-characters-and-teams)). A full-screen dark page in the results screen's style:
-- **Player list:** one row per player in join order — color dot, name ("(you)", "(disconnected)"), team, character, ready state. **Your row has the controls:** a Team `<select>` (the 8 team names, each with its current player count, left border in your color), a Character `<select>`, and a **Ready** toggle (yellow "Ready" → green "✓ Ready"; press again to cancel). Both selects are disabled while you're ready. Other rows are read-only ("✓ Ready" / "Not ready"). Below 560px wide each row wraps: name, then the two selects side by side, then a full-width Ready button.
-- **Status line:** "Pick a team and a character, then press Ready." → "Waiting for N more players to get ready…" once you're ready → a large "Starting in 3…" during the countdown (`usePhaseCountdown` at a 100 ms tick so the first number isn't stale).
+- **Player list:** one row per player in join order — color dot, name ("(disconnected)" if so), team, character, ready state. **Your row has the controls:** a **name field** (edit in place; sent on Enter or leaving the field, Esc cancels; red border and "2–25 characters" hint while invalid; 16px text so iOS Safari doesn't zoom in on focus; `enterKeyHint="done"`, `autoComplete="nickname"`), a Team `<select>` (the 8 team names, each with its current player count, left border in your color), a Character `<select>`, and a **Ready** toggle (yellow "Ready" → green "✓ Ready"; press again to cancel). Both selects are disabled while you're ready. Other rows are read-only ("✓ Ready" / "Not ready"). Below 560px wide each row wraps: name, then the two selects side by side, then a full-width Ready button.
+- **Saved name:** `utils/playerName.ts` keeps the last name you set in `localStorage` (`sector42.playerName`; reads and writes are wrapped, so blocked storage just means no memory) and `GameContext` sends it with every fresh join, so it carries over from game to game and across page loads. The name you *typed* is saved, not the suffixed one, so you don't collect "(1) (1)" over time.
+- **Selects are `appearance: none` with a drawn arrow:** Safari ignored the dark styling and drew its own glossy controls (reported 2026-09-26). They're a stopgap — see Planned Features #10.
+- **Status line:** "Set your name, pick a team and a character, then press Ready." → "Waiting for N more players to get ready…" once you're ready → a large "Starting in 3…" during the countdown (`usePhaseCountdown` at a 100 ms tick so the first number isn't stale).
 - **Your character card:** name, one-line description, and the starting kit (gun, ammo, credits, structures, upgrades) from `CHARACTERS`.
 - A short note explains what teammates mean. Notices (disconnect/reconnect toasts) show here too.
 - `GameContext` exposes `selectTeam`, `selectCharacter` and `setReady` (replacing `startGame`/`endBuying`), and its roster signature now includes team, character, ready, gun, inventory and upgrades. `structureInventory`/`upgrades` are `ArraySchema`s, whose item changes don't fire the player's `onChange`, so the context also subscribes to their `onAdd`/`onRemove`.
@@ -1413,6 +1420,7 @@ _As of 2026-09-26 (after the ready-up lobby, characters and teams)._ Server and 
 
 ### Working (browser- or script-verified)
 - **Lobby, characters and teams** (2026-09-26: `tools/check-rules.js`, `tools/e2e.js`, and a two-tab browser pass on private ports): ready-up and the countdown (cancelled by un-readying or a newcomer; not held up by a disconnected player); team/character locked while ready and junk values refused; default teams fill empty colors first; every character's kit applied exactly at match start (and to a mid-match joiner); unarmed players can't shoot; the Basic gun arms you, once; structures come out of the inventory and carry their type; Robot boost speed; no friendly fire on teammates or their structures, teammates' structures walkable, teammates' tiles not taken; standings carry `teamId`. In the browser: the lobby at desktop and 375px width, Smuggler HUD kit, building the Farmer's farm (score +25, Build button disabled after), buying the Basic gun.
+- **Player names** (2026-09-26: `check-rules.js`, `e2e.js`, and the browser): normalization and the 2–25 limit (emoji count as one), unique "(N)" suffixes ignoring case and still within 25, "Player N" fallback, renaming while ready but not mid-match, the join option. In the browser: the invalid hint on a 1-character name, Enter commits, the name saved to localStorage, and a second tab joining as "… (1)" with it; the row at 375px. Safari itself wasn't available to test the select fix.
 - Join, phase timers, credits payout, HUD, leaderboard (browser).
 - **Disconnect notices, reconnect, screen edge** (headless clients + browser, 2026-09-20): both other players get disconnect and reconnect events (the returning player doesn't); toasts show and fade; a tab reconnects in ~330 ms when it becomes visible (simulated); players stop exactly 20 px inside the map edge and the camera keeps them centered and fully visible there.
 - **Shop: ammo and Expander** (unit + brute-force scripts and the browser, 2026-09-20): purchases validated (affordability, one Expander per player, junk ids rejected); radius claiming matches a brute-force scan; the shop UI buys ammo and the Expander, the tinted ring appears in the player's color, and enemy structures protect their hexes from claiming.
@@ -1436,7 +1444,7 @@ The results screen's team table, a real match between armed teammates and enemie
 - **Everything is one height:** the reference art has elevation, cliffs, water and mountains; the prototype has a single flat height, so cliff faces show only on the map edge. Structures are plain boxes and players are circles.
 - **Little to spend credits on yet** — ammo packs, the Basic gun and the Expander (the rest of the shop is a "coming soon" list). There's no way to get more structures once your starting one is placed. See Planned Features #9.
 - **Structure types are cosmetic data only.** Farm, mine, fort and power plant are stored (`Structure.type`) but behave, score and look the same.
-- **Player names aren't unique.** `Player N` uses the current player count, so after someone leaves a newcomer can get a name that's already taken (seen in the lobby pass). There's no name entry yet.
+- **Other players' lobby rows wrap loosely at phone width** (team, character and "Not ready" land on separate lines). Cosmetic; to revisit with the custom pickers (Planned Features #10).
 - **Everyone can pick the same team**, leaving nobody to fight. Allowed on purpose for now; no balancing or team-size cap.
 - **A backgrounded tab's dropped connection: partly addressed.** Reported 2026-09-20 (Chrome blue vs Safari red: blue vanished from Safari's view). Fixed since: dropped players are drawn dimmed instead of hidden, everyone gets disconnect/reconnect notices, failed reconnects keep retrying for the whole window, and a tab reconnects immediately when it becomes visible. **Still unconfirmed:** *why* blue's connection dropped in the first place (likely browser throttling/freezing of the hidden tab), and the visible-tab trigger was tested by simulating the visibility change, not with a real backgrounded browser. When testing with two browsers, keep both windows visible. Untested idea: an indicator for players who are off-screen.
 - **A ~19 fps report on the developer's machine (two browsers open) is unexplained.** The measurable scaling problems were fixed (see Performance pass), but it was never reproduced. Next step: the backtick readout's fps, ms/frame and renderer line from that machine — low fps with small ms/frame points at the GPU/browser (software WebGL, two windows sharing a GPU), not the game code.
@@ -1525,6 +1533,13 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 - The server-side fire-rate limit belongs here too (per-gun fire rate).
 - Balance: the Expander is strong (up to 9× claiming per step) for 100 credits — no longer affordable at the start (≤ 50 credits), so it's now a mid-match buy. Watch for snowballing (territory income plus purchases compound for whoever leads); consider cost scaling, a radius cap, or making upgrades stackable with rising prices.
 - Mobile: the Shop button and popup fit a 375px viewport in principle but haven't been tried on a real device.
+
+### 10. Custom lobby pickers — planned (requested 2026-09-26)
+
+Replace the lobby's native `<select>`s (currently restyled with `appearance: none` as a stopgap):
+- **Team picker:** a row/grid of **color swatches**, sized for touch on mobile (at least ~44px targets), showing which colors have players and which is yours.
+- **Character picker:** a custom component — likely cards with the character's art (once there is art, #7) and kit, rather than a text list.
+- Tidy other players' rows at phone width at the same time (see Known Issues).
 
 ---
 
@@ -1623,3 +1638,4 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 | Structure inventory | `Player.structureInventory` (one entry per structure); `placeStructure` names a type from it and uses one up; `Structure.type` recorded; all types identical for now | Unlimited building with the character setting only the type | Chosen by the developer (2026-09-26): the starting structures are part of what distinguishes characters |
 | Getting a gun | Unarmed players can't shoot; a Basic gun (40 credits, one per player) in the shop | Only Smugglers can shoot until a later shop pass | Chosen by the developer (2026-09-26), so the other five characters can still fight |
 | Robot boost | `boost` upgrade multiplies top speed by 1.25 (`BOOST_SPEED_MULTIPLIER`), acceleration unchanged | Higher acceleration too; a timed boost | "Speed boost" was the spec; 1.25 is a first-pass value to tune |
+| Player names | Editable in the lobby, 2–25 characters (code points), any characters; a taken name (ignoring case) gets the first free " (N)"; saved to `localStorage` and sent as a join option | Allow duplicate names; server-side accounts | The developer allowed either; the suffix keeps names readable in the leaderboard and results and fixed the old duplicate "Player N" bug. Saving the typed (unsuffixed) name avoids stacking suffixes over games |

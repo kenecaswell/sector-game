@@ -18,6 +18,7 @@ import {
     sendPurchase,
     sendSelectCharacter,
     sendSelectTeam,
+    sendSetName,
     sendSetReady,
     sendShoot,
     type GameRoom,
@@ -33,6 +34,8 @@ import type {
     TeamId,
 } from '../types/shared';
 import type { PlayerState } from '../types/gameState';
+import { normalizePlayerName } from '../types/shared';
+import { loadPlayerName, savePlayerName } from '../utils/playerName';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
@@ -69,6 +72,8 @@ interface GameContextValue {
     selectTeam: (teamId: TeamId) => void;
     selectCharacter: (characterId: CharacterId) => void;
     setReady: (ready: boolean) => void;
+    // Rename yourself (lobby only) and remember the name for next time. Ignored if invalid.
+    setName: (name: string) => void;
     purchase: (itemId: ShopItemId) => void;
     // Leave the finished match and join a fresh lobby / just go back to the start screen.
     playAgain: () => void;
@@ -131,24 +136,27 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setStatus((prev) => (prev === 'reconnecting' ? prev : 'connecting'));
         setError(null);
 
-        connectToGame({
-            onPhaseChanged: (event) => {
-                setPhase(event.phase);
-                setPhaseEndsAt(event.endsAt);
+        connectToGame(
+            {
+                onPhaseChanged: (event) => {
+                    setPhase(event.phase);
+                    setPhaseEndsAt(event.endsAt);
+                },
+                onGameOver: (event) => setGameOver(event),
+                onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
+                    const minutes = Math.max(1, Math.round(event.reconnectWindowMs / 60000));
+                    pushNotice(
+                        'warning',
+                        `${event.name} disconnected — their spot is held for ${minutes} min`
+                    );
+                },
+                onPlayerReconnected: (event: PlayerReconnectedEvent) => {
+                    if (event.playerId === roomRef.current?.sessionId) return; // that's us
+                    pushNotice('success', `${event.name} reconnected`);
+                },
             },
-            onGameOver: (event) => setGameOver(event),
-            onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
-                const minutes = Math.max(1, Math.round(event.reconnectWindowMs / 60000));
-                pushNotice(
-                    'warning',
-                    `${event.name} disconnected — their spot is held for ${minutes} min`
-                );
-            },
-            onPlayerReconnected: (event: PlayerReconnectedEvent) => {
-                if (event.playerId === roomRef.current?.sessionId) return; // that's us
-                pushNotice('success', `${event.name} reconnected`);
-            },
-        })
+            { name: loadPlayerName() }
+        )
             .then(async (joinedRoom) => {
                 // The join handshake resolves before the server's initial full-state
                 // message has been decoded, so `state.phase` is undefined until the
@@ -348,6 +356,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
         [room]
     );
 
+    const setName = useCallback(
+        (name: string) => {
+            const normalized = normalizePlayerName(name);
+            if (!room || normalized === null) return;
+            savePlayerName(normalized);
+            sendSetName(room, normalized);
+        },
+        [room]
+    );
+
     const setReady = useCallback(
         (ready: boolean) => {
             if (!room) return;
@@ -384,6 +402,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             selectTeam,
             selectCharacter,
             setReady,
+            setName,
             purchase,
             playAgain,
             exitResults,
@@ -406,6 +425,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             selectTeam,
             selectCharacter,
             setReady,
+            setName,
             purchase,
             playAgain,
             exitResults,

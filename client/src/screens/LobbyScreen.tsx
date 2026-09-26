@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { useGameConnection } from '../context/GameContext';
 import { NoticeStack } from '../components/NoticeStack';
 import type { PlayerState } from '../types/gameState';
@@ -6,12 +7,15 @@ import {
     CHARACTER_IDS,
     DEFAULT_CHARACTER,
     GUN_NAMES,
+    PLAYER_NAME_MAX_LENGTH,
+    PLAYER_NAME_MIN_LENGTH,
     STRUCTURE_NAMES,
     TEAMS,
     TEAM_IDS,
     UPGRADE_NAMES,
     isCharacterId,
     isTeamId,
+    normalizePlayerName,
     type Character,
     type CharacterId,
     type TeamId,
@@ -19,6 +23,8 @@ import {
 import { usePhaseCountdown } from '../utils/usePhaseCountdown';
 
 // Real CSS for what inline styles can't express (:hover, :disabled, the narrow-screen layout).
+// Selects use `appearance: none` with a drawn arrow: Safari otherwise ignores most of their styling
+// and draws its own glossy control. (Custom team/character pickers are planned to replace them.)
 // Class names are prefixed so they can't collide with anything else on the page.
 const LOBBY_CSS = `
 .lobby-row {
@@ -36,16 +42,42 @@ const LOBBY_CSS = `
 .lobby-swatch { flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%; }
 .lobby-pick { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .lobby-select {
+    -webkit-appearance: none;
+    appearance: none;
     width: 100%;
     min-width: 0;
-    padding: 6px 8px;
+    padding: 6px 28px 6px 8px;
     border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 6px;
-    background: #2a2a44;
+    background-color: #2a2a44;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
     color: #fff;
+    font: inherit;
     font-size: 14px;
+    line-height: 1.3;
 }
 .lobby-select:disabled { opacity: 0.55; }
+.lobby-select:focus-visible { outline: 2px solid #f1c40f; outline-offset: 1px; }
+.lobby-name-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lobby-name-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font: inherit;
+    font-size: 16px; /* 16px or more stops iOS Safari zooming in when the field is focused */
+}
+.lobby-name-input:hover { border-color: rgba(255, 255, 255, 0.45); }
+.lobby-name-input:focus { outline: none; border-color: #f1c40f; background: rgba(0, 0, 0, 0.25); }
+.lobby-name-input--invalid, .lobby-name-input--invalid:focus { border-color: #e74c3c; }
+.lobby-name-hint { font-size: 12px; color: #ff8a7a; }
+.lobby-you { flex-shrink: 0; font-size: 13px; opacity: 0.6; }
 .lobby-ready {
     padding: 7px 10px;
     border: none;
@@ -71,8 +103,8 @@ const LOBBY_CSS = `
 `;
 
 /**
- * The pre-match lobby. Every player is listed with their team (color), character and whether
- * they're ready; your own row has the controls. Once everyone is ready the server runs a short
+ * The pre-match lobby. Every player is listed with their name, team (color), character and whether
+ * they're ready; your own row has the controls (your name is editable in place). Once everyone is ready the server runs a short
  * countdown and the match starts (see LobbySystem). Team and character are locked while you're
  * ready, so un-ready to change them.
  */
@@ -86,6 +118,7 @@ export function LobbyScreen() {
         selectTeam,
         selectCharacter,
         setReady,
+        setName,
     } = useGameConnection();
     const secondsLeft = usePhaseCountdown(phase === 'countdown' ? phaseEndsAt : 0, 100);
 
@@ -93,7 +126,7 @@ export function LobbyScreen() {
     const connected = players.filter((player) => player.connected);
     const waitingFor = connected.filter((player) => !player.ready).length;
 
-    let status = 'Pick a team and a character, then press Ready.';
+    let status = 'Set your name, pick a team and a character, then press Ready.';
     if (secondsLeft !== null) status = '';
     else if (me?.ready) {
         status = `Waiting for ${waitingFor} more ${waitingFor === 1 ? 'player' : 'players'} to get ready…`;
@@ -163,6 +196,7 @@ export function LobbyScreen() {
                                 onTeam={selectTeam}
                                 onCharacter={selectCharacter}
                                 onReady={setReady}
+                                onName={setName}
                             />
                         ) : (
                             <OtherRow key={player.id} player={player} />
@@ -191,13 +225,12 @@ function teamName(player: PlayerState): string {
     return isTeamId(player.teamId) ? TEAMS[player.teamId].name : '—';
 }
 
-function Name({ player, you }: { player: PlayerState; you?: boolean }) {
+function Name({ player }: { player: PlayerState }) {
     return (
         <div className="lobby-name">
             <span className="lobby-swatch" style={{ background: player.color }} />
             <span>
                 {player.name}
-                {you ? ' (you)' : ''}
                 {!player.connected ? ' (disconnected)' : ''}
             </span>
         </div>
@@ -210,15 +243,20 @@ interface OwnRowProps {
     onTeam: (teamId: TeamId) => void;
     onCharacter: (characterId: CharacterId) => void;
     onReady: (ready: boolean) => void;
+    onName: (name: string) => void;
 }
 
-function OwnRow({ player, teamCounts, onTeam, onCharacter, onReady }: OwnRowProps) {
+function OwnRow({ player, teamCounts, onTeam, onCharacter, onReady, onName }: OwnRowProps) {
     const locked = player.ready;
     const lockedTitle = locked ? 'Un-ready to change this' : undefined;
 
     return (
         <div className="lobby-row lobby-row--you" role="listitem">
-            <Name player={player} you />
+            <div className="lobby-name">
+                <span className="lobby-swatch" style={{ background: player.color }} />
+                <NameField name={player.name} onName={onName} />
+                <span className="lobby-you">(you)</span>
+            </div>
             <div className="lobby-pick">
                 <select
                     className="lobby-select"
@@ -267,6 +305,63 @@ function OwnRow({ player, teamCounts, onTeam, onCharacter, onReady }: OwnRowProp
             >
                 {locked ? '✓ Ready' : 'Ready'}
             </button>
+        </div>
+    );
+}
+
+/**
+ * Your name, editable in place. Changes are sent when you leave the field or press Enter (Esc
+ * cancels); an invalid name isn't sent and the field goes back to your current one. The server
+ * may add " (1)" if someone else already has it, and the field then shows that.
+ */
+function NameField({ name, onName }: { name: string; onName: (name: string) => void }) {
+    // null while not editing, so the field always shows the server's name otherwise.
+    const [draft, setDraft] = useState<string | null>(null);
+    const cancelled = useRef(false);
+    const valid = draft === null || normalizePlayerName(draft) !== null;
+
+    const commit = () => {
+        const normalized = normalizePlayerName(draft);
+        if (!cancelled.current && normalized !== null && normalized !== name) onName(normalized);
+        cancelled.current = false;
+        setDraft(null);
+    };
+
+    return (
+        <div className="lobby-name-field">
+            <input
+                className={
+                    valid ? 'lobby-name-input' : 'lobby-name-input lobby-name-input--invalid'
+                }
+                type="text"
+                inputMode="text"
+                enterKeyHint="done"
+                autoComplete="nickname"
+                autoCapitalize="words"
+                spellCheck={false}
+                maxLength={PLAYER_NAME_MAX_LENGTH}
+                aria-label="Your name"
+                aria-invalid={!valid}
+                value={draft ?? name}
+                onFocus={(e) => {
+                    setDraft(name);
+                    e.currentTarget.select();
+                }}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    else if (e.key === 'Escape') {
+                        cancelled.current = true;
+                        e.currentTarget.blur();
+                    }
+                }}
+            />
+            {!valid && (
+                <span className="lobby-name-hint" role="alert">
+                    {PLAYER_NAME_MIN_LENGTH}–{PLAYER_NAME_MAX_LENGTH} characters
+                </span>
+            )}
         </div>
     );
 }

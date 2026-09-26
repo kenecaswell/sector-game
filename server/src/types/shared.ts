@@ -44,6 +44,42 @@ export interface SetReadyMessage {
     ready: boolean;
 }
 
+// Client -> Server, lobby only (not locked by being ready). Normalized and checked with
+// normalizePlayerName; if another player already has the name, the server adds " (1)", " (2)"...
+export interface SetNameMessage {
+    name: string;
+}
+
+// Options sent with joinOrCreate. `name` is the player's saved name (localStorage), if any.
+export interface JoinOptions {
+    name?: string;
+}
+
+// --- Player names ------------------------------------------------------------------------------
+// Keep this block identical on both sides too.
+export const PLAYER_NAME_MIN_LENGTH = 2;
+export const PLAYER_NAME_MAX_LENGTH = 25;
+
+/** Counts characters the way people do (an emoji is one), not UTF-16 code units. */
+export function nameLength(name: string): number {
+    return Array.from(name).length;
+}
+
+/**
+ * The cleaned-up name (whitespace runs collapsed to one space, control characters removed,
+ * trimmed), or null if it isn't a string or is shorter than PLAYER_NAME_MIN_LENGTH or longer than
+ * PLAYER_NAME_MAX_LENGTH characters once cleaned up. Any other characters are allowed.
+ */
+export function normalizePlayerName(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const name = value
+        .replace(/\s+/g, ' ')
+        .replace(/\p{Cc}/gu, '')
+        .trim();
+    const length = nameLength(name);
+    return length >= PLAYER_NAME_MIN_LENGTH && length <= PLAYER_NAME_MAX_LENGTH ? name : null;
+}
+
 // Server -> Client, sent to the originating client only (not broadcast) —
 // lets the client discard predicted inputs up to this seq once confirmed.
 export interface InputAckEvent {

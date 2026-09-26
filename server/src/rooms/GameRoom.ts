@@ -29,6 +29,8 @@ import type {
     SelectTeamMessage,
     SelectCharacterMessage,
     SetReadyMessage,
+    SetNameMessage,
+    JoinOptions,
 } from '../types/shared';
 import { isStructureType } from '../types/shared';
 
@@ -71,15 +73,19 @@ export class GameRoom extends Room<GameState> {
         this.onMessage<SetReadyMessage>('setReady', (client, msg) =>
             this.withPlayer(client, (p) => LobbySystem.setReady(this.state, p, msg?.ready))
         );
+        this.onMessage<SetNameMessage>('setName', (client, msg) =>
+            this.withPlayer(client, (p) => LobbySystem.setName(this.state, p, msg?.name))
+        );
         this.onMessage<PurchaseMessage>('purchase', (client, msg) =>
             this.handlePurchase(client, msg)
         );
     }
 
-    onJoin(client: Client): void {
+    onJoin(client: Client, options?: JoinOptions): void {
         const player = new Player();
         player.id = client.sessionId;
-        player.name = `Player ${this.state.players.size + 1}`;
+        // The client sends its saved name; otherwise "Player N". Made unique among the others.
+        player.name = LobbySystem.joiningName(this.state, options?.name);
         LobbySystem.setTeam(player, LobbySystem.defaultTeam(this.state));
         // Joining mid-match: there's no lobby to pick in, so play the default character. (Joining
         // during the countdown cancels it, since the newcomer isn't ready yet.)

@@ -39,7 +39,7 @@ cd client
 npm run dev
 ```
 
-Open http://localhost:5173, click **Join Game**, pick a team and a character, and press **Ready**. The match starts 3 seconds after everyone in the room is ready (on your own, that's straight away).
+Open http://localhost:5173, click **Join Game**, set your name, pick a team and a character, and press **Ready**. The match starts 3 seconds after everyone in the room is ready (on your own, that's straight away).
 
 To try multiplayer, open the page in a second tab or window. Each tab is its own player, because the reconnection token lives in per-tab `sessionStorage`. The exception is Chrome's "Duplicate tab", which copies that storage, so the copy would rejoin as the same player; open a fresh tab instead.
 
@@ -113,7 +113,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 ## How a match works
 
-1. **Lobby** — every player is listed with three choices next to their name:
+1. **Lobby** — every player is listed. Click (or tap) your name to change it: 2–25 characters, anything goes. It's remembered for next time, and if someone already has it you get a "(1)" added. Next to your name are three choices:
    - **Team** — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
    - **Character** — your starting kit (default Farmer):
 

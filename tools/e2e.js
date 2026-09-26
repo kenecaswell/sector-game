@@ -59,8 +59,8 @@ async function withServer(scale, fn) {
     }
 }
 
-async function join(client) {
-    const room = await client.joinOrCreate('GameRoom');
+async function join(client, options) {
+    const room = await client.joinOrCreate('GameRoom', options);
     if (!room.state?.phase) await new Promise((resolve) => room.onStateChange.once(resolve));
     room.inbox = [];
     room.gameOver = null;
@@ -132,6 +132,24 @@ async function lobby() {
                 me(a).teamId !== me(b).teamId &&
                 me(a).color === shared.TEAMS[me(a).teamId].color
         );
+
+        const named = await join(client, { name: '  Ada  ' });
+        const twin = await join(client, { name: 'ada' });
+        check(
+            'a saved name sent on join is used, cleaned up and made unique',
+            me(named).name === 'Ada' && me(twin).name === 'ada (1)',
+            `${me(named).name}, ${me(twin).name}`
+        );
+        twin.send('setName', { name: 'Grace' });
+        named.send('setName', { name: 'x' });
+        await sleep(300);
+        check(
+            'players can rename in the lobby; invalid names are ignored',
+            me(twin).name === 'Grace' && me(named).name === 'Ada'
+        );
+        named.leave(true);
+        twin.leave(true);
+        await sleep(300);
 
         b.send('selectTeam', { teamId: me(a).teamId });
         b.send('selectCharacter', { characterId: 'smuggler' });

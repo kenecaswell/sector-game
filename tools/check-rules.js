@@ -287,6 +287,70 @@ section('Phases and the lobby');
 }
 
 // ---------------------------------------------------------------------------------------------
+section('Player names');
+{
+    const n = shared.normalizePlayerName;
+    check(
+        'names are trimmed and whitespace collapsed; any characters allowed',
+        n('  Ada   Lovelace ') === 'Ada Lovelace' &&
+            n('a\tb') === 'a b' &&
+            n('José 🚀') === 'José 🚀' &&
+            n('x\u0000y') === 'xy'
+    );
+    check(
+        `length must be ${shared.PLAYER_NAME_MIN_LENGTH}-${shared.PLAYER_NAME_MAX_LENGTH} characters (emoji count as one)`,
+        n('a') === null &&
+            n('   a  ') === null &&
+            n('ab') === 'ab' &&
+            n('x'.repeat(25)) !== null &&
+            n('x'.repeat(26)) === null &&
+            n('🚀'.repeat(25)) !== null
+    );
+    check(
+        'non-strings are refused',
+        [undefined, null, 42, {}, ['ab']].every((v) => n(v) === null)
+    );
+
+    const state = new GameState();
+    const a = addPlayer(state, 'a');
+    a.name = 'Bob';
+    const b = addPlayer(state, 'b');
+    b.name = 'Bob (1)';
+    check(
+        'a taken name gets the first free " (N)" suffix, ignoring case',
+        LobbySystem.uniqueName(state, 'Bob') === 'Bob (2)' &&
+            LobbySystem.uniqueName(state, 'bob') === 'bob (2)' &&
+            LobbySystem.uniqueName(state, 'Alice') === 'Alice'
+    );
+    check(
+        'keeping your own name is not a clash',
+        LobbySystem.setName(state, a, 'Bob') && a.name === 'Bob'
+    );
+    a.name = 'x'.repeat(25);
+    const long = LobbySystem.uniqueName(state, 'x'.repeat(25));
+    check('the suffix still fits in the max length', long === 'x'.repeat(21) + ' (1)', long);
+    check(
+        'a newcomer without a valid saved name is "Player N"',
+        LobbySystem.joiningName(state, undefined) === 'Player 3' &&
+            LobbySystem.joiningName(state, 'a') === 'Player 3' &&
+            LobbySystem.joiningName(state, ' Cy ') === 'Cy'
+    );
+    check(
+        'renaming works while ready, but not with an invalid name',
+        LobbySystem.setReady(state, b, true) &&
+            LobbySystem.setName(state, b, 'Carol') &&
+            b.name === 'Carol' &&
+            !LobbySystem.setName(state, b, 'C') &&
+            b.name === 'Carol'
+    );
+    state.phase.phase = 'playing';
+    check(
+        'renaming is refused once the match is on',
+        !LobbySystem.setName(state, b, 'Dave') && b.name === 'Carol'
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
 section('Characters');
 {
     const kits = shared.CHARACTER_IDS.map((id) => {

@@ -1,5 +1,14 @@
 import type { GameState, Player } from '../state/GameState';
-import { TEAMS, TEAM_IDS, isCharacterId, isTeamId, type TeamId } from '../types/shared';
+import {
+    PLAYER_NAME_MAX_LENGTH,
+    TEAMS,
+    TEAM_IDS,
+    isCharacterId,
+    isTeamId,
+    nameLength,
+    normalizePlayerName,
+    type TeamId,
+} from '../types/shared';
 import { CharacterSystem } from './CharacterSystem';
 import { PhaseSystem } from './PhaseSystem';
 import type { Broadcast } from './Broadcast';
@@ -8,7 +17,8 @@ import type { Broadcast } from './Broadcast';
  * The pre-match lobby: each player picks a team (color) and a character and marks themselves
  * ready. Once every connected player is ready, a short countdown runs (the `countdown` phase);
  * if anyone un-readies or a new player joins meanwhile, it's cancelled back to `lobby`. When it
- * finishes, everyone gets their character's starting kit and the match begins.
+ * finishes, everyone gets their character's starting kit and the match begins. Players can also
+ * rename themselves here.
  */
 
 const inLobby = (state: GameState): boolean =>
@@ -28,6 +38,41 @@ function defaultTeam(state: GameState): TeamId {
 function setTeam(player: Player, teamId: TeamId): void {
     player.teamId = teamId;
     player.color = TEAMS[teamId].color;
+}
+
+/**
+ * `name`, made unique among the other players (compared ignoring case): if it's taken, the first
+ * free "name (1)", "name (2)", ... — shortening `name` if needed so the result still fits in
+ * PLAYER_NAME_MAX_LENGTH. `exceptId` is the player being named (their own current name doesn't count).
+ */
+function uniqueName(state: GameState, name: string, exceptId = ''): string {
+    const taken = new Set<string>();
+    state.players.forEach((p) => {
+        if (p.id !== exceptId) taken.add(p.name.toLowerCase());
+    });
+    if (!taken.has(name.toLowerCase())) return name;
+
+    for (let n = 1; ; n++) {
+        const suffix = ` (${n})`;
+        const room = PLAYER_NAME_MAX_LENGTH - suffix.length;
+        const base =
+            nameLength(name) > room ? Array.from(name).slice(0, room).join('').trimEnd() : name;
+        const candidate = base + suffix;
+        if (!taken.has(candidate.toLowerCase())) return candidate;
+    }
+}
+
+/** A newcomer's name: their saved one if it's valid, else "Player N"; unique either way. */
+function joiningName(state: GameState, requested: unknown): string {
+    return uniqueName(state, normalizePlayerName(requested) ?? `Player ${state.players.size + 1}`);
+}
+
+/** Renaming is allowed in the lobby even while ready — it doesn't change anything that matters. */
+function setName(state: GameState, player: Player, name: unknown): boolean {
+    const normalized = normalizePlayerName(name);
+    if (!inLobby(state) || normalized === null) return false;
+    player.name = uniqueName(state, normalized, player.id);
+    return true;
 }
 
 /** Team and character are locked while ready, so what everyone saw when they readied holds. */
@@ -80,6 +125,9 @@ function update(state: GameState, broadcast: Broadcast): void {
 export const LobbySystem = {
     defaultTeam,
     setTeam,
+    uniqueName,
+    joiningName,
+    setName,
     selectTeam,
     selectCharacter,
     setReady,

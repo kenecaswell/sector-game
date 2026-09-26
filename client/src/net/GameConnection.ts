@@ -14,10 +14,12 @@ import type {
     GameOverEvent,
     InputAckEvent,
     InputMessage,
+    JoinOptions,
     PlaceStructureMessage,
     PurchaseMessage,
     SelectCharacterMessage,
     SelectTeamMessage,
+    SetNameMessage,
     SetReadyMessage,
     PlayerDisconnectedEvent,
     PlayerHitEvent,
@@ -100,12 +102,16 @@ export function clearReconnectionToken(): void {
 
 /**
  * Joins (or rejoins, via a saved reconnection token) the GameRoom and wires
- * up the discrete server->client message handlers passed in `handlers`.
+ * up the discrete server->client message handlers passed in `handlers`. `options` go with a
+ * fresh join only (a reconnect keeps the player the server already has).
  * High-frequency/gameplay-critical events (movement, tile ownership) are not
  * modeled as discrete messages — they're plain Colyseus state, read directly
  * off `room.state` by the render loop.
  */
-export async function connectToGame(handlers: GameEventHandlers): Promise<GameRoom> {
+export async function connectToGame(
+    handlers: GameEventHandlers,
+    options: JoinOptions = {}
+): Promise<GameRoom> {
     const savedToken = readReconnectionToken();
     let room: GameRoom;
 
@@ -115,10 +121,10 @@ export async function connectToGame(handlers: GameEventHandlers): Promise<GameRo
         } catch {
             // Token expired, room closed, or server restarted — fall back to a fresh join.
             clearReconnectionToken();
-            room = await client.joinOrCreate<GameStateShape>('GameRoom');
+            room = await client.joinOrCreate<GameStateShape>('GameRoom', options);
         }
     } else {
-        room = await client.joinOrCreate<GameStateShape>('GameRoom');
+        room = await client.joinOrCreate<GameStateShape>('GameRoom', options);
     }
 
     saveReconnectionToken(room);
@@ -172,6 +178,10 @@ export function sendSelectCharacter(
     characterId: SelectCharacterMessage['characterId']
 ): void {
     room.send<SelectCharacterMessage>('selectCharacter', { characterId });
+}
+
+export function sendSetName(room: GameRoom, name: string): void {
+    room.send<SetNameMessage>('setName', { name });
 }
 
 export function sendSetReady(room: GameRoom, ready: boolean): void {
