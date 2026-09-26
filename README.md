@@ -54,6 +54,8 @@ Run these inside `server/` or `client/`.
 | `npm run dev` | Run with hot restart (`ts-node-dev`, transpile-only — no type checking) |
 | `npm run build` | Type-check and compile to `dist/` (`tsc`) |
 | `npm start` | Run the compiled server (`node dist/server/src/index.js`) — run `build` first |
+| `npm test` / `npm run test:watch` | Vitest unit tests (spec files sit next to the code: `ShopSystem.spec.ts`) |
+| `npm run typecheck` | Type-check everything, specs included, without building |
 | `npm run lint` / `npm run lint:fix` | ESLint (flat config) |
 | `npm run format` / `npm run format:check` | Prettier write / check |
 
@@ -68,7 +70,7 @@ Run these inside `server/` or `client/`.
 | `npm run lint` / `npm run lint:fix` | ESLint (flat config, React hooks rules) |
 | `npm run format` / `npm run format:check` | Prettier write / check |
 
-Before committing, run `npm run build && npm run lint` in whichever folder you changed, plus `npm test` in `client/` and the `tools/` checks after server changes (see [tools/README.md](tools/README.md)). `npm run dev` on the server skips type checking, so type errors only show up in `build`.
+Before committing, run `npm run build && npm run lint` in whichever folder you changed, plus `npm test` in both `client/` and `server/`, and `node tools/e2e.js` after server changes (see [tools/README.md](tools/README.md)). `npm run dev` on the server skips type checking, so type errors only show up in `build`.
 
 > **Code style:** 4-space indentation (Prettier `tabWidth: 4`). Some older files are still 2-space, so `format:check` flags them; run `npm run format` once in each folder to fix that, ideally in its own commit so it doesn't bury real changes.
 

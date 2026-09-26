@@ -23,7 +23,7 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 | Rendering, input, smoothing, performance | Client — Phaser Game, Testing → *Performance pass* |
 | Testing and verification | Testing Multiplayer Locally, and `tools/README.md` |
 
-**Verify after changes.** Server changes: `cd server && npm run build && npm run lint`, then `node tools/check-rules.js`, `node tools/check-collisions.js`, `node tools/e2e.js` (they run against the compiled server; `tools/README.md` explains each). Client changes: `cd client && npx tsc -b && npx eslint src && npm test` (Vitest unit and component tests, see *Client unit tests* under Testing), then look at it in a browser — nothing automated covers the Phaser canvas. `PHASE_TIME_SCALE=0.05` on the server shrinks every phase so a whole match runs in seconds.
+**Verify after changes.** Server changes: `cd server && npm test && npm run lint`, then `npm run build && node ../tools/e2e.js` (Vitest unit specs next to the code; `e2e.js` runs real clients against a throwaway server — see *Server unit tests* under Testing and `tools/README.md`). Client changes: `cd client && npx tsc -b && npx eslint src && npm test` (Vitest unit and component tests, see *Client unit tests* under Testing), then look at it in a browser — nothing automated covers the Phaser canvas. `PHASE_TIME_SCALE=0.05` on the server shrinks every phase so a whole match runs in seconds.
 
 **Shared code lives in `shared/`** (since 2026-09-26; before that, these were hand-copied between the two sides). One copy, imported by both:
 - `shared/types.ts` — messages, events, and the catalogs (shop, teams, characters, structure/gun/upgrade names, player-name rules).
@@ -51,7 +51,7 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 3. Spawn positions: a line on the right side of the map, "going west" (`GAME_DESIGN.md` → Open design questions).
 4. Real art and sprites; decide whether terrain is gameplay or decoration (Planned Features #7).
 5. Server-side fire-rate limit; client-side prediction (#8); off-screen player indicators.
-6. Unit tests with Vitest: the client has them (2026-09-26); the server's rules still live in the plain-Node `tools/` scripts — port those next.
+6. ~~Unit tests with Vitest~~ — done for both sides (2026-09-26). Next: a fake-room test harness for `GameRoom` and the client's `GameContext`, which only `tools/e2e.js` and the browser cover today.
 7. Hosting on AWS per `docs/HOSTING.md`.
 8. Unresolved: a ~19 fps report on the developer's machine. Ask for the backtick readout (fps, ms/frame, renderer) — see Known Issues.
 
@@ -194,7 +194,9 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   │   └── ShopSystem.ts       # Validates and applies purchases (ammo pack, Basic gun, Expander)
 │   │   └── types/
 │   │       └── shared.ts           # Re-exports shared/types.ts
-│   ├── tsconfig.json
+│   ├── tsconfig.json               # Type-checks everything, specs included (npm run typecheck)
+│   ├── tsconfig.build.json         # What npm run build compiles: tsconfig.json minus specs and src/test/
+│   ├── vitest.config.ts            # Server unit tests (npm test); specs sit next to the code
 │   ├── eslint.config.mjs           # ESLint 10 flat config (Node globals)
 │   ├── .prettierrc.json
 │   ├── .prettierignore
@@ -250,9 +252,7 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   ├── GAME_DESIGN.md              # Game rules, numbers, open design questions, design decisions
 │   └── HOSTING.md                  # AWS hosting plan (Amplify client, Lightsail server, Caddy)
 │
-├── tools/                          # Verification scripts (plain Node; see tools/README.md)
-│   ├── check-rules.js              # Game rules against the compiled server: hex, movement, phases, score, shop, claiming
-│   ├── check-collisions.js         # Structure sliding sweep, projectile speed and tunneling
+├── tools/                          # End-to-end scripts (plain Node; see tools/README.md)
 │   ├── e2e.js                      # Real clients vs. its own throwaway server: lifecycle, closing, reconnect, shop, edges
 │   ├── bots.js                     # Load bots for profiling a browser client
 │   └── lib.js                      # Shared helpers
@@ -268,6 +268,7 @@ The repo is under git (`main`). Note there are two `package.json`/`node_modules`
 ## Networking Layer
 
 ### Transport
+
 WebSocket via Colyseus protocol. Colyseus handles:
 - Connection handshake and room routing
 - Binary delta-compressed state sync (only changed fields sent each tick)
@@ -1168,6 +1169,15 @@ function getStructureFrame(health: number, maxHealth: number): string {
 
 ## Testing Multiplayer Locally
 
+### Server unit tests (Vitest) — added 2026-09-26
+
+`cd server && npm test` (or `npm run test:watch`) runs **Vitest** on specs next to the code (`src/systems/ShopSystem.ts` → `ShopSystem.spec.ts`): 114 tests in about 2 s. They replaced `tools/check-rules.js` and `tools/check-collisions.js`, covering everything those did plus more.
+- **Config:** `server/vitest.config.ts`. Vitest transpiles with `tsconfig.json`'s settings, including the decorator options the Colyseus schema needs; `src/state/GameState.spec.ts` round-trips state through the Colyseus encoder (full sync, then a delta), which **fails if `useDefineForClassFields` is ever flipped** — verified by flipping it.
+- **Builds stay clean:** `tsconfig.json` type-checks everything including specs (`npm run typecheck`, and your editor); `tsconfig.build.json` (used by `npm run build`) excludes `**/*.spec.ts` and `src/test/`, so `dist/` holds only the server.
+- **Helpers:** `src/test/world.ts` — `world()` (a 64 × 64 map; `{ tiles: false }` skips the 4,096 tiles for movement/combat loops that build hundreds of worlds), `addPlayer`/`addPlayerAt`, `addStructure`, `ownFootprint`, `addShot`/`shootAt`, `inputs`/`runMovement`/`drive`, `onScreenSpeed`.
+- **Covered:** hex math and the structure hexagon/`structureContact` (`hex.spec.ts`); the schema (`state/GameState.spec.ts`); `teams.spec.ts`; and every system — movement (speeds, stale input, edges, boost, structures incl. the 792-approach slide sweep), lobby (ready-up, countdown and its cancelling, picks and locks, default teams, names), phases, characters, combat (damage, kills, respawn, big gun vs armor, friendly fire, structure damage, projectile speed, the no-tunneling check), claiming (brute-force radius check, stealing, teammates, footprint protection, batching), score, economy, shop (every item and rule), structure placement and damage.
+- **Not covered here:** `GameRoom` (message handlers, joining, reconnection, closing) — that's what `tools/e2e.js` exercises with real clients over a real server. The pure `shared/` rules (name cleanup, `ownsShopItem`, catalog sanity) are tested once, in the client suite.
+
 ### Client unit tests (Vitest) — added 2026-09-26
 
 `cd client && npm test` (or `npm run test:watch`) runs **Vitest** with **jsdom** (a simulated browser) and **React Testing Library**. Configuration is the `test` block in `client/vite.config.ts`; `src/test/setup.ts` adds the jest-dom matchers and cleans up (unmount, clear `localStorage`) after every test; `src/test/factories.ts` has `makePlayer` / `makeScore` builders.
@@ -1176,7 +1186,7 @@ function getStructureFrame(health: number, maxHealth: number): string {
 - **Not covered:** `GameScene` and anything else Phaser draws (needs a real WebGL canvas — still checked by hand in a browser), `GameContext`/`GameConnection` (would need a fake Colyseus room), `GameScreen`'s key handling.
 - Tests query the UI the way a user would (roles and accessible names), which is why each shop row is a `role="group"` named after its item.
 
-> **The scripts described in this section now live in `tools/`** (`check-rules.js`, `check-collisions.js`, `e2e.js`, `bots.js`; see `tools/README.md`). They were originally throwaway scripts run from temporary folders and were lost; they were rebuilt against the current code on 2026-09-25 and all pass (43 + 10 + 32 checks). The historical notes below describe what each verification covered when it was first done; where they mention numbers for older constants (player radius 16, claim radius 64), the scripts now read the live constants instead.
+> **Where these checks live now:** the rule and collision checks became **server Vitest specs** on 2026-09-26 (see *Server unit tests* above), and `tools/check-rules.js` / `tools/check-collisions.js` were removed; notes elsewhere in this doc that cite those scripts refer to the specs now. `tools/` keeps `e2e.js` and `bots.js`. History: these checks started as throwaway scripts run from temporary folders, were lost, and were rebuilt in `tools/` on 2026-09-25. The notes below describe what each verification covered when it was first done; where they mention numbers for older constants (player radius 16, claim radius 64), the tests now read the live constants instead.
 
 ### Direct System Tests (no client/network required)
 
@@ -1650,3 +1660,4 @@ Technical decisions: how the game is built. Gameplay, balance, controls and pres
 | Shared code | A plain top-level `shared/` folder of TypeScript source, imported by relative path; each side's old files re-export it | Keep hand-copying (previous, with `check-rules` comparing copies); an npm workspaces package | One copy of everything both sides must agree on. Workspaces would hoist dependencies into one `node_modules`, and the project's worst bugs so far were Colyseus client/server version mismatches, so a dependency-free folder is the lower-risk option. Cost: the compiled server moved to `server/dist/server/src/` |
 | Typing the synced state | Plain interfaces in `shared/state.ts` that the schema classes `implement`; the client casts `room.state` to them | The client importing the schema classes; keeping `gameState.ts` in sync by hand (previous) | The schema classes need decorators and `useDefineForClassFields: false`, which the client build shouldn't depend on. `implements` still catches the server dropping or retyping a field the client reads |
 | Client tests | Vitest + jsdom + React Testing Library, spec files next to the code, configured in `vite.config.ts` | Jest (a second transform pipeline alongside Vite); Vitest browser mode (a real browser, heavier to run) | Vitest reuses the client's Vite config and TypeScript setup, so there's nothing extra to keep in step. jsdom is enough for the React UI; Phaser still needs a real browser |
+| Server tests | Vitest specs next to the code, sharing `tsconfig.json`; a separate `tsconfig.build.json` keeps specs out of `dist/`; the old rule/collision scripts removed once ported | Keep the plain-Node `tools/` scripts alongside (two copies of every check); put specs in a separate `test/` tree | One copy of each check, found next to the code it covers, with Vitest's watch mode and failure diffs. `e2e.js` stays a script because it drives a real server process |

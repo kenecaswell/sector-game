@@ -1,11 +1,14 @@
 # tools/
 
-Verification scripts for the game rules and server behavior. They are plain Node scripts (no test
-framework) that print ✔/✘ per check and exit non-zero if anything fails. They exist because
-`docs/ARCHITECTURE.md` cites verified numbers and behaviors; these are how to re-verify them after
-a change. They are meant to be ported to Vitest when unit tests are added.
+Scripts that exercise the real server end to end, beyond what unit tests can reach. They are plain
+Node scripts that print ✔/✘ per check and exit non-zero if anything fails.
 
-All of them run against the **compiled** server, so build it first:
+**The game rules themselves are unit-tested with Vitest** (`cd server && npm test`; spec files sit
+next to the code, e.g. `server/src/systems/ShopSystem.spec.ts`). Those specs replaced the old
+`check-rules.js` and `check-collisions.js` scripts here on 2026-09-26, and back the numbers that
+`docs/GAME_DESIGN.md` and `docs/ARCHITECTURE.md` cite.
+
+These scripts run against the **compiled** server, so build it first:
 
 ```bash
 cd server && npm run build
@@ -13,14 +16,10 @@ cd server && npm run build
 
 | Script | What it does | Needs a server? | Time |
 |---|---|---|---|
-| `check-rules.js` | Hex math, structure footprints and shape, movement, phases and the lobby, player names, characters, teams, combat, score, economy, shop, claim radius, structures | No | ~1 s |
-| `check-collisions.js` | Players vs. structures (792 approaches to the 7-hex hexagon), projectile speed and tunneling | No | ~2 s |
 | `e2e.js` | Real `colyseus.js` clients against its own throwaway server (port 2598, phase times scaled down): the lobby (names, ready-up, countdown and its cancelling), match lifecycle with character kits, guns and the structure inventory, room closing, shop over the wire, mid-match joins, disconnect/reconnect notices, map edge | It starts its own | ~1 min |
 | `bots.js` | Load bots for profiling a browser client; not a pass/fail check | Yes (yours) | as long as you run it |
 
 ```bash
-node tools/check-rules.js
-node tools/check-collisions.js
 node tools/e2e.js
 node tools/bots.js 4 120            # then profile the browser; see ARCHITECTURE.md, Performance pass
 ```

@@ -1,0 +1,5 @@
+{
+    // What `npm run build` compiles into dist/: everything in tsconfig.json except the specs and their helpers (src/test/).
+    "extends": "./tsconfig.json",
+    "exclude": ["node_modules", "dist", "**/*.spec.ts", "src/test/**"]
+}

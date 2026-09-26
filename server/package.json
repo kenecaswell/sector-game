@@ -6,7 +6,10 @@
     "type": "commonjs",
     "scripts": {
         "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-        "build": "tsc",
+        "build": "tsc -p tsconfig.build.json",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest",
         "start": "node dist/server/src/index.js",
         "lint": "eslint . && npm run lint:shared",
         "lint:shared": "cd ../shared && ../server/node_modules/.bin/eslint .",
@@ -36,6 +39,7 @@
         "prettier": "^3.9.8",
         "ts-node-dev": "^2.0.0",
         "typescript": "~6.0.2",
-        "typescript-eslint": "^8.70.0"
+        "typescript-eslint": "^8.70.0",
+        "vitest": "^5.0.2"
     }
 }
