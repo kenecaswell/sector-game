@@ -12,10 +12,10 @@ Be kind and assume good intent. Harassment, personal attacks and discriminatory 
 
 - **Report a bug** — something broken, confusing or slow.
 - **Suggest a feature** — new mechanics, shop items, UI improvements.
-- **Improve the docs** — the [README](README.md) and [technical blueprint](docs/ARCHITECTURE.md).
-- **Write code** — fix a bug or build something from the planned features in the blueprint.
+- **Improve the docs** — the [README](README.md), the [game design doc](docs/GAME_DESIGN.md) and the [architecture doc](docs/ARCHITECTURE.md).
+- **Write code** — fix a bug or build something from the [planned features](docs/ARCHITECTURE.md#planned-features).
 
-For anything larger than a small fix, please **open an issue first** to talk it through. The game is server-authoritative and a few design choices are deliberate (see the decisions log in the blueprint), so a quick conversation up front saves rework.
+For anything larger than a small fix, please **open an issue first** to talk it through. The game is server-authoritative and a few choices are deliberate (see the decisions logs in the [game design](docs/GAME_DESIGN.md#design-decisions-log) and [architecture](docs/ARCHITECTURE.md#decisions-log) docs), so a quick conversation up front saves rework.
 
 ## Reporting bugs
 
@@ -32,7 +32,7 @@ Check the [Troubleshooting](README.md#troubleshooting) table first — some beha
 
 ## Suggesting features
 
-Open an issue describing the problem or gameplay goal, not just the solution. Mention how it affects mobile players, since touch is a first-class input. Check the planned features in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) in case it's already on the roadmap.
+Open an issue describing the problem or gameplay goal, not just the solution. Mention how it affects mobile players, since touch is a first-class input. Check the [open design questions and plans](docs/GAME_DESIGN.md#open-design-questions-and-plans) in case it's already being considered.
 
 ## Development setup
 
@@ -123,7 +123,8 @@ When unit tests are added (Vitest is planned), new logic — especially server s
 3. Include a screenshot or short clip for visual or UI changes.
 4. Update the docs in the same PR if behaviour changes:
    - the [README](README.md) for anything players or new contributors need to know (controls, scripts, configuration);
-   - the [technical blueprint](docs/ARCHITECTURE.md) for architecture, protocol or state changes — and add an entry to its decisions log if you made a non-obvious design choice.
+   - the [game design doc](docs/GAME_DESIGN.md) for changes to rules, numbers or controls — and add an entry to its decisions log for a deliberate gameplay choice;
+   - the [architecture doc](docs/ARCHITECTURE.md) for architecture, protocol or state changes — and add an entry to its decisions log if you made a non-obvious technical choice.
 5. A maintainer will review it. Please respond to feedback by pushing new commits to the same branch; we may ask you to squash before merging.
 
 Don't worry about getting everything perfect on the first try — reviews are a conversation.
