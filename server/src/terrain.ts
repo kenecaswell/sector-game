@@ -26,7 +26,8 @@ import {
     type HexCoord,
 } from './hex';
 import { TERRAIN, type Terrain } from './types/shared';
-import { isShallowWater } from '../../shared/terrain';
+import { blocksWalking, isShallowWater } from '../../shared/terrain';
+import type { GameState } from './state/GameState';
 
 export type FeatureKind = 'mountain' | 'lake' | 'river';
 
@@ -476,4 +477,23 @@ export function generateTerrain(
         for (const h of feature.hexes) terrain[at(h)] = type;
     }
     return { terrain, features, spawn };
+}
+
+// --- Terrain in a running match --------------------------------------------------------------
+
+/** The terrain at hex (col, row) of a match, or undefined off the map. */
+export function terrainAt(state: GameState, col: number, row: number): Terrain | undefined {
+    if (!isValidHex(col, row, state.mapWidth, state.mapHeight)) return undefined;
+    return state.tiles[hexIndex(col, row, state.mapWidth)]?.terrain;
+}
+
+/** Whether a player on foot (no Wings) is stopped by hex (col, row): a mountain or deep water. */
+export function blocksWalkingAt(state: GameState, col: number, row: number): boolean {
+    return blocksWalking((c, r) => terrainAt(state, c, r), col, row);
+}
+
+/** Whether the world point (x, y) is over a mountain (which stops shots). */
+export function isMountainAtPoint(state: GameState, x: number, y: number): boolean {
+    const { col, row } = pixelToHex(x, y);
+    return terrainAt(state, col, row) === TERRAIN.mountain;
 }

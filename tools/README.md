@@ -36,6 +36,11 @@ for p in 2601 2602 2603 2604; do E2E_PORT=$p node tools/e2e.js > e2e-$p.log 2>&1
 grep -h "✘" e2e-*.log
 ```
 
+**Terrain:** every room gets a random map, so a check that walks far (like the map-edge scenario)
+could be stopped by a mountain. Such scenarios run on plain ground: `withServer(scale, fn,
+{ TERRAIN_COVERAGE: '0' })` sets the server's `TERRAIN_COVERAGE` environment variable (dev/testing
+only). Checks near the spawn don't need it, since the spawn area is always clear.
+
 **Writing checks that don't flake:** Colyseus sends broadcast messages immediately but state
 changes on its next patch (every 50 ms), so a message can arrive before the state it describes.
 Wait for the state itself (`waitFor(() => ...)`) rather than for a message plus a fixed `sleep`.

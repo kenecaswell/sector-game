@@ -4,7 +4,7 @@ import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { SCREEN_Y_SCALE, TICK_RATE } from '../constants';
 import { hexCenter, structureFootprint } from '../hex';
-import type { GamePhase } from '../types/shared';
+import type { GamePhase, Terrain } from '../types/shared';
 
 export const DT = 1 / TICK_RATE; // one server tick, in seconds
 export const MAP_SIZE = 64;
@@ -67,6 +67,15 @@ export function ownFootprint(state: GameState, ownerId: string, col: number, row
     for (const hex of structureFootprint(col, row)) {
         state.tiles[hex.row * state.mapWidth + hex.col].ownerId = ownerId;
     }
+}
+
+/** Sets the terrain of the given hexes (the rest stay ground). */
+export function setTerrain(
+    state: GameState,
+    terrain: Terrain,
+    hexes: Array<[number, number]>
+): void {
+    for (const [col, row] of hexes) state.tiles[row * state.mapWidth + col].terrain = terrain;
 }
 
 export function tileAt(state: GameState, col: number, row: number): Tile {

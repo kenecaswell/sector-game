@@ -2,6 +2,7 @@
 // import from this file as usual). Below is the server-only part: structure collisions.
 
 import { hexCenter, STRUCTURE_RADIUS, STRUCTURE_ROTATION } from '../../shared/hex';
+import { HEX_SIZE } from '../../shared/constants';
 
 export * from '../../shared/hex';
 
@@ -24,6 +25,7 @@ function regularHexagon(circumradius: number, rotation: number): ConvexShape {
 }
 
 const STRUCTURE_SHAPE = regularHexagon(STRUCTURE_RADIUS, STRUCTURE_ROTATION);
+const HEX_SHAPE = regularHexagon(HEX_SIZE, 0); // one tile (flat-top)
 
 /**
  * Where a point (dx, dy), relative to a shape's center, sits against that convex shape, for
@@ -84,4 +86,15 @@ export function structureContact(
 ): { distance: number; nx: number; ny: number } {
     const center = hexCenter(col, row);
     return shapeContact(x - center.x, y - center.y, STRUCTURE_SHAPE);
+}
+
+/** `shapeContact` against the single hex (col, row) — for solid terrain. */
+export function hexContact(
+    x: number,
+    y: number,
+    col: number,
+    row: number
+): { distance: number; nx: number; ny: number } {
+    const center = hexCenter(col, row);
+    return shapeContact(x - center.x, y - center.y, HEX_SHAPE);
 }

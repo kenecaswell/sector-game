@@ -3,6 +3,7 @@ import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
 import { PROJECTILE_LIFETIME_MS } from '../constants';
 import { projectileVelocity } from '../../../shared/projectiles';
+import { isMountainAtPoint } from '../terrain';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
@@ -40,6 +41,14 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
         const velocity = projectileVelocity(proj.angle, proj.speed);
         proj.x += velocity.x * dt;
         proj.y += velocity.y * dt;
+
+        // Mountains stop shots (water doesn't). Checking the middle of this tick's travel as well
+        // as its end keeps a shot from skipping over a mountain's corner.
+        const mid = { x: (prev.x + proj.x) / 2, y: (prev.y + proj.y) / 2 };
+        if (isMountainAtPoint(state, mid.x, mid.y) || isMountainAtPoint(state, proj.x, proj.y)) {
+            toRemove.add(id);
+            return;
+        }
 
         state.players.forEach((player) => {
             if (toRemove.has(id) || !player.connected) return;

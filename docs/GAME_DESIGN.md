@@ -104,7 +104,7 @@ Implementation: [Map — hex grid and coordinate spaces](ARCHITECTURE.md#map--he
 
 ## Terrain
 
-🧪 **Generated and drawn; the rules aren't built yet** (2026-09-26). Every match gets a random layout, shown on the map, but mountains and water don't block anyone, can still be claimed, and don't stop shots until step 2; Wings come in step 3. Every hex is one of three terrain types. There's **no elevation**: mountains are a kind of hex, not a height.
+🧪 **Built except Wings** (2026-09-26): every match gets a random layout; mountains and deep water block movement, nobody can claim terrain, and mountains stop shots. **Wings** (step 3) is still to come, so for now nobody can cross mountains or deep water. Every hex is one of three terrain types. There's **no elevation**: mountains are a kind of hex, not a height.
 
 | Terrain | Walk on it? | Claim it? | Shots |
 |---|---|---|---|
@@ -127,7 +127,7 @@ Terrain comes in features, each a contiguous group of hexes (every hex touches a
 
 ### Moving through terrain
 
-- **Mountains** are solid: you slide along their edge, the way enemies slide around a structure.
+- **Mountains** are solid: you slide along their edge, the way enemies slide around a structure, even where the edge zigzags from hex to hex.
 - **Water** is **shallow** where it's only one hex across — you could step straight over it — and **deep** everywhere else. Precisely: a water hex is shallow if it has at most two water neighbors and those two don't touch each other. In practice that's the 1-wide stretches of rivers (bends included; about 6% of all water). Lakes and 2–4-wide river stretches are deep and solid like a mountain. Shallow water is drawn a lighter blue.
 - **Wings** (upgrade, [shop](#economy-and-shop)) let you walk over mountains and deep water. Winged or not, you still can't claim them.
 
@@ -146,7 +146,7 @@ Terrain comes in features, each a contiguous group of hexes (every hex touches a
 - **The spawn area is always open ground.** Everyone starts and respawns at the map center, and the generator keeps that area clear.
 - **Every ground hex can be reached on foot.** The generator never walls off ground with mountains or deep water (shallow water counts as walkable), so players without Wings can always get anywhere a structure could be built.
 
-Implementation: [Terrain](ARCHITECTURE.md#terrain) (generation and drawing); the movement, claiming, shooting and Wings rules are still to come.
+Implementation: [Terrain](ARCHITECTURE.md#terrain). Still to come: the Wings upgrade.
 
 ## Players
 
@@ -199,7 +199,7 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 - **Claiming:** during the match, every moment you claim the hex you're standing on **plus every hex whose center is within your claim radius**. The normal radius is about one hex (`BASE_CLAIM_RADIUS`, the hex size): in practice just the hex under you, occasionally a neighbor when you're near an edge.
 - **Expander:** 🧪 raises your claim radius to 4 × your body radius (`EXPANDER_CLAIM_RADIUS`, 80). That claims 7 hexes when you stand in the middle of one, and up to 9 depending on where you are. Everyone can see an Expander owner's claim radius as a tinted circle around them.
 - **Stealing:** walking over (or near, with the Expander) an **enemy's** hex takes it from them. A **teammate's** hex is never taken.
-- **Terrain:** 📝 mountain and water hexes can never be claimed ([Terrain](#terrain)).
+- **Terrain:** mountain and water hexes can never be claimed, not even the shallow water you wade through ([Terrain](#terrain)).
 - **Protected hexes:** the 7 hexes under an **enemy's structure** can't be claimed. Destroy the structure first.
 - **Ties:** if two players reach the same hex at the same moment, the one who joined the room first gets it. 📝 Not a deliberate rule; see open questions.
 - **When a player leaves for good,** their hexes go back to unclaimed.
@@ -220,7 +220,7 @@ Implementation: [Tile Claiming](ARCHITECTURE.md#tile-claiming).
   You have at most one gun. The Big gun replaces the Basic gun, and you can buy it without owning the Basic gun first. You can't go back to the Basic gun.
 - **Ammo:** each shot uses 1. You can buy ammo before you have a gun. 📝 Ammo **never regenerates and has no cap**; the only source is buying ammo packs. Running out means you can't shoot until you buy more.
 - **Fire rate:** up to 5 shots per second while you hold the fire control (200 ms apart, `FIRE_INTERVAL_MS`). 📝 This limit is currently enforced only by the game client; the server should own it.
-- **Shots:** travel in a straight line at the same on-screen speed in every direction, and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`), which is roughly a quarter of the map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or 📝 at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
+- **Shots:** travel in a straight line at the same on-screen speed in every direction, and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`), which is roughly a quarter of the map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
 - **Friendly fire:** none. Shots pass through teammates and teammates' structures.
 - **Kills:** the shooter's kill count goes up and the victim respawns at the center (see [Players](#players)). Kills are permanent and count toward score.
 
@@ -232,7 +232,7 @@ Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detecti
 
 - **Getting them:** each structure-starting character begins with one, and the shop sells more (100 credits each). You hold them in a **structure inventory** until you place them.
 - **Footprint:** a structure sits on a center hex and **covers that hex plus its 6 neighbors**.
-- **Placing:** press Build, then pick a spot. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, 📝 structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can build there, red if not.
+- **Placing:** press Build, then pick a spot. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can build there, red if not.
 - **Solid:** enemies can't walk through your structure; they slide around it. You and your teammates can walk over it.
 - **Protection:** enemies can't claim any of its 7 hexes.
 - **Health and destruction:** 🧪 100 health. Enemy shots damage it, and at 0 it's destroyed and removed. 📝 There's no visible damage state yet (planned: intact → cracked → heavily damaged).

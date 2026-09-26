@@ -8,7 +8,8 @@ import {
     PLAYER_SPEED,
     SCREEN_Y_SCALE,
 } from '../constants';
-import { mapPixelSize, structureContact } from '../hex';
+import { hexContact, hexNeighbors, mapPixelSize, pixelToHex, structureContact } from '../hex';
+import { blocksWalkingAt } from '../terrain';
 import { areAllies } from '../teams';
 
 export interface PlayerInput {
@@ -126,9 +127,48 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
             }
         }
 
+        ({ x, y } = pushOutOfTerrain(state, player, x, y));
+
         player.x = Math.max(MAP_EDGE_MARGIN, Math.min(width - MAP_EDGE_MARGIN, x));
         player.y = Math.max(MAP_EDGE_MARGIN, Math.min(height - MAP_EDGE_MARGIN, y));
     });
+}
+
+/**
+ * Keeps a player's circle out of solid terrain (mountains and deep water; see blocksWalkingAt) and
+ * returns the corrected position. Terrain walls are many hexes side by side, often zigzagging, so
+ * instead of refusing moves (as for a structure, which is one convex shape) any overlap is pushed
+ * back out along the hex's edge normal, and velocity into it is dropped. Repeated a few times for
+ * spots where two hexes touch the circle at once, this slides players smoothly along any wall.
+ * A circle that fits inside a hex can only touch that hex and its 6 neighbors, so only those are
+ * checked.
+ */
+function pushOutOfTerrain(
+    state: GameState,
+    player: { vx: number; vy: number },
+    x: number,
+    y: number
+): { x: number; y: number } {
+    for (let pass = 0; pass < 3; pass++) {
+        let pushed = false;
+        const under = pixelToHex(x, y);
+        for (const hex of [under, ...hexNeighbors(under.col, under.row)]) {
+            if (!blocksWalkingAt(state, hex.col, hex.row)) continue;
+            const contact = hexContact(x, y, hex.col, hex.row);
+            if (contact.distance >= PLAYER_RADIUS) continue;
+            const depth = PLAYER_RADIUS - contact.distance;
+            x += contact.nx * depth;
+            y += contact.ny * depth;
+            const speedInto = player.vx * contact.nx + player.vy * contact.ny;
+            if (speedInto < 0) {
+                player.vx -= speedInto * contact.nx;
+                player.vy -= speedInto * contact.ny;
+            }
+            pushed = true;
+        }
+        if (!pushed) break;
+    }
+    return { x, y };
 }
 
 /**

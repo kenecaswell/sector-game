@@ -9,7 +9,7 @@ import {
     structureContact,
 } from '../hex';
 import type { Broadcast } from './Broadcast';
-import type { TilesClaimedEvent } from '../types/shared';
+import { TERRAIN, type TilesClaimedEvent } from '../types/shared';
 import { areAllies } from '../teams';
 
 /**
@@ -77,6 +77,7 @@ function claimTiles(
 
             const tile = state.tiles[hexIndex(col, row, state.mapWidth)];
             if (!tile || tile.ownerId === player.id) continue;
+            if (tile.terrain !== TERRAIN.ground) continue; // mountains and water can't be claimed
             if (tile.ownerId !== '' && areAllies(state, tile.ownerId, player.id)) continue;
             if (isProtectedFrom(state, col, row, player.id)) continue;
 

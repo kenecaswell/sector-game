@@ -1,6 +1,7 @@
 // Terrain rules both sides need. See docs/GAME_DESIGN.md → Terrain.
 
 import { hexNeighbors } from './hex';
+import { TERRAIN, type Terrain } from './types';
 
 /**
  * Whether the water hex at (col, row) is shallow enough to wade through: you could step straight
@@ -21,4 +22,19 @@ export function isShallowWater(
     if (wet.length > 2) return false;
     const apart = Math.abs(wet[0] - wet[1]);
     return apart !== 1 && apart !== 5; // neighbors k and k±1 touch each other
+}
+
+/**
+ * Whether the hex at (col, row) stops a player on foot (without Wings): a mountain, or deep water.
+ * `terrainAt` gives a hex's terrain, or undefined off the map.
+ */
+export function blocksWalking(
+    terrainAt: (col: number, row: number) => Terrain | undefined,
+    col: number,
+    row: number
+): boolean {
+    const terrain = terrainAt(col, row);
+    if (terrain === TERRAIN.mountain) return true;
+    if (terrain !== TERRAIN.water) return false;
+    return !isShallowWater((c, r) => terrainAt(c, r) === TERRAIN.water, col, row);
 }

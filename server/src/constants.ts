@@ -58,7 +58,11 @@ export const CREDIT_PAYOUT_INTERVAL_MS = 10_000; // 1 credit per owned tile, eve
 
 // Terrain generation (see terrain.ts and docs/GAME_DESIGN.md → Terrain). A new layout is made for
 // every match. Features keep at least one ground hex between them, so these sizes are exact.
-export const TERRAIN_COVERAGE = 0.1; // share of the map that ends up mountain or water (~410 hexes)
+// Share of the map that ends up mountain or water (~410 hexes). The TERRAIN_COVERAGE environment
+// variable (dev/testing only, like PHASE_TIME_SCALE) overrides it, e.g. 0 for a map of plain ground.
+const requestedCoverage = Number(process.env.TERRAIN_COVERAGE);
+export const TERRAIN_COVERAGE =
+    process.env.TERRAIN_COVERAGE !== undefined && requestedCoverage >= 0 ? requestedCoverage : 0.1;
 // How often each kind of feature is picked while filling up to TERRAIN_COVERAGE.
 export const TERRAIN_FEATURE_WEIGHTS = { mountain: 0.4, lake: 0.35, river: 0.25 };
 // A range or lake that gets boxed in before reaching `min` is dropped. (With lakes of 3+ and rivers

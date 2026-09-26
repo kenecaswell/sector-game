@@ -11,8 +11,8 @@ import {
 } from './constants';
 import { hexDistance, hexIndex, hexNeighbors, isValidHex, type HexCoord } from './hex';
 import { generateTerrain, seededRandom, spawnHex, type GeneratedTerrain } from './terrain';
-import { isShallowWater } from '../../shared/terrain';
-import { TERRAIN } from './types/shared';
+import { blocksWalking, isShallowWater } from '../../shared/terrain';
+import { TERRAIN, type Terrain } from './types/shared';
 
 const COLS = 64;
 const ROWS = 64;
@@ -329,6 +329,21 @@ describe('isShallowWater', () => {
         expect(shallowWith([0, 1])).toBe(false);
         expect(shallowWith([5, 0])).toBe(false); // wraps around: directions 5 and 0 touch too
         expect(shallowWith([0, 2, 4])).toBe(false);
+    });
+});
+
+describe('blocksWalking', () => {
+    const at = (map: Record<string, Terrain>) => (c: number, r: number) =>
+        c < 0 ? undefined : (map[`${c},${r}`] ?? TERRAIN.ground);
+
+    it('mountains and deep water block; ground, shallow water and off-map do not', () => {
+        const lake: Record<string, Terrain> = { '10,10': TERRAIN.water };
+        for (const n of hexNeighbors(10, 10)) lake[`${n.col},${n.row}`] = TERRAIN.water;
+        expect(blocksWalking(at({ '5,5': TERRAIN.mountain }), 5, 5)).toBe(true);
+        expect(blocksWalking(at(lake), 10, 10)).toBe(true); // surrounded by water: deep
+        expect(blocksWalking(at({ '5,5': TERRAIN.water }), 5, 5)).toBe(false); // lone: shallow
+        expect(blocksWalking(at({}), 5, 5)).toBe(false);
+        expect(blocksWalking(at({}), -1, 5)).toBe(false);
     });
 });
 

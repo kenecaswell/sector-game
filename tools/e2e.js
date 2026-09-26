@@ -40,10 +40,11 @@ function healthy() {
 }
 
 /** Runs `fn` against a fresh server whose phases are `scale` times their normal length. */
-async function withServer(scale, fn) {
+/** Runs `fn` against a fresh server; `env` adds variables, e.g. { TERRAIN_COVERAGE: '0' } for no terrain. */
+async function withServer(scale, fn, env = {}) {
     if (await healthy()) throw new Error(`port ${PORT} is already in use`);
     const child = spawn(process.execPath, [path.join(serverDist, 'index.js')], {
-        env: { ...process.env, PORT: String(PORT), PHASE_TIME_SCALE: String(scale) },
+        env: { ...process.env, PORT: String(PORT), PHASE_TIME_SCALE: String(scale), ...env },
         stdio: 'ignore',
     });
     try {
@@ -281,7 +282,8 @@ async function lifecycle() {
         // A structure needs all 7 hexes of its footprint: walk over a hex left of the spawn (away
         // from b's trail), then over each of its neighbors.
         const start = hexUnder(a);
-        const spot = { col: start.col - 4, row: start.row };
+        // Two hexes over, so the whole footprint is inside the spawn area, which is never terrain.
+        const spot = { col: start.col - 2, row: start.row };
         const tryBuild = (structureType) =>
             a.send('placeStructure', {
                 tileX: spot.col,
@@ -470,37 +472,43 @@ async function connection() {
 }
 
 async function edges() {
+    // A map of plain ground: this walks from the center to the edges, and terrain in the way
+    // would stop it (terrain movement is unit-tested in server/src/systems/terrainRules.spec.ts).
     section('The map edge (over the wire)');
-    await withServer(0.2, async () => {
-        const a = await join(new Client(URL));
-        await startMatch(a);
-        const push = async (x, y, done) => {
-            const end = Date.now() + 12000;
-            while (Date.now() < end && !done(me(a))) {
-                move(a, x, y);
-                await sleep(100);
-            }
-            move(a, 0, 0);
-            await sleep(400);
-        };
-        await push(-1, 0, (p) => p.x <= C.MAP_EDGE_MARGIN + 0.5);
-        check(
-            'pushing hard into the left edge stops at MAP_EDGE_MARGIN',
-            Math.abs(me(a).x - C.MAP_EDGE_MARGIN) < 0.5,
-            `x=${me(a).x.toFixed(1)}`
-        );
-        await push(0, -1 / C.SCREEN_Y_SCALE, (p) => p.y <= C.MAP_EDGE_MARGIN + 0.5);
-        check(
-            '...and into the top edge',
-            Math.abs(me(a).y - C.MAP_EDGE_MARGIN) < 0.5,
-            `y=${me(a).y.toFixed(1)}`
-        );
-        const hex = pixelToHex(me(a).x, me(a).y);
-        check(
-            'the player is still standing on the map',
-            hex.col >= 0 && hex.row >= 0 && hex.col < 64 && hex.row < 64
-        );
-    });
+    await withServer(
+        0.2,
+        async () => {
+            const a = await join(new Client(URL));
+            await startMatch(a);
+            const push = async (x, y, done) => {
+                const end = Date.now() + 12000;
+                while (Date.now() < end && !done(me(a))) {
+                    move(a, x, y);
+                    await sleep(100);
+                }
+                move(a, 0, 0);
+                await sleep(400);
+            };
+            await push(-1, 0, (p) => p.x <= C.MAP_EDGE_MARGIN + 0.5);
+            check(
+                'pushing hard into the left edge stops at MAP_EDGE_MARGIN',
+                Math.abs(me(a).x - C.MAP_EDGE_MARGIN) < 0.5,
+                `x=${me(a).x.toFixed(1)}`
+            );
+            await push(0, -1 / C.SCREEN_Y_SCALE, (p) => p.y <= C.MAP_EDGE_MARGIN + 0.5);
+            check(
+                '...and into the top edge',
+                Math.abs(me(a).y - C.MAP_EDGE_MARGIN) < 0.5,
+                `y=${me(a).y.toFixed(1)}`
+            );
+            const hex = pixelToHex(me(a).x, me(a).y);
+            check(
+                'the player is still standing on the map',
+                hex.col >= 0 && hex.row >= 0 && hex.col < 64 && hex.row < 64
+            );
+        },
+        { TERRAIN_COVERAGE: '0' }
+    );
 }
 
 (async () => {
