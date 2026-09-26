@@ -187,6 +187,8 @@ export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
                             (itemId) => (
                                 <div
                                     key={itemId}
+                                    role="group"
+                                    aria-label={SHOP_ITEMS[itemId].name}
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center',
