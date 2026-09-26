@@ -1,7 +1,7 @@
 // Thin wrapper around colyseus.js's Client/Room for the GameRoom.
 //
 // Two version-compatibility notes for anyone touching this file (see
-// docs/technical-blueprint.md decisions log for the full story):
+// docs/ARCHITECTURE.md decisions log for the full story):
 //  - The server runs colyseus@0.16.5 + @colyseus/schema@^3.0.0. colyseus.js
 //    only ever published up to 0.16.22, which bundles @colyseus/schema@3.0.76
 //    — that's the only verified-compatible client/server pairing. Do not bump

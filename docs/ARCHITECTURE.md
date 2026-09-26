@@ -1,10 +1,62 @@
-# Multiplayer Territory Game — Technical Blueprint
+# Sector 42 — Architecture
 
 > A real-time multiplayer territory-claiming game with PvP shooting and destructible structures. Inspired by hexar.io. Up to 8–10 players per match, tile-based map, timed game phases.
 
 ---
 
+## Start here
+
+_For a new session or contributor. Last updated 2026-09-25 — run `git log` for anything newer._
+
+**What this is.** Sector 42: a real-time multiplayer territory-claiming game (hexar.io-style) with PvP shooting, destructible structures and a shop, 8–10 players per match on an isometric hex map. The **server is authoritative**: clients send inputs, the server simulates at 20 Hz and syncs state. Server: Node + TypeScript + Colyseus 0.16.5. Client: React 19 + Phaser 4, built with Vite.
+
+**Read in this order.** `README.md` (run, build, lint, controls) → this section → only the sections of this doc you need (it's ~1,550 lines; search by heading) → the **Decisions Log** at the end for *why* things are the way they are. Hosting is planned separately in `docs/HOSTING.md`.
+
+| If you're working on… | Read |
+|---|---|
+| The protocol, messages, state schema | Networking Layer, Game State Schema |
+| Game rules (phases, movement, shooting, score, shop, claiming) | Game Mechanics |
+| The hex map, iso projection, coordinate spaces | Game Mechanics → *Map — hex grid and coordinate spaces* |
+| Rooms, closing, reconnection, notices | Room Lifecycle, Reconnection System |
+| Collisions, structures | Collision Detection, Destructible Structures |
+| Client screens, HUD, shop UI, results | Client — React Shell |
+| Rendering, input, smoothing, performance | Client — Phaser Game, Testing → *Performance pass* |
+| Testing and verification | Testing Multiplayer Locally, and `tools/README.md` |
+
+**Verify after changes.** Server changes: `cd server && npm run build && npm run lint`, then `node tools/check-rules.js`, `node tools/check-collisions.js`, `node tools/e2e.js` (they run against the compiled server; `tools/README.md` explains each). Client changes: `cd client && npx tsc -b && npx eslint src`, then look at it in a browser — nothing under `tools/` covers rendering. `PHASE_TIME_SCALE=0.05` on the server shrinks every phase so a whole match runs in seconds.
+
+**Kept in sync by hand** (there is no shared package). Change both sides together:
+- `server/src/types/shared.ts` ⇄ `client/src/types/shared.ts` — messages, events and the **shop catalog** (`SHOP_ITEMS`). Checked automatically by `tools/check-rules.js`.
+- `server/src/hex.ts` ⇄ `client/src/game/hex.ts` — shared hex math (the server-only `hexEdgeContact` is not copied; the client adds the iso projection).
+- `SCREEN_Y_SCALE` (server constants) = `ISO_SQUASH` (client constants); `HEX_SIZE` and `PLAYER_RADIUS` mirror across the two constants files.
+- `client/src/types/gameState.ts` mirrors the server's `GameState` schema.
+- Projectile velocity: `CombatSystem` ⇄ the client's `projectileWorldVelocity`.
+
+**Gotchas learned the hard way.**
+- Pin all four Colyseus packages exactly and keep `useDefineForClassFields: false` in `server/tsconfig.json`; a client/server version mismatch or a missing flag shows up only when a real client joins (see Tech Stack).
+- Node 20.19+/22.13+/24+ is required; the shell default may be too old.
+- `npm run dev` on the server restarts on any file change and **drops every room**.
+- Test on private ports (server `PORT=2599`, client `VITE_SERVER_URL=ws://localhost:2599 npx vite --port 5199`) and don't touch 2567/5173 — the developer often has their own dev server running. The browser test pane is throttled and its screenshots lag; techniques for working around that are in the Testing section.
+
+**Working agreements** (also in `CLAUDE.md`): the developer runs all git commands themselves (ask them to commit); 4-space indentation; update this doc (and the README for user-facing changes) in the same change, including a Decisions Log row for design choices.
+
+**Current state.** Playable end to end: lobby → 30 s buying phase → 5 min play → results screen, with hex movement, claiming (and the radius-doubling Expander), shooting, solid structures, score, credits, an ammo/Expander shop, disconnect/reconnect with notices, and a results screen. See *Current Status & Known Issues* for the verified list and open bugs. **Temporary or placeholder** (see Planned Features #9): closing the shop during buying starts the match (`endBuying`, host only); "coming soon" shop items are mock rows; players spawn armed with 30 ammo; `STRUCTURE_POINTS` is one flat value for a single generic structure; the results screen is basic.
+
+**Suggested next steps** (a proposal from the planning notes, not a commitment — confirm priorities with the developer):
+1. Finish the shop: better guns, armor and the structure types (Planned Features #9, #3); then remove the `endBuying` shortcut. Decide an ammo cap and balance the Expander.
+2. Teams (Planned Features #2 — tile-ownership model and team formation are still open questions).
+3. Spawn positions: a line on the right side of the map, "going west" (Current Status → Open questions).
+4. Real art and sprites; decide whether terrain is gameplay or decoration (Planned Features #7).
+5. Server-side fire-rate limit; client-side prediction (#8); off-screen player indicators.
+6. Unit tests with Vitest — port `tools/`.
+7. Hosting on AWS per `docs/HOSTING.md`.
+8. Unresolved: a ~19 fps report on the developer's machine. Ask for the backtick readout (fps, ms/frame, renderer) — see Known Issues.
+
+---
+
 ## Table of Contents
+
+**New here? Read [Start here](#start-here) first.**
 
 1. [Tech Stack](#tech-stack)
 2. [Architecture Overview](#architecture-overview)
@@ -178,11 +230,18 @@
 │   └── package.json
 │
 ├── docs/
-│   ├── technical-blueprint.md      # This document
-│   └── session-handoff.md          # HISTORICAL — written to bootstrap the 2026-09-20 session; superseded by this doc, not maintained
+│   ├── ARCHITECTURE.md             # This document
+│   └── HOSTING.md                  # AWS hosting plan (Amplify client, Lightsail server, Caddy)
+│
+├── tools/                          # Verification scripts (plain Node; see tools/README.md)
+│   ├── check-rules.js              # Game rules against the compiled server: hex, movement, phases, score, shop, claiming
+│   ├── check-collisions.js         # Structure sliding sweep, projectile speed and tunneling
+│   ├── e2e.js                      # Real clients vs. its own throwaway server: lifecycle, closing, reconnect, shop, edges
+│   ├── bots.js                     # Load bots for profiling a browser client
+│   └── lib.js                      # Shared helpers
+│
 ├── README.md                       # How to install, run, build, lint; controls; troubleshooting
-├── CLAUDE.md                       # Working preferences for Claude Code (notably: the user runs their own git commands)
-└── dev-notes.md                    # Scratch list of open ideas/questions — see Current Status & Known Issues
+└── CLAUDE.md                       # Working preferences for Claude Code (git is run by the user; code style; where the docs are)
 ```
 
 The repo is under git (`main`). Note there are two `package.json`/`node_modules` trees (`server/`, `client/`) and no root workspace — run installs and scripts inside each folder.
@@ -1001,6 +1060,8 @@ function getStructureFrame(health: number, maxHealth: number): string {
 
 ## Testing Multiplayer Locally
 
+> **The scripts described in this section now live in `tools/`** (`check-rules.js`, `check-collisions.js`, `e2e.js`, `bots.js`; see `tools/README.md`). They were originally throwaway scripts run from temporary folders and were lost; they were rebuilt against the current code on 2026-09-25 and all pass (43 + 10 + 32 checks). The historical notes below describe what each verification covered when it was first done; where they mention numbers for older constants (player radius 16, claim radius 64), the scripts now read the live constants instead.
+
 ### Direct System Tests (no client/network required)
 
 Because `MovementSystem`, `CollisionSystem`, `CombatSystem`, `StructureSystem`, and `PhaseSystem` are plain modules operating on a `GameState` instance (not `Room` subclasses), they can be exercised directly without spinning up a server or client — this is how the game logic was verified while the client/server version mismatch (see [Tech Stack](#tech-stack)) was still unresolved, and remains useful for fast, network-free regression checks.
@@ -1093,7 +1154,7 @@ async function runBot(roomId: string) {
   }, 50);
 }
 ```
-Bots are the most valuable local test tool now that client/server compatibility is confirmed (see the Live Client/Server Smoke Test above) — spin up 10 to stress-test tick performance, fuzz-test edge cases (concurrent tile claims, rapid connect/disconnect), and reproduce race conditions deterministically. Not yet built.
+**Built:** `tools/bots.js` (`node tools/bots.js [count] [seconds] [url]`) joins wandering bots to a running match; it was used for the performance pass. The stress-testing and fuzzing ideas below are still open. Bots are the most valuable local test tool now that client/server compatibility is confirmed (see the Live Client/Server Smoke Test above) — spin up 10 to stress-test tick performance, fuzz-test edge cases (concurrent tile claims, rapid connect/disconnect), and reproduce race conditions deterministically. Not yet built.
 
 ### Network Condition Simulation
 - **Chrome DevTools** → Network tab → throttle individual tabs (100–300ms latency)
@@ -1323,7 +1384,7 @@ Structure *destruction* by shots, projectile hits on other players, the mobile j
 - **Node version is not enforced** (no `.nvmrc` / `engines`) — see Tech Stack.
 - **Dev-server restarts drop every room.** `ts-node-dev --respawn` restarts on any file change (including `tsconfig.json` and a plain `touch`), which wipes in-memory rooms and disconnects clients mid-game. Expected, but surprising when two people share one dev server.
 
-### Open questions and ideas (from `dev-notes.md` and the reference art)
+### Open questions and ideas
 1. **Should the project move off Colyseus?** Raised because of the repeated client/server compatibility problems (see Tech Stack items 1–5). Not decided. Considerations: the published `colyseus.js` client tops out at 0.16.22, so the server is stuck on the 0.16 line with exact pins; the pain so far has been version/config drift rather than fundamental design limits, and everything is now working and verified on the pinned versions. Alternatives (raw `ws` + own delta sync, or another framework) would mean re-implementing rooms, delta-compressed state sync, and reconnection.
 2. **Starting positions:** players should start in a line on the right side of the map to simulate "going west". Today every player spawns at the exact map center (`GameRoom.onJoin`, and `CombatSystem` respawns to center). Needs a spawn-slot scheme for up to 10 players (spawn hexes along the right edge) and a decision on whether respawns also use it.
 3. **Is terrain gameplay or decoration?** The reference image shows water, mountains and cliffs. If they block movement or projectiles, `Tile` needs a terrain (and maybe height) field and `MovementSystem`/`CombatSystem` need rules for it; if decoration, it can stay client-only art. See Planned Features #7.
@@ -1441,7 +1502,7 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 | Publishing the room to React | `GameContext.connect()` waits for the first state (`onStateChange.once`) before `setRoom`/`setStatus('connected')` | Publish the room as soon as `joinOrCreate` resolves and null-check `state` everywhere | The join promise resolves before the initial full-state message is decoded, so `room.state.phase` is undefined at that moment. Waiting once at the boundary lets every consumer assume populated state |
 | `<GameProvider>` placement | Wrap `<App />` in `main.tsx` | Provide the context lower in the tree, or make `useGameConnection()` tolerate a missing provider | `App` itself consumes the context, so the provider must sit above it. Missing it gave a fully blank page with only a console error; the hook's throw is intentional, since it surfaces the mistake immediately |
 | Version-drift guardrails | Document exact pins and the "run a real client against a real server" check; `.nvmrc`/`engines` not yet added | Trust isolated build/lint passes | Three of the five compatibility bugs to date (the matchmake protocol mismatch, the `useDefineForClassFields` encode crash, and that setting missing from the committed `tsconfig.json`) passed every per-side build/lint check and surfaced only when a real client joined a real server; the other two (`@colyseus/core` peer drift, `index.ts` on the 0.18 API) were caught by `tsc`. Separately, a Node 13 default shell can't run TS 6 at all |
-| Whether to leave Colyseus | **Undecided** — staying on pinned 0.16.x for now | Raw `ws` + custom sync; another framework | Raised in `dev-notes.md` because of the compatibility churn. Everything works and is verified on the pinned versions, and replacing rooms/delta sync/reconnection is a large cost; revisit if the 0.16 line's lack of updates or a needed feature becomes a real blocker |
+| Whether to leave Colyseus | **Undecided** — staying on pinned 0.16.x for now | Raw `ws` + custom sync; another framework | Because of the compatibility churn in early development. Everything works and is verified on the pinned versions, and replacing rooms/delta sync/reconnection is a large cost; revisit if the 0.16 line's lack of updates or a needed feature becomes a real blocker |
 | Git workflow | The user runs all git commands; Claude edits files and asks the user to commit | Claude commits/pushes | Stated preference in `CLAUDE.md` — the user wants to review what's being committed |
 | Map grid | Flat-top hexes, odd-q offset, stored in the same flat array (`row * cols + col`); axial/cube coordinates used only inside `pixelToHex` | Keep square tiles; pointy-top; axial storage | Hexes are the intended design. Odd-q keeps the map rectangular and the schema/array unchanged, and flat-top matches the reference art. Only tile lookup, structure hits, bounds and rendering had to change — claiming is by position, not adjacency, so this was cheap to do before teams/structure types |
 | Isometric implementation | Render-only vertical squash (`ISO_SQUASH = 0.6`) of a top-down world; server never sees it | True 45° isometric projection; simulating in screen space | A single scale factor gives the ~2:1 hex look of the reference, keeps server hex/collision/movement simple, and inverts trivially. The cost — every pointer/joystick vector must be `unproject`ed before use — is confined to `GameScene` |

@@ -93,7 +93,7 @@ const AIM_MIN_DISTANCE = 6; // world px — closer than this to the player, keep
  *
  * Reads room.state directly every frame for high-frequency gameplay data
  * (positions, tile ownership) rather than routing it through React —
- * see docs/technical-blueprint.md "Client — React Shell". Only entity
+ * see docs/ARCHITECTURE.md "Client — React Shell". Only entity
  * creation/removal uses Colyseus's reactive onAdd/onRemove callbacks, since
  * that's naturally event-driven rather than per-frame.
  */

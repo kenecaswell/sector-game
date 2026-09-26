@@ -145,7 +145,6 @@ client/                     React + Phaser client
   src/screens/              Game screen hosting the canvas and overlays
 docs/ARCHITECTURE.md        Architecture, protocol, decisions, status
 docs/HOSTING.md             AWS hosting plan
-docs/dev-notes.md           Scratch list of ideas and open questions
 ```
 
 The server simulates in flat top-down coordinates. The isometric look is purely a client render transform; see [Map — hex grid and coordinate spaces](docs/ARCHITECTURE.md#map--hex-grid-and-coordinate-spaces) before touching positions or input, since mixing the two spaces is the easiest bug to introduce.
