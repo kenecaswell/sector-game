@@ -64,10 +64,11 @@ Run these inside `server/` or `client/`.
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Type-check (`tsc -b`) and produce a production bundle in `dist/` |
 | `npm run preview` | Serve the production bundle locally |
+| `npm test` / `npm run test:watch` | Vitest unit and component tests (spec files sit next to the code: `foo.spec.ts`) |
 | `npm run lint` / `npm run lint:fix` | ESLint (flat config, React hooks rules) |
 | `npm run format` / `npm run format:check` | Prettier write / check |
 
-There is no automated test suite yet. Before committing, run `npm run build && npm run lint` in whichever folder you changed — `npm run dev` on the server skips type checking, so type errors only show up in `build`.
+Before committing, run `npm run build && npm run lint` in whichever folder you changed, plus `npm test` in `client/` and the `tools/` checks after server changes (see [tools/README.md](tools/README.md)). `npm run dev` on the server skips type checking, so type errors only show up in `build`.
 
 > **Code style:** 4-space indentation (Prettier `tabWidth: 4`). Some older files are still 2-space, so `format:check` flags them; run `npm run format` once in each folder to fix that, ideally in its own commit so it doesn't bury real changes.
 

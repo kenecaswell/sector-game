@@ -23,7 +23,7 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 | Rendering, input, smoothing, performance | Client — Phaser Game, Testing → *Performance pass* |
 | Testing and verification | Testing Multiplayer Locally, and `tools/README.md` |
 
-**Verify after changes.** Server changes: `cd server && npm run build && npm run lint`, then `node tools/check-rules.js`, `node tools/check-collisions.js`, `node tools/e2e.js` (they run against the compiled server; `tools/README.md` explains each). Client changes: `cd client && npx tsc -b && npx eslint src`, then look at it in a browser — nothing under `tools/` covers rendering. `PHASE_TIME_SCALE=0.05` on the server shrinks every phase so a whole match runs in seconds.
+**Verify after changes.** Server changes: `cd server && npm run build && npm run lint`, then `node tools/check-rules.js`, `node tools/check-collisions.js`, `node tools/e2e.js` (they run against the compiled server; `tools/README.md` explains each). Client changes: `cd client && npx tsc -b && npx eslint src && npm test` (Vitest unit and component tests, see *Client unit tests* under Testing), then look at it in a browser — nothing automated covers the Phaser canvas. `PHASE_TIME_SCALE=0.05` on the server shrinks every phase so a whole match runs in seconds.
 
 **Shared code lives in `shared/`** (since 2026-09-26; before that, these were hand-copied between the two sides). One copy, imported by both:
 - `shared/types.ts` — messages, events, and the catalogs (shop, teams, characters, structure/gun/upgrade names, player-name rules).
@@ -51,7 +51,7 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 3. Spawn positions: a line on the right side of the map, "going west" (Current Status → Open questions).
 4. Real art and sprites; decide whether terrain is gameplay or decoration (Planned Features #7).
 5. Server-side fire-rate limit; client-side prediction (#8); off-screen player indicators.
-6. Unit tests with Vitest — port `tools/`.
+6. Unit tests with Vitest: the client has them (2026-09-26); the server's rules still live in the plain-Node `tools/` scripts — port those next.
 7. Hosting on AWS per `docs/HOSTING.md`.
 8. Unresolved: a ~19 fps report on the developer's machine. Ask for the backtick readout (fps, ms/frame, renderer) — see Known Issues.
 
@@ -1163,6 +1163,14 @@ function getStructureFrame(health: number, maxHealth: number): string {
 
 ## Testing Multiplayer Locally
 
+### Client unit tests (Vitest) — added 2026-09-26
+
+`cd client && npm test` (or `npm run test:watch`) runs **Vitest** with **jsdom** (a simulated browser) and **React Testing Library**. Configuration is the `test` block in `client/vite.config.ts`; `src/test/setup.ts` adds the jest-dom matchers and cleans up (unmount, clear `localStorage`) after every test; `src/test/factories.ts` has `makePlayer` / `makeScore` builders.
+- **Spec files sit next to what they test** (`foo.ts` → `foo.spec.ts`, `Foo.tsx` → `Foo.spec.tsx`) and are type-checked and linted with the rest of `src/` (they're never bundled).
+- **Covered (57 tests):** `utils/results` (ranks, ties, fallback ordering, team totals), `utils/playerName` (localStorage, including blocked storage), `utils/usePhaseCountdown` (fake timers), `game/hex` (projection), `types/shared` (name rules, `ownsShopItem`, catalog sanity — the client's view of `shared/`), and components: `HUD`, `BuyMenu` (grouping, affordability, Owned, buying, closing), `LobbyScreen` (name editing: Enter/blur/Esc/invalid; team/character/ready and the ready lock; other players' rows; waiting and countdown text — with `useGameConnection` replaced by a fake via `vi.mock`), `ResultsScreen` (headlines, ties, team table, buttons).
+- **Not covered:** `GameScene` and anything else Phaser draws (needs a real WebGL canvas — still checked by hand in a browser), `GameContext`/`GameConnection` (would need a fake Colyseus room), `GameScreen`'s key handling.
+- Tests query the UI the way a user would (roles and accessible names), which is why each shop row is a `role="group"` named after its item.
+
 > **The scripts described in this section now live in `tools/`** (`check-rules.js`, `check-collisions.js`, `e2e.js`, `bots.js`; see `tools/README.md`). They were originally throwaway scripts run from temporary folders and were lost; they were rebuilt against the current code on 2026-09-25 and all pass (43 + 10 + 32 checks). The historical notes below describe what each verification covered when it was first done; where they mention numbers for older constants (player radius 16, claim radius 64), the scripts now read the live constants instead.
 
 ### Direct System Tests (no client/network required)
@@ -1684,3 +1692,4 @@ Replace the lobby's native `<select>`s (currently restyled with `appearance: non
 | Shot looks by gun | Basic: small white bolt; big: the original yellow bolt, 1.3× larger. Chosen by `Projectile.damage` (already synced); hit radius unchanged | Syncing the gun id on the projectile; a bigger hit radius for big shots | Requested. Damage is already on the projectile, so no protocol change; the hit radius was left alone since only the look was asked for |
 | Shared code | A plain top-level `shared/` folder of TypeScript source, imported by relative path; each side's old files re-export it | Keep hand-copying (previous, with `check-rules` comparing copies); an npm workspaces package | One copy of everything both sides must agree on. Workspaces would hoist dependencies into one `node_modules`, and the project's worst bugs so far were Colyseus client/server version mismatches, so a dependency-free folder is the lower-risk option. Cost: the compiled server moved to `server/dist/server/src/` |
 | Typing the synced state | Plain interfaces in `shared/state.ts` that the schema classes `implement`; the client casts `room.state` to them | The client importing the schema classes; keeping `gameState.ts` in sync by hand (previous) | The schema classes need decorators and `useDefineForClassFields: false`, which the client build shouldn't depend on. `implements` still catches the server dropping or retyping a field the client reads |
+| Client tests | Vitest + jsdom + React Testing Library, spec files next to the code, configured in `vite.config.ts` | Jest (a second transform pipeline alongside Vite); Vitest browser mode (a real browser, heavier to run) | Vitest reuses the client's Vite config and TypeScript setup, so there's nothing extra to keep in step. jsdom is enough for the React UI; Phaser still needs a real browser |
