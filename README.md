@@ -7,7 +7,7 @@ Server-authoritative: clients send inputs, the server simulates everything and s
 - **Server:** Node.js + TypeScript + [Colyseus](https://colyseus.io/) 0.16
 - **Client:** React 19 + [Phaser](https://phaser.io/) 4 (Vite, TypeScript)
 
-> **Status:** playable prototype. You can join a lobby, start a match, move around an isometric hex map, claim hexes, earn credits, shoot other players, and build structures. Teams, scoring/win condition, and the results screen are designed but not built. See [Current Status & Known Issues](docs/technical-blueprint.md#current-status--known-issues).
+> **Status:** playable prototype. You can join a lobby, start a match, move around an isometric hex map, claim hexes, earn credits, shoot other players, and build structures. Teams, scoring/win condition, and the results screen are designed but not built. See [Current Status & Known Issues](docs/ARCHITECTURE.md#current-status--known-issues).
 
 ## Quick start
 
@@ -143,10 +143,12 @@ client/                     React + Phaser client
   src/game/                 Phaser scene, iso/hex helpers, render constants
   src/components/           HUD, score badge, leaderboard popup, joystick, fire button (React overlays)
   src/screens/              Game screen hosting the canvas and overlays
-docs/technical-blueprint.md Architecture, protocol, decisions, status
+docs/ARCHITECTURE.md        Architecture, protocol, decisions, status
+docs/HOSTING.md             AWS hosting plan
+docs/dev-notes.md           Scratch list of ideas and open questions
 ```
 
-The server simulates in flat top-down coordinates. The isometric look is purely a client render transform; see [Map — hex grid and coordinate spaces](docs/technical-blueprint.md#map--hex-grid-and-coordinate-spaces) before touching positions or input, since mixing the two spaces is the easiest bug to introduce.
+The server simulates in flat top-down coordinates. The isometric look is purely a client render transform; see [Map — hex grid and coordinate spaces](docs/ARCHITECTURE.md#map--hex-grid-and-coordinate-spaces) before touching positions or input, since mixing the two spaces is the easiest bug to introduce.
 
 ## Things to know before changing dependencies
 
@@ -169,4 +171,6 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 
 ## More documentation
 
-- [`docs/technical-blueprint.md`](docs/technical-blueprint.md) — architecture, network protocol, state schema, game mechanics, testing notes, current status and known issues, planned features, and a decisions log explaining *why* things are the way they are.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture, network protocol, state schema, game mechanics, testing notes, current status and known issues, planned features, and a decisions log explaining *why* things are the way they are.
+- [`docs/HOSTING.md`](docs/HOSTING.md) — how the game will be hosted on AWS under `kenecaswell.com`.
+- [`CONTRIBUTION.md`](CONTRIBUTION.md) — how to report bugs, set up, and submit changes.
