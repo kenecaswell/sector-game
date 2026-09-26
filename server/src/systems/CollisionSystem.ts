@@ -3,6 +3,7 @@ import { HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
 import { hexCenter, hexIndex, isValidHex, pixelToHex } from '../hex';
 import type { Broadcast } from './Broadcast';
 import type { TilesClaimedEvent } from '../types/shared';
+import { areAllies } from '../teams';
 
 /**
  * Circle-circle hit test against the path the projectile travelled this tick
@@ -42,8 +43,8 @@ function checkProjectileStructureCollision(
 
 /**
  * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
- * their `claimRadius` (the Expander upgrade doubles it). A hex holding another player's structure
- * can't be claimed — the structure protects its tile.
+ * their `claimRadius` (the Expander upgrade doubles it). A hex holding an enemy's structure can't
+ * be claimed — the structure protects its tile — and a teammate's hex is left alone.
  */
 function claimTiles(
     state: GameState,
@@ -70,6 +71,7 @@ function claimTiles(
 
             const tile = state.tiles[hexIndex(col, row, state.mapWidth)];
             if (!tile || tile.ownerId === player.id) continue;
+            if (tile.ownerId !== '' && areAllies(state, tile.ownerId, player.id)) continue;
             if (isProtectedFrom(state, col, row, player.id)) continue;
 
             if (tile.ownerId !== '') {
@@ -83,11 +85,11 @@ function claimTiles(
     }
 }
 
-/** True if a structure owned by someone else stands on this hex. */
+/** True if a structure owned by an enemy of `playerId` stands on this hex. */
 function isProtectedFrom(state: GameState, col: number, row: number, playerId: string): boolean {
     for (const structure of state.structures.values()) {
         if (structure.tileX === col && structure.tileY === row)
-            return structure.ownerId !== playerId;
+            return !areAllies(state, structure.ownerId, playerId);
     }
     return false;
 }

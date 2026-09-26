@@ -16,6 +16,9 @@ import type {
     InputMessage,
     PlaceStructureMessage,
     PurchaseMessage,
+    SelectCharacterMessage,
+    SelectTeamMessage,
+    SetReadyMessage,
     PlayerDisconnectedEvent,
     PlayerHitEvent,
     PlayerReconnectedEvent,
@@ -150,22 +153,29 @@ export function sendPlaceStructure(
     room: GameRoom,
     tileX: number,
     tileY: number,
+    structureType: PlaceStructureMessage['structureType'],
     seq: number
 ): void {
-    room.send<PlaceStructureMessage>('placeStructure', { tileX, tileY, seq });
+    room.send<PlaceStructureMessage>('placeStructure', { tileX, tileY, structureType, seq });
 }
 
 export function sendPurchase(room: GameRoom, itemId: PurchaseMessage['itemId']): void {
     room.send<PurchaseMessage>('purchase', { itemId });
 }
 
-export function sendStartGame(room: GameRoom): void {
-    room.send('startGame');
+export function sendSelectTeam(room: GameRoom, teamId: SelectTeamMessage['teamId']): void {
+    room.send<SelectTeamMessage>('selectTeam', { teamId });
 }
 
-// TEMPORARY testing shortcut (host only): end the buying phase early. See GameRoom.handleEndBuying.
-export function sendEndBuying(room: GameRoom): void {
-    room.send('endBuying');
+export function sendSelectCharacter(
+    room: GameRoom,
+    characterId: SelectCharacterMessage['characterId']
+): void {
+    room.send<SelectCharacterMessage>('selectCharacter', { characterId });
+}
+
+export function sendSetReady(room: GameRoom, ready: boolean): void {
+    room.send<SetReadyMessage>('setReady', { ready });
 }
 
 export { getStateCallbacks };

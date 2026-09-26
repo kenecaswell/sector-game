@@ -7,7 +7,7 @@ Server-authoritative: clients send inputs, the server simulates everything and s
 - **Server:** Node.js + TypeScript + [Colyseus](https://colyseus.io/) 0.16
 - **Client:** React 19 + [Phaser](https://phaser.io/) 4 (Vite, TypeScript)
 
-> **Status:** playable prototype. You can join a lobby, start a match, move around an isometric hex map, claim hexes, earn credits, shoot other players, and build structures. Teams, scoring/win condition, and the results screen are designed but not built. See [Current Status & Known Issues](docs/ARCHITECTURE.md#current-status--known-issues).
+> **Status:** playable prototype. You can join a lobby, pick a team color and a character, ready up, then move around an isometric hex map, claim hexes, earn credits, shoot enemies (once you have a gun), build structures, and see the results. Team pooling, a team win condition, and most shop items are designed but not built. See [Current Status & Known Issues](docs/ARCHITECTURE.md#current-status--known-issues).
 
 ## Quick start
 
@@ -39,7 +39,7 @@ cd client
 npm run dev
 ```
 
-Open http://localhost:5173, click **Join Game**, then **Start Game** (only the first player in a room — the host — can start it).
+Open http://localhost:5173, click **Join Game**, pick a team and a character, and press **Ready**. The match starts 3 seconds after everyone in the room is ready (on your own, that's straight away).
 
 To try multiplayer, open the page in a second tab or window. Each tab is its own player, because the reconnection token lives in per-tab `sessionStorage`. The exception is Chrome's "Duplicate tab", which copies that storage, so the copy would rejoin as the same player; open a fresh tab instead.
 
@@ -103,8 +103,8 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 |---|---|---|
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
-| Shoot | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, hold to keep firing), or tap the map to fire at that spot |
-| Build a structure | **Build** button, then click a hex you own | **Build** button (above FIRE), then tap a hex you own |
+| Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
+| Build a structure | **Build** button (shows your next structure and how many you have left), then click a hex you own | **Build** button (above FIRE), then tap a hex you own |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
 | Shop | **Shop** button (below Leaderboard) or `B`; `Esc` closes | **Shop** button |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
@@ -113,14 +113,29 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 ## How a match works
 
-1. **Lobby** — players join; the host starts the match.
-2. **Buying (30s)** — a quick shopping window. Everyone starts with 100 credits; the shop opens automatically. You can buy **ammo** (30 shots for 30 credits) and the **Expander** (100 credits). Nobody can move, shoot or build yet. *While testing, the host can skip the wait by closing the shop popup, which starts the match immediately.*
-3. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot other players, build structures on hexes you own, and earn credits. The shop stays available from the **Shop** button (or `B`) — the game keeps running while it's open.
-4. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
+1. **Lobby** — every player is listed with three choices next to their name:
+   - **Team** — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
+   - **Character** — your starting kit (default Farmer):
 
-**Shop** — **Ammo pack**: 30 credits for 30 shots (1 credit per shot). **Expander**: 100 credits, one per player — greatly enlarges the radius in which you claim hexes (4 × the player radius), and shows as a large tinted circle in your color around you. Hexes with another player's structure on them can't be claimed. More items (better guns, armor, structures) are planned.
+     | Character | Gun | Ammo | Credits | Structures | Upgrades |
+     |---|---|---|---|---|---|
+     | Farmer | — | 0 | 50 | Farm | — |
+     | Miner | — | 0 | 50 | Mine | — |
+     | Builder | — | 0 | 50 | Fort | — |
+     | Robot | — | 0 | 50 | — | Speed boost (+25% top speed) |
+     | Scientist | — | 0 | 50 | Power plant | — |
+     | Smuggler | Basic gun | 15 | 15 | — | — |
 
-**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. A hit does 50 damage against 100 health, so two hits kill. Structures are solid: other players can't walk through yours (they slide around it), but you can.
+     The four structure types all work the same for now.
+   - **Ready** — press it when you're set (press again to cancel). Team and character are locked while you're ready.
+
+   When everyone connected is ready, a **3-second countdown** starts. It's cancelled if anyone un-readies or someone new joins.
+2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Smuggler starts with one), build the structures your character started with on hexes you own, and earn credits. The shop stays available from the **Shop** button (or `B`) — the game keeps running while it's open.
+3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
+
+**Shop** (during the match) — **Ammo pack**: 30 credits for 30 shots (1 credit per shot). **Basic gun**: 40 credits, one per player — lets you shoot. **Expander**: 100 credits, one per player — greatly enlarges the radius in which you claim hexes (4 × the player radius), and shows as a large tinted circle in your color around you. Hexes with an enemy's structure on them can't be claimed. More items (better guns, armor, more structures) are planned.
+
+**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. A hit does 50 damage against 100 health, so two hits kill. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
 Every 10 seconds each player earns 1 credit per hex they own, to spend in the shop. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
@@ -164,7 +179,9 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 | Page stays on "connecting…" | The server failed while sending state. Read the **server** log; check `useDefineForClassFields` (above) |
 | `Failed to connect to the game server` | Server isn't running, or `VITE_SERVER_URL` points at the wrong host/port |
 | `EADDRINUSE` on port 2567 | Another server instance is running. Stop it, or set a different `PORT` |
-| Start Game does nothing | Only the host can start. The host is the first connected player; if they disconnect, the next connected player is promoted immediately |
+| The match doesn't start | Every connected player has to press **Ready**. A newcomer joining (not ready yet) cancels the countdown |
+| Can't change team or character | You're ready — press **✓ Ready** again to un-ready, then change it |
+| Shooting does nothing | You need a gun: buy the Basic gun in the shop (only the Smuggler starts armed), plus ammo |
 | Results screen says "This room has closed." | Expected: finished rooms close after the results period. Choose **Play again** for a fresh lobby |
 | Server restarts mid-game and everyone is dropped | Expected: `npm run dev` restarts on any file change and rooms live in memory |
 

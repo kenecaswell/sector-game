@@ -1,5 +1,5 @@
 import type { FinalScore } from '../types/shared';
-import { rankScores } from '../utils/results';
+import { rankScores, teamTotals } from '../utils/results';
 import { usePhaseCountdown } from '../utils/usePhaseCountdown';
 
 interface ResultsScreenProps {
@@ -31,6 +31,7 @@ export function ResultsScreen({
     onExit,
 }: ResultsScreenProps) {
     const ranked = rankScores(scores);
+    const teams = teamTotals(scores);
     const secondsLeft = usePhaseCountdown(roomOpen ? phaseEndsAt : 0);
 
     const winners = ranked.filter((entry) => entry.rank === 1);
@@ -61,6 +62,54 @@ export function ResultsScreen({
             <div style={{ width: 560, maxWidth: '100%', textAlign: 'center' }}>
                 <div style={{ fontSize: 13, letterSpacing: 2, opacity: 0.7 }}>MATCH OVER</div>
                 <h1 style={{ margin: '4px 0 20px', fontSize: 34, color: '#f1c40f' }}>{headline}</h1>
+
+                {teams.length > 0 && (
+                    <table
+                        style={{
+                            width: '100%',
+                            borderCollapse: 'collapse',
+                            fontSize: 15,
+                            marginBottom: 20,
+                        }}
+                    >
+                        <thead>
+                            <tr style={{ opacity: 0.6, fontSize: 12, textAlign: 'left' }}>
+                                <th style={cell}>Team</th>
+                                <th style={numberCell}>Players</th>
+                                <th style={numberCell}>Total score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {teams.map((team) => (
+                                <tr
+                                    key={team.teamId}
+                                    style={{
+                                        textAlign: 'left',
+                                        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                                    }}
+                                >
+                                    <td style={cell}>
+                                        <span
+                                            style={{
+                                                display: 'inline-block',
+                                                width: 10,
+                                                height: 10,
+                                                borderRadius: '50%',
+                                                background: team.color,
+                                                marginRight: 8,
+                                            }}
+                                        />
+                                        {team.name}
+                                    </td>
+                                    <td style={numberCell}>{team.players}</td>
+                                    <td style={{ ...numberCell, fontWeight: 'bold' }}>
+                                        {team.score}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
 
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
                     <thead>

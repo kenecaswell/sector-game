@@ -25,7 +25,13 @@ export interface PlayerState {
     credits: number;
     claimRadius: number; // world px; above the base radius means the Expander is owned
     connected: boolean;
-    color: string;
+    color: string; // the team's color
+    teamId: string; // a TeamId; same team = allies
+    character: string; // a CharacterId, picked in the lobby
+    ready: boolean; // lobby only
+    gun: string; // a GunId, or '' = unarmed
+    structureInventory: readonly string[]; // StructureTypes left to place
+    upgrades: readonly string[]; // UpgradeIds owned
 }
 
 export interface TileState {
@@ -47,6 +53,7 @@ export interface StructureState {
     ownerId: string;
     tileX: number;
     tileY: number;
+    type: string; // a StructureType
     health: number;
     maxHealth: number;
 }

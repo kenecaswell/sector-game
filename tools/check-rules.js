@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Checks the game rules directly against the compiled server modules — no server or client needed.
-// Covers: hex math, movement, phases, combat, score, economy, the shop, claim radius, and that the
-// hand-copied shared types match on both sides.
+// Covers: hex math, movement, phases and the lobby, characters, teams, combat, score, economy, the
+// shop, claim radius, and that the hand-copied shared types match on both sides.
 //
 //   cd server && npm run build && cd .. && node tools/check-rules.js
 //
@@ -19,6 +19,8 @@ const { PhaseSystem } = dist('systems/PhaseSystem.js');
 const { ScoreSystem } = dist('systems/ScoreSystem.js');
 const { EconomySystem } = dist('systems/EconomySystem.js');
 const { ShopSystem } = dist('systems/ShopSystem.js');
+const { LobbySystem } = dist('systems/LobbySystem.js');
+const { CharacterSystem } = dist('systems/CharacterSystem.js');
 const { hexCenter, pixelToHex, mapPixelSize } = dist('hex.js');
 const C = dist('constants.js');
 const shared = dist('types/shared.js');
@@ -35,9 +37,10 @@ function world(phase = 'playing') {
     return state;
 }
 
-function addPlayer(state, id, x = 1500, y = 1500) {
+function addPlayer(state, id, x = 1500, y = 1500, teamId = '') {
     const player = new Player();
     player.id = id;
+    player.teamId = teamId;
     player.x = x;
     player.y = y;
     state.players.set(id, player);
@@ -155,7 +158,7 @@ section('Movement');
     );
 }
 {
-    const { player } = drive({ x: 1, y: 0 }, 20, { phase: 'buying' });
+    const { player } = drive({ x: 1, y: 0 }, 20, { phase: 'countdown' });
     check('nobody moves outside the playing phase', player.x === 1500 && player.vx === 0);
 }
 {
@@ -175,36 +178,239 @@ section('Movement');
 }
 
 // ---------------------------------------------------------------------------------------------
-section('Phases');
+section('Phases and the lobby');
 {
     const state = new GameState();
     const events = [];
     const broadcast = (type, payload) => events.push(payload.phase);
     PhaseSystem.update(state, broadcast);
-    check('the lobby never advances on its own', state.phase.phase === 'lobby');
-    PhaseSystem.transitionTo(state, 'buying', broadcast);
+    LobbySystem.update(state, broadcast);
     check(
-        'start -> buying, lasting BUY_PHASE_DURATION_MS',
-        state.phase.phase === 'buying' &&
-            Math.abs(state.phase.endsAt - Date.now() - C.BUY_PHASE_DURATION_MS) < 100
+        'an empty lobby never advances on its own',
+        state.phase.phase === 'lobby' && events.length === 0
     );
-    state.phase.endsAt = Date.now() - 1;
-    PhaseSystem.update(state, broadcast);
-    check('buying -> playing when its timer expires', state.phase.phase === 'playing');
+
+    const a = addPlayer(state, 'a');
+    const b = addPlayer(state, 'b');
+    LobbySystem.setReady(state, a, true);
+    LobbySystem.update(state, broadcast);
+    check('one player ready of two: still the lobby', state.phase.phase === 'lobby');
+    b.connected = false;
+    LobbySystem.update(state, broadcast);
     check(
-        'playing lasts MATCH_DURATION_MS',
-        Math.abs(state.phase.endsAt - Date.now() - C.MATCH_DURATION_MS) < 100
+        'a disconnected player does not hold up the countdown',
+        state.phase.phase === 'countdown'
+    );
+    b.connected = true;
+    LobbySystem.update(state, broadcast);
+    check('...but a connected, unready one cancels it', state.phase.phase === 'lobby');
+    LobbySystem.setReady(state, b, true);
+    LobbySystem.update(state, broadcast);
+    check(
+        'everyone ready -> countdown, lasting COUNTDOWN_DURATION_MS',
+        state.phase.phase === 'countdown' &&
+            Math.abs(state.phase.endsAt - Date.now() - C.COUNTDOWN_DURATION_MS) < 100
+    );
+    LobbySystem.setReady(state, b, false);
+    LobbySystem.update(state, broadcast);
+    check('un-readying during the countdown cancels it', state.phase.phase === 'lobby');
+
+    check(
+        'team and character can be changed while not ready',
+        LobbySystem.selectTeam(state, a, 'blue') === false && // a is ready: locked
+            LobbySystem.selectTeam(state, b, 'blue') &&
+            LobbySystem.selectCharacter(state, b, 'smuggler') &&
+            b.teamId === 'blue' &&
+            b.color === shared.TEAMS.blue.color &&
+            b.character === 'smuggler'
+    );
+    check(
+        'junk team, character and ready values are refused',
+        !LobbySystem.selectTeam(state, b, 'pink') &&
+            !LobbySystem.selectTeam(state, b, '__proto__') &&
+            !LobbySystem.selectCharacter(state, b, 'wizard') &&
+            !LobbySystem.setReady(state, b, 'yes') &&
+            b.teamId === 'blue' &&
+            b.character === 'smuggler' &&
+            b.ready === false
+    );
+
+    LobbySystem.setReady(state, b, true);
+    LobbySystem.update(state, broadcast);
+    state.phase.endsAt = Date.now() - 1;
+    LobbySystem.update(state, broadcast);
+    check(
+        'the countdown ends -> playing, lasting MATCH_DURATION_MS',
+        state.phase.phase === 'playing' &&
+            Math.abs(state.phase.endsAt - Date.now() - C.MATCH_DURATION_MS) < 100
+    );
+    check(
+        'everyone got their starting kit when the match began',
+        a.character === 'farmer' &&
+            a.structureInventory.join() === 'farm' &&
+            b.gun === 'basic' &&
+            b.ammo === 15
+    );
+    check(
+        'lobby choices are refused once the match is on',
+        !LobbySystem.selectTeam(state, b, 'red') &&
+            !LobbySystem.selectCharacter(state, b, 'robot') &&
+            !LobbySystem.setReady(state, b, false)
     );
     state.phase.endsAt = Date.now() - 1;
     PhaseSystem.update(state, broadcast);
     check('playing -> results when its timer expires', state.phase.phase === 'results');
     state.phase.endsAt = Date.now() - 1;
     PhaseSystem.update(state, broadcast);
+    LobbySystem.update(state, broadcast);
     check('results is terminal (GameRoom closes the room)', state.phase.phase === 'results');
     check(
         'every transition was broadcast',
-        events.join('>') === 'buying>playing>results',
+        events.join('>') === 'countdown>lobby>countdown>lobby>countdown>playing>results',
         events.join('>')
+    );
+}
+{
+    const state = new GameState();
+    const teams = [];
+    for (let i = 0; i < 10; i++) {
+        const p = addPlayer(state, `p${i}`, 0, 0, LobbySystem.defaultTeam(state));
+        teams.push(p.teamId);
+    }
+    check(
+        'newcomers get an empty team first, then the smallest',
+        teams.slice(0, 8).join() === shared.TEAM_IDS.join() &&
+            teams[8] === shared.TEAM_IDS[0] &&
+            teams[9] === shared.TEAM_IDS[1],
+        teams.join()
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+section('Characters');
+{
+    const kits = shared.CHARACTER_IDS.map((id) => {
+        const p = new Player();
+        p.character = id;
+        p.credits = 999;
+        p.ammo = 999;
+        p.structureInventory.push('fort', 'fort');
+        CharacterSystem.apply(p);
+        const c = shared.CHARACTERS[id];
+        return (
+            p.gun === (c.gun ?? '') &&
+            p.ammo === c.ammo &&
+            p.credits === c.credits &&
+            p.structureInventory.join() === c.structures.join() &&
+            p.upgrades.join() === c.upgrades.join()
+        );
+    });
+    check(
+        "applying a character replaces the kit with exactly that character's",
+        kits.every(Boolean),
+        shared.CHARACTER_IDS.filter((_, i) => !kits[i]).join()
+    );
+    const p = new Player();
+    check('a new player defaults to the Farmer', p.character === shared.DEFAULT_CHARACTER);
+    p.character = 'nonsense';
+    CharacterSystem.apply(p);
+    check(
+        'an unknown character falls back to the default kit',
+        p.structureInventory.join() ===
+            shared.CHARACTERS[shared.DEFAULT_CHARACTER].structures.join()
+    );
+}
+{
+    const state = world();
+    const robot = addPlayer(state, 'r');
+    robot.upgrades.push('boost');
+    const inputs = new Map([['r', { dir: { x: 1, y: 0 }, seq: 1, receivedAt: Date.now() }]]);
+    for (let i = 0; i < 20; i++) MovementSystem.update(state, inputs, DT);
+    const want = C.PLAYER_SPEED * C.BOOST_SPEED_MULTIPLIER;
+    check(
+        'the boost upgrade raises top speed by BOOST_SPEED_MULTIPLIER',
+        Math.abs(onScreenSpeed(robot) - want) < 0.5,
+        `${onScreenSpeed(robot).toFixed(1)} px/s`
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+section('Teams');
+{
+    const state = world();
+    const shooter = addPlayer(state, 'a', 100, 100, 'red');
+    const mate = addPlayer(state, 'm', 1500, 1500, 'red');
+    const enemy = addPlayer(state, 'e', 1500, 1700, 'blue');
+    const fire = (target) => {
+        const p = new Projectile();
+        p.id = `p${Math.random()}`;
+        p.ownerId = 'a';
+        p.x = target.x - 1;
+        p.y = target.y;
+        p.angle = 0;
+        p.spawnedAt = Date.now();
+        state.projectiles.set(p.id, p);
+        CombatSystem.update(state, DT, () => {});
+        return state.projectiles.has(p.id);
+    };
+    const passedThrough = fire(mate);
+    check(
+        'no friendly fire: a shot passes through a teammate',
+        mate.health === 100 && passedThrough
+    );
+    fire(enemy);
+    check('an enemy still takes damage', enemy.health === 100 - C.PROJECTILE_DAMAGE);
+
+    const mateFort = addStructure(state, 'm', 40, 40);
+    const c = hexCenter(40, 40);
+    const shot = new Projectile();
+    shot.id = 'ps';
+    shot.ownerId = 'a';
+    shot.x = c.x;
+    shot.y = c.y;
+    shot.spawnedAt = Date.now();
+    state.projectiles.set(shot.id, shot);
+    CombatSystem.update(state, DT, () => {});
+    check("...nor to a teammate's structure", mateFort.health === mateFort.maxHealth);
+}
+{
+    // Walk into a teammate's structure and an enemy's one.
+    const walk = (ownerTeam) => {
+        const state = world();
+        const target = hexCenter(30, 30);
+        const p = addPlayer(state, 'a', target.x - 150, target.y, 'red');
+        addPlayer(state, 'o', 0, 0, ownerTeam);
+        addStructure(state, 'o', 30, 30);
+        const inputs = new Map([['a', { dir: { x: 1, y: 0 }, seq: 1, receivedAt: Date.now() }]]);
+        for (let i = 0; i < 20; i++) MovementSystem.update(state, inputs, DT);
+        return p.x - target.x;
+    };
+    check("you can walk through a teammate's structure", walk('red') > 0, walk('red').toFixed(1));
+    check("...but not an enemy's", walk('blue') < -C.PLAYER_RADIUS + 1, walk('blue').toFixed(1));
+    check(
+        "players with no team don't count as teammates",
+        walk('') < -C.PLAYER_RADIUS + 1 && addPlayer(world(), 'x').teamId === ''
+    );
+}
+{
+    const state = world();
+    const mate = addPlayer(state, 'm', 0, 0, 'red');
+    const foe = addPlayer(state, 'f', 0, 0, 'blue');
+    state.tiles[20 * 64 + 21].ownerId = 'm';
+    mate.tilesOwned = 1;
+    state.tiles[20 * 64 + 19].ownerId = 'f';
+    foe.tilesOwned = 1;
+    const c = hexCenter(20, 20);
+    const p = addPlayer(state, 'a', c.x, c.y, 'red');
+    p.claimRadius = C.EXPANDER_CLAIM_RADIUS;
+    CollisionSystem.claimTiles(state, p, []);
+    check(
+        "radius claiming leaves teammates' tiles alone but takes enemies'",
+        state.tiles[20 * 64 + 21].ownerId === 'm' &&
+            mate.tilesOwned === 1 &&
+            state.tiles[20 * 64 + 19].ownerId === 'a' &&
+            foe.tilesOwned === 0 &&
+            p.tilesOwned === 6
     );
 }
 
@@ -279,11 +485,13 @@ section('Shop');
 {
     const ammo = shared.SHOP_ITEMS.ammo;
     const expander = shared.SHOP_ITEMS.expander;
+    const gun = shared.SHOP_ITEMS.basicGun;
     const p = new Player();
     check(
-        'players start with STARTING_CREDITS, base claim radius, and 30 ammo',
-        p.credits === C.STARTING_CREDITS && p.claimRadius === C.BASE_CLAIM_RADIUS && p.ammo === 30
+        'before their kit is applied, players have no credits, ammo or gun and the base radius',
+        p.credits === 0 && p.ammo === 0 && p.gun === '' && p.claimRadius === C.BASE_CLAIM_RADIUS
     );
+    p.credits = 100;
     check(
         'an ammo pack costs AMMO_PACK_SIZE x AMMO_CREDITS_PER_SHOT credits',
         ammo.cost === shared.AMMO_PACK_SIZE * shared.AMMO_CREDITS_PER_SHOT,
@@ -292,7 +500,17 @@ section('Shop');
     const ok = ShopSystem.purchase(p, 'ammo');
     check(
         'buying ammo deducts the cost and adds a pack',
-        ok && p.credits === C.STARTING_CREDITS - ammo.cost && p.ammo === 30 + shared.AMMO_PACK_SIZE
+        ok && p.credits === 100 - ammo.cost && p.ammo === shared.AMMO_PACK_SIZE
+    );
+    p.credits = gun.cost;
+    check(
+        'the Basic gun arms the player',
+        ShopSystem.purchase(p, 'basicGun') && p.gun === 'basic' && p.credits === 0
+    );
+    p.credits = 1000;
+    check(
+        'only one gun per player',
+        ShopSystem.purchase(p, 'basicGun') === false && p.credits === 1000
     );
     p.credits = ammo.cost - 1;
     check(

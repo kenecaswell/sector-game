@@ -44,6 +44,7 @@ function finalScores(state: GameState): FinalScore[] {
             playerId: player.id,
             name: player.name,
             color: player.color,
+            teamId: player.teamId as FinalScore['teamId'],
             score: player.score,
             tilesOwned: player.tilesOwned,
             kills: player.kills,
