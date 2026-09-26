@@ -14,21 +14,28 @@ import {
     isNormalClose,
     leaveGame,
     sendInput,
-    sendEndBuying,
     sendPlaceStructure,
     sendPurchase,
+    sendSelectCharacter,
+    sendSelectTeam,
+    sendSetName,
+    sendSetReady,
     sendShoot,
-    sendStartGame,
     type GameRoom,
 } from '../net/GameConnection';
 import type {
+    CharacterId,
     GameOverEvent,
     GamePhase,
     PlayerDisconnectedEvent,
     PlayerReconnectedEvent,
     ShopItemId,
+    StructureType,
+    TeamId,
 } from '../types/shared';
 import type { PlayerState } from '../types/gameState';
+import { normalizePlayerName } from '../types/shared';
+import { loadPlayerName, savePlayerName } from '../utils/playerName';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
@@ -61,9 +68,12 @@ interface GameContextValue {
     leave: () => void;
     input: (dir: { x: number; y: number }, angle?: number) => void;
     shoot: (angle: number) => void;
-    placeStructure: (tileX: number, tileY: number) => void;
-    startGame: () => void;
-    endBuying: () => void;
+    placeStructure: (tileX: number, tileY: number, structureType: StructureType) => void;
+    selectTeam: (teamId: TeamId) => void;
+    selectCharacter: (characterId: CharacterId) => void;
+    setReady: (ready: boolean) => void;
+    // Rename yourself (lobby only) and remember the name for next time. Ignored if invalid.
+    setName: (name: string) => void;
     purchase: (itemId: ShopItemId) => void;
     // Leave the finished match and join a fresh lobby / just go back to the start screen.
     playAgain: () => void;
@@ -126,24 +136,27 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setStatus((prev) => (prev === 'reconnecting' ? prev : 'connecting'));
         setError(null);
 
-        connectToGame({
-            onPhaseChanged: (event) => {
-                setPhase(event.phase);
-                setPhaseEndsAt(event.endsAt);
+        connectToGame(
+            {
+                onPhaseChanged: (event) => {
+                    setPhase(event.phase);
+                    setPhaseEndsAt(event.endsAt);
+                },
+                onGameOver: (event) => setGameOver(event),
+                onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
+                    const minutes = Math.max(1, Math.round(event.reconnectWindowMs / 60000));
+                    pushNotice(
+                        'warning',
+                        `${event.name} disconnected — their spot is held for ${minutes} min`
+                    );
+                },
+                onPlayerReconnected: (event: PlayerReconnectedEvent) => {
+                    if (event.playerId === roomRef.current?.sessionId) return; // that's us
+                    pushNotice('success', `${event.name} reconnected`);
+                },
             },
-            onGameOver: (event) => setGameOver(event),
-            onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
-                const minutes = Math.max(1, Math.round(event.reconnectWindowMs / 60000));
-                pushNotice(
-                    'warning',
-                    `${event.name} disconnected — their spot is held for ${minutes} min`
-                );
-            },
-            onPlayerReconnected: (event: PlayerReconnectedEvent) => {
-                if (event.playerId === roomRef.current?.sessionId) return; // that's us
-                pushNotice('success', `${event.name} reconnected`);
-            },
-        })
+            { name: loadPlayerName() }
+        )
             .then(async (joinedRoom) => {
                 // The join handshake resolves before the server's initial full-state
                 // message has been decoded, so `state.phase` is undefined until the
@@ -177,7 +190,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     const signature = roster
                         .map(
                             (p) =>
-                                `${p.id}|${p.name}|${p.color}|${p.health}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.credits}|${p.claimRadius}|${p.connected}`
+                                `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.upgrades.join(',')}|${p.health}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.credits}|${p.claimRadius}|${p.connected}`
                         )
                         .join(';');
                     if (signature === lastSignature) return;
@@ -187,6 +200,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
                 $(joinedRoom.state).players.onAdd((player) => {
                     $(player).onChange(syncPlayers);
+                    // Items added to or removed from these lists don't fire the player's onChange.
+                    $(player).structureInventory.onAdd(syncPlayers);
+                    $(player).structureInventory.onRemove(syncPlayers);
+                    $(player).upgrades.onAdd(syncPlayers);
+                    $(player).upgrades.onRemove(syncPlayers);
                     syncPlayers();
                 });
                 $(joinedRoom.state).players.onRemove(syncPlayers);
@@ -315,17 +333,46 @@ export function GameProvider({ children }: { children: ReactNode }) {
     );
 
     const placeStructure = useCallback(
-        (tileX: number, tileY: number) => {
+        (tileX: number, tileY: number, structureType: StructureType) => {
             if (!room) return;
-            sendPlaceStructure(room, tileX, tileY, ++seqRef.current);
+            sendPlaceStructure(room, tileX, tileY, structureType, ++seqRef.current);
         },
         [room]
     );
 
-    const startGame = useCallback(() => {
-        if (!room) return;
-        sendStartGame(room);
-    }, [room]);
+    const selectTeam = useCallback(
+        (teamId: TeamId) => {
+            if (!room) return;
+            sendSelectTeam(room, teamId);
+        },
+        [room]
+    );
+
+    const selectCharacter = useCallback(
+        (characterId: CharacterId) => {
+            if (!room) return;
+            sendSelectCharacter(room, characterId);
+        },
+        [room]
+    );
+
+    const setName = useCallback(
+        (name: string) => {
+            const normalized = normalizePlayerName(name);
+            if (!room || normalized === null) return;
+            savePlayerName(normalized);
+            sendSetName(room, normalized);
+        },
+        [room]
+    );
+
+    const setReady = useCallback(
+        (ready: boolean) => {
+            if (!room) return;
+            sendSetReady(room, ready);
+        },
+        [room]
+    );
 
     const purchase = useCallback(
         (itemId: ShopItemId) => {
@@ -334,11 +381,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
         },
         [room]
     );
-
-    const endBuying = useCallback(() => {
-        if (!room) return;
-        sendEndBuying(room);
-    }, [room]);
 
     const value = useMemo<GameContextValue>(
         () => ({
@@ -357,8 +399,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
             input,
             shoot,
             placeStructure,
-            startGame,
-            endBuying,
+            selectTeam,
+            selectCharacter,
+            setReady,
+            setName,
             purchase,
             playAgain,
             exitResults,
@@ -378,8 +422,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
             input,
             shoot,
             placeStructure,
-            startGame,
-            endBuying,
+            selectTeam,
+            selectCharacter,
+            setReady,
+            setName,
             purchase,
             playAgain,
             exitResults,

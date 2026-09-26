@@ -1,0 +1,422 @@
+import { useRef, useState } from 'react';
+import { useGameConnection } from '../context/GameContext';
+import { NoticeStack } from '../components/NoticeStack';
+import type { PlayerState } from '../types/gameState';
+import {
+    CHARACTERS,
+    CHARACTER_IDS,
+    DEFAULT_CHARACTER,
+    GUN_NAMES,
+    PLAYER_NAME_MAX_LENGTH,
+    PLAYER_NAME_MIN_LENGTH,
+    STRUCTURE_NAMES,
+    TEAMS,
+    TEAM_IDS,
+    UPGRADE_NAMES,
+    isCharacterId,
+    isTeamId,
+    normalizePlayerName,
+    type Character,
+    type CharacterId,
+    type TeamId,
+} from '../types/shared';
+import { usePhaseCountdown } from '../utils/usePhaseCountdown';
+
+// Real CSS for what inline styles can't express (:hover, :disabled, the narrow-screen layout).
+// Selects use `appearance: none` with a drawn arrow: Safari otherwise ignores most of their styling
+// and draws its own glossy control. (Custom team/character pickers are planned to replace them.)
+// Class names are prefixed so they can't collide with anything else on the page.
+const LOBBY_CSS = `
+.lobby-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px 150px 112px;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 8px;
+}
+.lobby-row--you { background: rgba(241, 196, 15, 0.1); }
+.lobby-row--head { padding-top: 0; padding-bottom: 4px; font-size: 12px; opacity: 0.6; }
+.lobby-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lobby-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby-swatch { flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%; }
+.lobby-pick { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lobby-select {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 28px 6px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    background-color: #2a2a44;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    color: #fff;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.3;
+}
+.lobby-select:disabled { opacity: 0.55; }
+.lobby-select:focus-visible { outline: 2px solid #f1c40f; outline-offset: 1px; }
+.lobby-name-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lobby-name-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font: inherit;
+    font-size: 16px; /* 16px or more stops iOS Safari zooming in when the field is focused */
+}
+.lobby-name-input:hover { border-color: rgba(255, 255, 255, 0.45); }
+.lobby-name-input:focus { outline: none; border-color: #f1c40f; background: rgba(0, 0, 0, 0.25); }
+.lobby-name-input--invalid, .lobby-name-input--invalid:focus { border-color: #e74c3c; }
+.lobby-name-hint { font-size: 12px; color: #ff8a7a; }
+.lobby-you { flex-shrink: 0; font-size: 13px; opacity: 0.6; }
+.lobby-ready {
+    padding: 7px 10px;
+    border: none;
+    border-radius: 6px;
+    background: #f1c40f;
+    color: #000;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 90ms ease, background-color 120ms ease;
+}
+.lobby-ready:hover { background: #ffd84a; }
+.lobby-ready:active { transform: scale(0.95); }
+.lobby-ready:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.lobby-ready--on { background: #2ecc71; color: #fff; }
+.lobby-ready--on:hover { background: #27b463; }
+.lobby-status { font-size: 13px; font-weight: bold; text-align: center; }
+@media (max-width: 560px) {
+    .lobby-row { grid-template-columns: 1fr 1fr; }
+    .lobby-row--head { display: none; }
+    .lobby-name, .lobby-ready, .lobby-status { grid-column: 1 / -1; }
+}
+`;
+
+/**
+ * The pre-match lobby. Every player is listed with their name, team (color), character and whether
+ * they're ready; your own row has the controls (your name is editable in place). Once everyone is ready the server runs a short
+ * countdown and the match starts (see LobbySystem). Team and character are locked while you're
+ * ready, so un-ready to change them.
+ */
+export function LobbyScreen() {
+    const {
+        phase,
+        phaseEndsAt,
+        players,
+        sessionId,
+        notices,
+        selectTeam,
+        selectCharacter,
+        setReady,
+        setName,
+    } = useGameConnection();
+    const secondsLeft = usePhaseCountdown(phase === 'countdown' ? phaseEndsAt : 0, 100);
+
+    const me = players.find((player) => player.id === sessionId);
+    const connected = players.filter((player) => player.connected);
+    const waitingFor = connected.filter((player) => !player.ready).length;
+
+    let status = 'Set your name, pick a team and a character, then press Ready.';
+    if (secondsLeft !== null) status = '';
+    else if (me?.ready) {
+        status = `Waiting for ${waitingFor} more ${waitingFor === 1 ? 'player' : 'players'} to get ready…`;
+    }
+
+    const teamCounts = new Map<string, number>();
+    players.forEach((p) => teamCounts.set(p.teamId, (teamCounts.get(p.teamId) ?? 0) + 1));
+
+    return (
+        <div
+            style={{
+                position: 'fixed',
+                inset: 0,
+                overflowY: 'auto',
+                background: '#1a1a2e',
+                color: '#fff',
+                fontFamily: 'sans-serif',
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '32px 16px',
+                boxSizing: 'border-box',
+            }}
+        >
+            <style>{LOBBY_CSS}</style>
+            <NoticeStack notices={notices} />
+            <div style={{ width: 680, maxWidth: '100%', textAlign: 'left' }}>
+                <div style={{ fontSize: 13, letterSpacing: 2, opacity: 0.7, textAlign: 'center' }}>
+                    SECTOR 42
+                </div>
+                <h1
+                    style={{
+                        margin: '4px 0 8px',
+                        fontSize: 34,
+                        color: '#fff',
+                        textAlign: 'center',
+                        letterSpacing: 'normal',
+                    }}
+                >
+                    Lobby
+                </h1>
+                <div
+                    aria-live="polite"
+                    style={{ minHeight: 44, marginBottom: 12, textAlign: 'center' }}
+                >
+                    {secondsLeft !== null ? (
+                        <div style={{ fontSize: 28, fontWeight: 'bold', color: '#f1c40f' }}>
+                            Starting in {Math.max(1, secondsLeft)}…
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: 15, opacity: 0.8, paddingTop: 10 }}>{status}</div>
+                    )}
+                </div>
+
+                <div role="list" aria-label="Players">
+                    <div className="lobby-row lobby-row--head" aria-hidden="true">
+                        <div>Player</div>
+                        <div>Team</div>
+                        <div>Character</div>
+                        <div />
+                    </div>
+                    {players.map((player) =>
+                        player.id === sessionId ? (
+                            <OwnRow
+                                key={player.id}
+                                player={player}
+                                teamCounts={teamCounts}
+                                onTeam={selectTeam}
+                                onCharacter={selectCharacter}
+                                onReady={setReady}
+                                onName={setName}
+                            />
+                        ) : (
+                            <OtherRow key={player.id} player={player} />
+                        )
+                    )}
+                </div>
+
+                {me && <CharacterCard character={characterOf(me)} />}
+
+                <p style={{ margin: '16px 0 0', fontSize: 13, opacity: 0.65, lineHeight: 1.5 }}>
+                    Players with the same color are a team: you can't shoot each other or each
+                    other's structures, you can walk through each other's structures, and you don't
+                    take each other's tiles. Scores are still per player. The match starts 3 seconds
+                    after everyone is ready.
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function characterOf(player: PlayerState): Character {
+    return CHARACTERS[isCharacterId(player.character) ? player.character : DEFAULT_CHARACTER];
+}
+
+function teamName(player: PlayerState): string {
+    return isTeamId(player.teamId) ? TEAMS[player.teamId].name : '—';
+}
+
+function Name({ player }: { player: PlayerState }) {
+    return (
+        <div className="lobby-name">
+            <span className="lobby-swatch" style={{ background: player.color }} />
+            <span>
+                {player.name}
+                {!player.connected ? ' (disconnected)' : ''}
+            </span>
+        </div>
+    );
+}
+
+interface OwnRowProps {
+    player: PlayerState;
+    teamCounts: Map<string, number>;
+    onTeam: (teamId: TeamId) => void;
+    onCharacter: (characterId: CharacterId) => void;
+    onReady: (ready: boolean) => void;
+    onName: (name: string) => void;
+}
+
+function OwnRow({ player, teamCounts, onTeam, onCharacter, onReady, onName }: OwnRowProps) {
+    const locked = player.ready;
+    const lockedTitle = locked ? 'Un-ready to change this' : undefined;
+
+    return (
+        <div className="lobby-row lobby-row--you" role="listitem">
+            <div className="lobby-name">
+                <span className="lobby-swatch" style={{ background: player.color }} />
+                <NameField name={player.name} onName={onName} />
+                <span className="lobby-you">(you)</span>
+            </div>
+            <div className="lobby-pick">
+                <select
+                    className="lobby-select"
+                    aria-label="Team"
+                    title={lockedTitle}
+                    value={player.teamId}
+                    disabled={locked}
+                    onChange={(e) => {
+                        if (isTeamId(e.target.value)) onTeam(e.target.value);
+                    }}
+                    style={{ borderLeft: `6px solid ${player.color}` }}
+                >
+                    {TEAM_IDS.map((id) => {
+                        const count = teamCounts.get(id) ?? 0;
+                        return (
+                            <option key={id} value={id}>
+                                {TEAMS[id].name}
+                                {count > 0 ? ` (${count})` : ''}
+                            </option>
+                        );
+                    })}
+                </select>
+            </div>
+            <select
+                className="lobby-select"
+                aria-label="Character"
+                title={lockedTitle}
+                value={player.character}
+                disabled={locked}
+                onChange={(e) => {
+                    if (isCharacterId(e.target.value)) onCharacter(e.target.value);
+                }}
+            >
+                {CHARACTER_IDS.map((id) => (
+                    <option key={id} value={id}>
+                        {CHARACTERS[id].name}
+                    </option>
+                ))}
+            </select>
+            <button
+                type="button"
+                className={locked ? 'lobby-ready lobby-ready--on' : 'lobby-ready'}
+                aria-pressed={locked}
+                title={locked ? 'Click to cancel' : 'Mark yourself ready'}
+                onClick={() => onReady(!locked)}
+            >
+                {locked ? '✓ Ready' : 'Ready'}
+            </button>
+        </div>
+    );
+}
+
+/**
+ * Your name, editable in place. Changes are sent when you leave the field or press Enter (Esc
+ * cancels); an invalid name isn't sent and the field goes back to your current one. The server
+ * may add " (1)" if someone else already has it, and the field then shows that.
+ */
+function NameField({ name, onName }: { name: string; onName: (name: string) => void }) {
+    // null while not editing, so the field always shows the server's name otherwise.
+    const [draft, setDraft] = useState<string | null>(null);
+    const cancelled = useRef(false);
+    const valid = draft === null || normalizePlayerName(draft) !== null;
+
+    const commit = () => {
+        const normalized = normalizePlayerName(draft);
+        if (!cancelled.current && normalized !== null && normalized !== name) onName(normalized);
+        cancelled.current = false;
+        setDraft(null);
+    };
+
+    return (
+        <div className="lobby-name-field">
+            <input
+                className={
+                    valid ? 'lobby-name-input' : 'lobby-name-input lobby-name-input--invalid'
+                }
+                type="text"
+                inputMode="text"
+                enterKeyHint="done"
+                autoComplete="nickname"
+                autoCapitalize="words"
+                spellCheck={false}
+                maxLength={PLAYER_NAME_MAX_LENGTH}
+                aria-label="Your name"
+                aria-invalid={!valid}
+                value={draft ?? name}
+                onFocus={(e) => {
+                    setDraft(name);
+                    e.currentTarget.select();
+                }}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    else if (e.key === 'Escape') {
+                        cancelled.current = true;
+                        e.currentTarget.blur();
+                    }
+                }}
+            />
+            {!valid && (
+                <span className="lobby-name-hint" role="alert">
+                    {PLAYER_NAME_MIN_LENGTH}–{PLAYER_NAME_MAX_LENGTH} characters
+                </span>
+            )}
+        </div>
+    );
+}
+
+function OtherRow({ player }: { player: PlayerState }) {
+    return (
+        <div className="lobby-row" role="listitem" style={{ opacity: player.connected ? 1 : 0.5 }}>
+            <Name player={player} />
+            <div className="lobby-pick">
+                <span className="lobby-swatch" style={{ background: player.color }} />
+                {teamName(player)}
+            </div>
+            <div>{characterOf(player).name}</div>
+            <div
+                className="lobby-status"
+                style={{ color: player.ready ? '#2ecc71' : 'rgba(255, 255, 255, 0.5)' }}
+            >
+                {player.ready ? '✓ Ready' : 'Not ready'}
+            </div>
+        </div>
+    );
+}
+
+/** What your chosen character starts the match with. */
+function CharacterCard({ character }: { character: Character }) {
+    const list = (items: string[]) => (items.length > 0 ? items.join(', ') : 'None');
+    const stats: Array<[string, string]> = [
+        ['Gun', character.gun ? GUN_NAMES[character.gun] : 'None'],
+        ['Ammo', String(character.ammo)],
+        ['Credits', String(character.credits)],
+        ['Structures', list(character.structures.map((type) => STRUCTURE_NAMES[type]))],
+        ['Upgrades', list(character.upgrades.map((id) => UPGRADE_NAMES[id]))],
+    ];
+
+    return (
+        <div
+            style={{
+                marginTop: 16,
+                padding: '12px 16px',
+                borderRadius: 10,
+                background: 'rgba(255, 255, 255, 0.06)',
+            }}
+        >
+            <div style={{ fontSize: 12, letterSpacing: 1, opacity: 0.6 }}>YOUR CHARACTER</div>
+            <div style={{ margin: '2px 0 8px' }}>
+                <strong style={{ fontSize: 18 }}>{character.name}</strong>
+                <span style={{ opacity: 0.75 }}> — {character.description}</span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', fontSize: 14 }}>
+                {stats.map(([label, value]) => (
+                    <div key={label}>
+                        <span style={{ opacity: 0.6 }}>{label}:</span> {value}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}

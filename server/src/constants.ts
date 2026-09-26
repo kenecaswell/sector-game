@@ -13,6 +13,9 @@ export const RECONNECT_WINDOW_SECONDS = 180; // 3 minutes
 export const SCREEN_Y_SCALE = 0.6;
 
 export const PLAYER_SPEED = 200; // pixels/sec, top on-screen speed (see SCREEN_Y_SCALE)
+// The 'boost' upgrade (the Robot starts with it) multiplies top speed by this. Acceleration is
+// unchanged, so a boosted player takes a little longer to reach their higher top speed.
+export const BOOST_SPEED_MULTIPLIER = 1.25;
 // If a client sends nothing for this long (tab backgrounded, connection stalled), its last
 // input is discarded and the player coasts to a stop instead of running on forever. The client
 // re-sends its input at least every 250ms while active, so this leaves generous margin.
@@ -31,7 +34,8 @@ export const PROJECTILE_LIFETIME_MS = 2000;
 // a whole match can be run in seconds, e.g. PHASE_TIME_SCALE=0.02 npm run dev. Leave it unset normally.
 const requestedScale = Number(process.env.PHASE_TIME_SCALE);
 const PHASE_TIME_SCALE = requestedScale > 0 ? requestedScale : 1;
-export const BUY_PHASE_DURATION_MS = 30_000 * PHASE_TIME_SCALE; // quick shopping before play starts
+// Once everyone in the lobby is ready (see LobbySystem).
+export const COUNTDOWN_DURATION_MS = 3_000 * PHASE_TIME_SCALE;
 export const MATCH_DURATION_MS = 5 * 60_000 * PHASE_TIME_SCALE; // the `playing` phase
 // After the match ends the room is locked (no new players) and kept open this long so players can
 // look at the results, then closed. It closes sooner if everyone leaves.
@@ -44,8 +48,6 @@ export const BASE_CLAIM_RADIUS = HEX_SIZE;
 // The Expander's claim radius scales with the player's size: 4x the player radius (80px at 20;
 // it was 64px, twice the base radius, when the player radius was 16).
 export const EXPANDER_CLAIM_RADIUS = PLAYER_RADIUS * 4;
-
-export const STARTING_CREDITS = 100; // credits each player begins with (to spend in the buy menu)
 
 // Score = tiles owned x TILE_POINTS + kills x KILL_POINTS + structures owned x STRUCTURE_POINTS.
 // Credits are NOT part of the score (they're for buying things). STRUCTURE_POINTS is a

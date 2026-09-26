@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GamePhase, ShopItemId } from '../types/shared';
+import type { ShopItemId } from '../types/shared';
 import { SHOP_ITEMS } from '../types/shared';
-import { usePhaseCountdown } from '../utils/usePhaseCountdown';
 
 // Ideas that aren't buyable yet. Shown so the menu communicates what's coming; replace an entry
 // with a real item in SHOP_ITEMS (types/shared.ts, mirrored on the server) when it's built.
 const COMING_SOON = [
     { name: 'Better gun', description: 'More damage, faster fire rate' },
     { name: 'Armor', description: 'Take less damage from hits' },
-    { name: 'Structures', description: 'Fort, house, school, city hall' },
+    { name: 'Structures', description: 'More farms, mines, forts and power plants' },
 ];
 
 // Button looks live in real CSS because inline styles can't express :hover / :active. The class
@@ -52,29 +51,17 @@ interface BuyMenuProps {
     credits: number;
     ammo: number;
     hasExpander: boolean;
-    phase: GamePhase;
-    phaseEndsAt: number;
+    hasGun: boolean;
     onBuy: (itemId: ShopItemId) => void;
     onClose: () => void;
 }
 
 /**
- * Shop popup over the game canvas. GameScreen opens it automatically during the `buying` phase
- * and lets players toggle it during play. Clicking the dimmed backdrop, the close button, or
+ * Shop popup over the game canvas; GameScreen lets players toggle it during the match. Clicking the dimmed backdrop, the close button, or
  * pressing Esc closes it. The server validates every purchase; the buttons just avoid offering
  * ones that would be rejected (not enough credits, or an upgrade you already own).
  */
-export function BuyMenu({
-    credits,
-    ammo,
-    hasExpander,
-    phase,
-    phaseEndsAt,
-    onBuy,
-    onClose,
-}: BuyMenuProps) {
-    const secondsLeft = usePhaseCountdown(phaseEndsAt);
-
+export function BuyMenu({ credits, ammo, hasExpander, hasGun, onBuy, onClose }: BuyMenuProps) {
     // Which item's button is showing its "bought" confirmation right now. It's shown when the
     // button is pressed (the server accepts any purchase the button allowed, barring a race).
     const [boughtId, setBoughtId] = useState<ShopItemId | null>(null);
@@ -90,7 +77,7 @@ export function BuyMenu({
 
     const buttonFor = (itemId: ShopItemId) => {
         const item = SHOP_ITEMS[itemId];
-        const owned = itemId === 'expander' && hasExpander;
+        const owned = (itemId === 'expander' && hasExpander) || (itemId === 'basicGun' && hasGun);
         const affordable = credits >= item.cost;
         const bought = boughtId === itemId;
         const label = bought ? '✓' : owned ? 'Owned' : `${item.cost} cr`;
@@ -177,18 +164,12 @@ export function BuyMenu({
                 >
                     <span style={{ color: '#f1c40f' }}>Credits: {credits}</span>
                     <span>Ammo: {ammo}</span>
+                    <span>{hasGun ? 'Armed' : 'No gun'}</span>
                 </div>
 
-                {phase === 'buying' && secondsLeft !== null ? (
-                    <div style={{ marginBottom: 10 }}>
-                        The match starts in <strong>{secondsLeft}s</strong>. You can keep shopping
-                        during the match from the Shop button.
-                    </div>
-                ) : (
-                    <div style={{ marginBottom: 10, opacity: 0.8 }}>
-                        Shopping during the match is on your own time — the game keeps running.
-                    </div>
-                )}
+                <div style={{ marginBottom: 10, opacity: 0.8 }}>
+                    Shopping is on your own time — the game keeps running.
+                </div>
 
                 {(Object.keys(SHOP_ITEMS) as ShopItemId[]).map((itemId) => {
                     const item = SHOP_ITEMS[itemId];

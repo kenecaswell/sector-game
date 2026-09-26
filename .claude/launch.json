@@ -1,0 +1,20 @@
+{
+    "version": "0.0.1",
+    "configurations": [
+        {
+            "name": "server-private",
+            "runtimeExecutable": "bash",
+            "runtimeArgs": ["-c", "cd server && PORT=2599 node dist/index.js"],
+            "port": 2599
+        },
+        {
+            "name": "client-private",
+            "runtimeExecutable": "bash",
+            "runtimeArgs": [
+                "-c",
+                "cd client && VITE_SERVER_URL=ws://localhost:2599 npx vite --port 5199 --strictPort"
+            ],
+            "port": 5199
+        }
+    ]
+}

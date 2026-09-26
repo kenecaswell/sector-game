@@ -12,6 +12,7 @@ import { DebugStats } from '../components/DebugStats';
 import { FireButton } from '../components/FireButton';
 import { ScoreBadge } from '../components/ScoreBadge';
 import { BASE_CLAIM_RADIUS } from '../game/constants';
+import { STRUCTURE_NAMES, isStructureType } from '../types/shared';
 import { isTouchDevice } from '../utils/device';
 import { scoreFor } from '../utils/score';
 
@@ -28,39 +29,16 @@ export function GameScreen() {
         input,
         shoot,
         placeStructure,
-        endBuying,
         purchase,
     } = useGameConnection();
     const containerRef = useRef<HTMLDivElement>(null);
     const gameRef = useRef<Phaser.Game | null>(null);
     const [buildModeArmed, setBuildModeArmed] = useState(false);
     // Only one popup is open at a time.
-    // GameScreen mounts right as the buying phase starts, so it has to start with the shop open.
-    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'shop'>(
-        phase === 'buying' ? 'shop' : 'none'
-    );
-    const [previousPhase, setPreviousPhase] = useState(phase);
+    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'shop'>('none');
     const [showStats, setShowStats] = useState(false);
     const touch = isTouchDevice();
-
-    // The shop opens by itself when the buying phase starts and closes when play begins
-    // (players can reopen it). Adjusting state during render on a change is React's
-    // recommended alternative to setting state in an effect.
-    if (phase !== previousPhase) {
-        setPreviousPhase(phase);
-        if (phase === 'buying') setPanel('shop');
-        else if (phase === 'playing' && panel === 'shop') setPanel('none');
-    }
-    const shopAvailable = phase === 'buying' || phase === 'playing';
-
-    // TEMPORARY testing shortcut: closing the shop during the buying phase starts the match, so a
-    // solo tester doesn't have to wait out the 30s. (Host only — the server ignores anyone else.)
-    // Remove once the buy menu is real.
-    const previousPanel = useRef(panel);
-    useEffect(() => {
-        if (previousPanel.current === 'shop' && panel === 'none' && phase === 'buying') endBuying();
-        previousPanel.current = panel;
-    }, [panel, phase, endBuying]);
+    const shopAvailable = phase === 'playing';
 
     useEffect(() => {
         if (!room || !sessionId || !containerRef.current) return;
@@ -69,7 +47,9 @@ export function GameScreen() {
             onInput: input,
             onShoot: shoot,
             onPlaceStructure: (tileX, tileY) => {
-                placeStructure(tileX, tileY);
+                // Build the next structure in the inventory (read live: this closure outlives renders).
+                const next = room.state.players.get(sessionId)?.structureInventory[0];
+                if (isStructureType(next)) placeStructure(tileX, tileY, next);
                 setBuildModeArmed(false);
             },
         });
@@ -112,13 +92,23 @@ export function GameScreen() {
     const getScene = (): GameScene | undefined =>
         gameRef.current?.scene.getScene('GameScene') as GameScene | undefined;
 
-    const toggleBuildMode = () => {
-        const next = !buildModeArmed;
-        setBuildModeArmed(next);
-        getScene()?.setBuildMode(next);
-    };
-
     const me = players.find((player) => player.id === sessionId);
+    const nextStructure = me?.structureInventory[0];
+    const canBuild = isStructureType(nextStructure);
+    const hasGun = !!me?.gun;
+    // Build mode only counts while there's something left to build.
+    const buildArmed = buildModeArmed && canBuild;
+
+    // The scene follows this state, so the timeout above and running out of structures both put the
+    // next tap back to shooting.
+    useEffect(() => {
+        const scene = gameRef.current?.scene.getScene('GameScene') as GameScene | undefined;
+        scene?.setBuildMode(buildArmed);
+    }, [buildArmed]);
+
+    const toggleBuildMode = () => {
+        if (canBuild) setBuildModeArmed(!buildArmed);
+    };
 
     return (
         // Fixed to the viewport, outside the page's normal flow. (Sizing this 100vw x 100vh inside the
@@ -158,9 +148,8 @@ export function GameScreen() {
                     credits={me?.credits ?? 0}
                     ammo={me?.ammo ?? 0}
                     hasExpander={(me?.claimRadius ?? 0) > BASE_CLAIM_RADIUS + 0.5}
+                    hasGun={!!me?.gun}
                     onBuy={purchase}
-                    phase={phase}
-                    phaseEndsAt={phaseEndsAt}
                     onClose={() => setPanel('none')}
                 />
             )}
@@ -169,6 +158,8 @@ export function GameScreen() {
                 <button
                     type="button"
                     tabIndex={-1}
+                    disabled={!canBuild}
+                    title={canBuild ? undefined : 'No structures left to build'}
                     onClick={(e) => {
                         e.currentTarget.blur(); // so Space keeps meaning "shoot"
                         toggleBuildMode();
@@ -181,17 +172,22 @@ export function GameScreen() {
                         padding: '10px 16px',
                         borderRadius: 8,
                         border: 'none',
-                        background: buildModeArmed ? '#f1c40f' : 'rgba(255, 255, 255, 0.85)',
+                        background: buildArmed ? '#f1c40f' : 'rgba(255, 255, 255, 0.85)',
+                        opacity: canBuild ? 1 : 0.5,
                         fontWeight: 'bold',
                     }}
                 >
-                    {buildModeArmed ? 'Tap a tile to build…' : 'Build'}
+                    {buildArmed
+                        ? 'Tap one of your tiles to build…'
+                        : canBuild
+                          ? `Build ${STRUCTURE_NAMES[nextStructure]} (${me?.structureInventory.length})`
+                          : 'Nothing to build'}
                 </button>
             )}
 
             {showStats && <DebugStats getGame={getGame} />}
             {touch && <MobileJoystick onChange={(dir) => getScene()?.setJoystick(dir)} />}
-            {touch && phase === 'playing' && (
+            {touch && phase === 'playing' && hasGun && (
                 <FireButton onHoldChange={(held) => getScene()?.setFireHeld(held)} />
             )}
         </div>

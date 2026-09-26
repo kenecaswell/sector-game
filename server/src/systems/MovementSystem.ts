@@ -1,5 +1,6 @@
 import type { GameState } from '../state/GameState';
 import {
+    BOOST_SPEED_MULTIPLIER,
     INPUT_STALE_MS,
     MAP_EDGE_MARGIN,
     PLAYER_ACCEL,
@@ -8,6 +9,7 @@ import {
     SCREEN_Y_SCALE,
 } from '../constants';
 import { hexEdgeContact, mapPixelSize } from '../hex';
+import { areAllies } from '../teams';
 
 export interface PlayerInput {
     dir: { x: number; y: number };
@@ -22,7 +24,8 @@ const APPROACH_EPSILON = 1e-3; // px; see findBlockingStructure
  * Moves each connected player by easing their velocity toward the velocity
  * their input asks for, at a fixed acceleration (PLAYER_ACCEL). Direction is
  * a free-form vector, so movement can be at any angle; its magnitude (0..1)
- * scales speed, which lets an analog joystick walk slowly. Because the same
+ * scales speed, which lets an analog joystick walk slowly. The 'boost' upgrade
+ * raises top speed by BOOST_SPEED_MULTIPLIER. Because the same
  * acceleration limit applies when speeding up, stopping, and changing
  * direction, motion is smooth rather than snapping between headings.
  *
@@ -31,8 +34,9 @@ const APPROACH_EPSILON = 1e-3; // px; see findBlockingStructure
  * up the screen has a larger world-y component than one pointing sideways has
  * world-x, and both look equally fast. Longer vectors are clamped to that limit.
  *
- * Structures are solid to everyone except their owner: a player can't move
- * into another player's structure and instead slides along it. Players who end
+ * Structures are solid to everyone except their owner and the owner's
+ * teammates: a player can't move into an enemy structure and instead slides
+ * along it. Players who end
  * up inside one (e.g. it was built on top of them) can still move out.
  *
  * Players with no input keep decelerating to a stop. Does not touch tile
@@ -73,8 +77,11 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
             dy /= magnitude;
         }
 
-        const targetVx = dx * PLAYER_SPEED;
-        const targetVy = dy * PLAYER_SPEED;
+        const topSpeed = player.upgrades.includes('boost')
+            ? PLAYER_SPEED * BOOST_SPEED_MULTIPLIER
+            : PLAYER_SPEED;
+        const targetVx = dx * topSpeed;
+        const targetVy = dy * topSpeed;
         const deltaVx = targetVx - player.vx;
         const deltaVy = targetVy - player.vy;
         const deltaLength = Math.hypot(deltaVx, deltaVy * SCREEN_Y_SCALE);
@@ -125,7 +132,7 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
 }
 
 /**
- * The first structure (not owned by `playerId`) that moving from (fromX, fromY)
+ * The first structure (not owned by `playerId` or a teammate) that moving from (fromX, fromY)
  * to (toX, toY) would push the player's circle further into, or null. Moves that
  * don't get closer are allowed, which is what lets a player who's already inside
  * a structure walk out of it. Returns the push-out direction at the player's
@@ -142,7 +149,7 @@ function findBlockingStructure(
     toY: number
 ): { nx: number; ny: number } | null {
     for (const structure of state.structures.values()) {
-        if (structure.ownerId === playerId) continue;
+        if (areAllies(state, structure.ownerId, playerId)) continue;
 
         const to = hexEdgeContact(toX, toY, structure.tileX, structure.tileY);
         if (to.distance >= PLAYER_RADIUS) continue;

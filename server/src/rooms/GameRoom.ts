@@ -7,6 +7,8 @@ import { PhaseSystem } from '../systems/PhaseSystem';
 import { EconomySystem } from '../systems/EconomySystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
 import { ShopSystem } from '../systems/ShopSystem';
+import { LobbySystem } from '../systems/LobbySystem';
+import { CharacterSystem } from '../systems/CharacterSystem';
 import { hexIndex, isValidHex, mapPixelSize } from '../hex';
 import type { Broadcast } from '../systems/Broadcast';
 import {
@@ -24,20 +26,13 @@ import type {
     PlayerDisconnectedEvent,
     PlayerReconnectedEvent,
     PurchaseMessage,
+    SelectTeamMessage,
+    SelectCharacterMessage,
+    SetReadyMessage,
+    SetNameMessage,
+    JoinOptions,
 } from '../types/shared';
-
-const PLAYER_COLORS = [
-    '#e74c3c',
-    '#3498db',
-    '#2ecc71',
-    '#f1c40f',
-    '#9b59b6',
-    '#1abc9c',
-    '#e67e22',
-    '#95a5a6',
-    '#34495e',
-    '#ff7675',
-];
+import { isStructureType } from '../types/shared';
 
 export class GameRoom extends Room<GameState> {
     maxClients = 10;
@@ -46,7 +41,6 @@ export class GameRoom extends Room<GameState> {
     // lives outside the Colyseus schema rather than as @type fields. NOT named
     // `inputs` — some Colyseus versions reserve that property name on Room.
     private playerInputs = new Map<string, PlayerInput>();
-    private hostId: string | null = null;
     private matchFinished = false;
     private closing = false;
     private nextProjectileId = 0;
@@ -68,36 +62,44 @@ export class GameRoom extends Room<GameState> {
         this.onMessage<PlaceStructureMessage>('placeStructure', (client, msg) =>
             this.handlePlaceStructure(client, msg)
         );
-        this.onMessage('startGame', (client) => this.handleStartGame(client));
-        this.onMessage('endBuying', (client) => this.handleEndBuying(client));
+        this.onMessage<SelectTeamMessage>('selectTeam', (client, msg) =>
+            this.withPlayer(client, (p) => LobbySystem.selectTeam(this.state, p, msg?.teamId))
+        );
+        this.onMessage<SelectCharacterMessage>('selectCharacter', (client, msg) =>
+            this.withPlayer(client, (p) =>
+                LobbySystem.selectCharacter(this.state, p, msg?.characterId)
+            )
+        );
+        this.onMessage<SetReadyMessage>('setReady', (client, msg) =>
+            this.withPlayer(client, (p) => LobbySystem.setReady(this.state, p, msg?.ready))
+        );
+        this.onMessage<SetNameMessage>('setName', (client, msg) =>
+            this.withPlayer(client, (p) => LobbySystem.setName(this.state, p, msg?.name))
+        );
         this.onMessage<PurchaseMessage>('purchase', (client, msg) =>
             this.handlePurchase(client, msg)
         );
     }
 
-    onJoin(client: Client): void {
+    onJoin(client: Client, options?: JoinOptions): void {
         const player = new Player();
         player.id = client.sessionId;
-        player.name = `Player ${this.state.players.size + 1}`;
-        player.color = PLAYER_COLORS[this.state.players.size % PLAYER_COLORS.length];
+        // The client sends its saved name; otherwise "Player N". Made unique among the others.
+        player.name = LobbySystem.joiningName(this.state, options?.name);
+        LobbySystem.setTeam(player, LobbySystem.defaultTeam(this.state));
+        // Joining mid-match: there's no lobby to pick in, so play the default character. (Joining
+        // during the countdown cancels it, since the newcomer isn't ready yet.)
+        if (this.state.phase.phase === 'playing') CharacterSystem.apply(player);
         const { width, height } = mapPixelSize(this.state.mapWidth, this.state.mapHeight);
         player.x = width / 2;
         player.y = height / 2;
 
         this.state.players.set(client.sessionId, player);
-
-        // First joiner becomes host; a newcomer also takes over if the recorded
-        // host is disconnected (they were kept only in case they reconnect).
-        this.reassignHostIfNeeded();
     }
 
     async onLeave(client: Client, consented: boolean): Promise<void> {
         const player = this.state.players.get(client.sessionId);
         if (player) player.connected = false;
-
-        // Don't wait out the reconnect window: a disconnected host can't send
-        // startGame, so hand the role to someone who can.
-        this.reassignHostIfNeeded();
 
         // Nobody needs a reconnect window once the match is over — let them go so the room can close.
         if (consented || this.state.phase.phase === 'results') {
@@ -149,23 +151,12 @@ export class GameRoom extends Room<GameState> {
         });
         this.state.players.delete(sessionId);
         this.playerInputs.delete(sessionId);
-
-        if (this.hostId === sessionId) this.hostId = null;
-        this.reassignHostIfNeeded();
     }
 
-    /**
-     * Ensures the host is a connected player whenever one exists. If the current
-     * host is connected, nothing changes. If not, the first connected player (join
-     * order) takes over. If nobody is connected, a disconnected host is kept so
-     * they get the role back by reconnecting — but the next player to join takes it.
-     */
-    private reassignHostIfNeeded(): void {
-        const host = this.hostId === null ? undefined : this.state.players.get(this.hostId);
-        if (host?.connected) return;
-
-        const next = Array.from(this.state.players.values()).find((p) => p.connected);
-        if (next) this.hostId = next.id;
+    /** Runs a lobby action for this client's player if they're here and connected. */
+    private withPlayer(client: Client, action: (player: Player) => void): void {
+        const player = this.state.players.get(client.sessionId);
+        if (player?.connected) action(player);
     }
 
     /**
@@ -191,6 +182,7 @@ export class GameRoom extends Room<GameState> {
     }
 
     private tick(dt: number): void {
+        LobbySystem.update(this.state, this.broadcastEvent);
         MovementSystem.update(this.state, this.playerInputs, dt);
         CollisionSystem.update(this.state, this.broadcastEvent);
         CombatSystem.update(this.state, dt, this.broadcastEvent);
@@ -229,7 +221,7 @@ export class GameRoom extends Room<GameState> {
     private handleShoot(client: Client, msg: ShootMessage): void {
         const player = this.state.players.get(client.sessionId);
         if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
-        if (player.ammo <= 0) return;
+        if (player.gun === '' || player.ammo <= 0) return;
 
         player.ammo--;
 
@@ -248,6 +240,11 @@ export class GameRoom extends Room<GameState> {
         const player = this.state.players.get(client.sessionId);
         if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
 
+        // Structures come out of the player's inventory (their character's starting kit, for now).
+        if (!isStructureType(msg.structureType)) return;
+        const slot = player.structureInventory.indexOf(msg.structureType);
+        if (slot === -1) return;
+
         // Validate first — an out-of-range column would otherwise wrap onto another row.
         if (!isValidHex(msg.tileX, msg.tileY, this.state.mapWidth, this.state.mapHeight)) return;
         const tile = this.state.tiles[hexIndex(msg.tileX, msg.tileY, this.state.mapWidth)];
@@ -264,35 +261,17 @@ export class GameRoom extends Room<GameState> {
         structure.ownerId = client.sessionId;
         structure.tileX = msg.tileX;
         structure.tileY = msg.tileY;
+        structure.type = msg.structureType;
 
+        player.structureInventory.splice(slot, 1);
         this.state.structures.set(structure.id, structure);
     }
 
-    /**
-     * TEMPORARY testing shortcut: the host can end the buying phase early (the client sends this when
-     * they close the shop popup during buying) so a solo tester doesn't wait out the 30s. Host-only so
-     * other players closing their popup can't start the match. Remove once the buy menu is real.
-     */
-    private handleEndBuying(client: Client): void {
-        if (client.sessionId !== this.hostId) return;
-        if (this.state.phase.phase !== 'buying') return;
-        PhaseSystem.transitionTo(this.state, 'playing', this.broadcastEvent);
-    }
-
-    /** Buying is allowed while shopping (`buying`) and during the match (`playing`), never otherwise. */
+    /** Buying happens during the match only (there's no separate shopping phase). */
     private handlePurchase(client: Client, msg: PurchaseMessage): void {
         const player = this.state.players.get(client.sessionId);
-        if (!player || !player.connected) return;
-        const phase = this.state.phase.phase;
-        if (phase !== 'buying' && phase !== 'playing') return;
+        if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
 
         ShopSystem.purchase(player, msg?.itemId);
-    }
-
-    private handleStartGame(client: Client): void {
-        if (client.sessionId !== this.hostId) return;
-        if (this.state.phase.phase !== 'lobby') return;
-
-        PhaseSystem.transitionTo(this.state, 'buying', this.broadcastEvent);
     }
 }

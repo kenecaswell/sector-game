@@ -6,7 +6,7 @@
 
 ## Start here
 
-_For a new session or contributor. Last updated 2026-09-25 — run `git log` for anything newer._
+_For a new session or contributor. Last updated 2026-09-26 — run `git log` for anything newer._
 
 **What this is.** Sector 42: a real-time multiplayer territory-claiming game (hexar.io-style) with PvP shooting, destructible structures and a shop, 8–10 players per match on an isometric hex map. The **server is authoritative**: clients send inputs, the server simulates at 20 Hz and syncs state. Server: Node + TypeScript + Colyseus 0.16.5. Client: React 19 + Phaser 4, built with Vite.
 
@@ -15,11 +15,11 @@ _For a new session or contributor. Last updated 2026-09-25 — run `git log` for
 | If you're working on… | Read |
 |---|---|
 | The protocol, messages, state schema | Networking Layer, Game State Schema |
-| Game rules (phases, movement, shooting, score, shop, claiming) | Game Mechanics |
+| Game rules (phases, lobby, characters, teams, movement, shooting, score, shop, claiming) | Game Mechanics |
 | The hex map, iso projection, coordinate spaces | Game Mechanics → *Map — hex grid and coordinate spaces* |
 | Rooms, closing, reconnection, notices | Room Lifecycle, Reconnection System |
 | Collisions, structures | Collision Detection, Destructible Structures |
-| Client screens, HUD, shop UI, results | Client — React Shell |
+| Client screens (lobby, HUD, shop UI, results) | Client — React Shell |
 | Rendering, input, smoothing, performance | Client — Phaser Game, Testing → *Performance pass* |
 | Testing and verification | Testing Multiplayer Locally, and `tools/README.md` |
 
@@ -31,6 +31,7 @@ _For a new session or contributor. Last updated 2026-09-25 — run `git log` for
 - `SCREEN_Y_SCALE` (server constants) = `ISO_SQUASH` (client constants); `HEX_SIZE` and `PLAYER_RADIUS` mirror across the two constants files.
 - `client/src/types/gameState.ts` mirrors the server's `GameState` schema.
 - Projectile velocity: `CombatSystem` ⇄ the client's `projectileWorldVelocity`.
+- The lobby catalogs (`TEAMS`, `CHARACTERS`, structure/gun/upgrade names) live in `types/shared.ts`, so they're covered by the first bullet.
 
 **Gotchas learned the hard way.**
 - Pin all four Colyseus packages exactly and keep `useDefineForClassFields: false` in `server/tsconfig.json`; a client/server version mismatch or a missing flag shows up only when a real client joins (see Tech Stack).
@@ -40,11 +41,11 @@ _For a new session or contributor. Last updated 2026-09-25 — run `git log` for
 
 **Working agreements** (also in `CLAUDE.md`): the developer runs all git commands themselves (ask them to commit); 4-space indentation; update this doc (and the README for user-facing changes) in the same change, including a Decisions Log row for design choices.
 
-**Current state.** Playable end to end: lobby → 30 s buying phase → 5 min play → results screen, with hex movement, claiming (and the radius-doubling Expander), shooting, solid structures, score, credits, an ammo/Expander shop, disconnect/reconnect with notices, and a results screen. See *Current Status & Known Issues* for the verified list and open bugs. **Temporary or placeholder** (see Planned Features #9): closing the shop during buying starts the match (`endBuying`, host only); "coming soon" shop items are mock rows; players spawn armed with 30 ammo; `STRUCTURE_POINTS` is one flat value for a single generic structure; the results screen is basic.
+**Current state.** Playable end to end: ready-up lobby (pick a team color and one of 6 characters) → 3 s countdown → 5 min play → results screen, with hex movement, claiming (and the radius-doubling Expander), shooting (with a gun), structures placed from each character's starting inventory, teammates (no friendly fire), score, credits, an ammo/Basic gun/Expander shop, disconnect/reconnect with notices, and a results screen. See *Current Status & Known Issues* for the verified list and open bugs. **Temporary or placeholder** (see Planned Features #2, #3, #9): the character stats are first-pass values; the four structure types behave identically; there's no way to get more structures than you start with; "coming soon" shop items are mock rows; `STRUCTURE_POINTS` is one flat value; the results screen is basic; team play is allies-only (no pooling, no team win).
 
 **Suggested next steps** (a proposal from the planning notes, not a commitment — confirm priorities with the developer):
-1. Finish the shop: better guns, armor and the structure types (Planned Features #9, #3); then remove the `endBuying` shortcut. Decide an ammo cap and balance the Expander.
-2. Teams (Planned Features #2 — tile-ownership model and team formation are still open questions).
+1. Give structure types real behavior and values, and sell structures, better guns and armor in the shop (Planned Features #3, #9). Decide an ammo cap and balance the Expander and character kits.
+2. Team follow-ups (Planned Features #2): pooling tiles/credits, a team win condition, team-size balancing. Per-character art (#7).
 3. Spawn positions: a line on the right side of the map, "going west" (Current Status → Open questions).
 4. Real art and sprites; decide whether terrain is gameplay or decoration (Planned Features #7).
 5. Server-side fire-rate limit; client-side prediction (#8); off-screen player indicators.
@@ -162,6 +163,7 @@ _For a new session or contributor. Last updated 2026-09-25 — run `git log` for
 │   │   ├── index.ts                # Entry point — Colyseus Server + Express health route
 │   │   ├── constants.ts            # Shared tunables (tick rate, hex size, speed/accel, damage, etc.)
 │   │   ├── hex.ts                  # Flat-top hex grid math: pixel<->hex, hex centers, map bounds
+│   │   ├── teams.ts                # areAllies(): same player or same team
 
 │   │   ├── rooms/
 │   │   │   └── GameRoom.ts         # Colyseus room — lifecycle, message handlers, tick loop
@@ -169,14 +171,16 @@ _For a new session or contributor. Last updated 2026-09-25 — run `git log` for
 │   │   │   └── GameState.ts        # Colyseus schema definitions
 │   │   ├── systems/
 │   │   │   ├── Broadcast.ts        # Shared callback type systems use to emit discrete events
-│   │   │   ├── MovementSystem.ts   # Eases velocity toward the input direction (accel-limited), drops stale input, slides around others' structures
+│   │   │   ├── LobbySystem.ts      # Team/character/ready picks, default team, ready -> countdown -> playing
+│   │   │   ├── CharacterSystem.ts  # Applies a character's starting kit (gun, ammo, credits, structures, upgrades)
+│   │   │   ├── MovementSystem.ts   # Eases velocity toward the input direction (accel-limited), drops stale input, slides around enemy structures, boost
 │   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, batched tilesClaimed broadcast
 │   │   │   ├── CombatSystem.ts     # Projectile movement, hit detection, respawn-on-death
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
-│   │   │   ├── PhaseSystem.ts      # Phase transitions, timer management
+│   │   │   ├── PhaseSystem.ts      # Phase transitions; times playing -> results
 │   │   │   ├── EconomySystem.ts    # Credit payouts (1/tile/10s)
 │   │   │   ├── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
-│   │   │   └── ShopSystem.ts       # Validates and applies purchases (ammo pack, Expander)
+│   │   │   └── ShopSystem.ts       # Validates and applies purchases (ammo pack, Basic gun, Expander)
 │   │   └── types/
 │   │       └── shared.ts           # Shared message types (copy into client too)
 │   ├── tsconfig.json
@@ -205,13 +209,14 @@ _For a new session or contributor. Last updated 2026-09-25 — run `git log` for
 │   │   │   ├── usePhaseCountdown.ts # Hook: whole seconds left in the current phase
 │   │   │   └── results.ts          # rankScores() (shared ranks for ties) + scoresFromPlayers() fallback
 │   │   ├── components/
-│   │   │   ├── HUD.tsx             # Own player's health/ammo/tiles/credits + phase countdown (top left)
+│   │   │   ├── HUD.tsx             # Own player's health/gun/ammo/tiles/credits/structures/upgrades + phase countdown (top left)
 │   │   │   ├── ScoreBadge.tsx      # Always-visible own score (top center)
-│   │   │   ├── BuyMenu.tsx         # Shop popup: real ammo/Expander purchases + "coming soon" placeholders
+│   │   │   ├── BuyMenu.tsx         # Shop popup: real ammo/Basic gun/Expander purchases + "coming soon" placeholders
 │   │   │   ├── Leaderboard.tsx     # Popup listing all players by score; toggled from GameScreen
 │   │   │   ├── MobileJoystick.tsx  # Drag-based virtual joystick (touch input)
 │   │   │   └── FireButton.tsx      # Hold-to-fire button (touch, during the match only)
 │   │   ├── screens/
+│   │   │   ├── LobbyScreen.tsx     # Player list with team/character/Ready, countdown, your character's kit
 │   │   │   ├── GameScreen.tsx      # Hosts the Phaser canvas + HUD/score/shop/leaderboard/joystick/fire/build overlays
 │   │   │   └── ResultsScreen.tsx   # Final standings + Play again / Main menu (stays up after the room closes)
 │   │   └── game/
@@ -269,18 +274,23 @@ WebSocket via Colyseus protocol. Colyseus handles:
 // Player shoots
 { type: "shoot", angle: number, seq: number }
 
-// Place structure. tileX/tileY are hex column/row (offset coords), not pixels.
-{ type: "placeStructure", tileX: number, tileY: number, seq: number }
+// Place structure. tileX/tileY are hex column/row (offset coords), not pixels. structureType must
+// be in the player's structureInventory; one is used up. Only on a tile you own.
+{ type: "placeStructure", tileX: number, tileY: number, structureType: StructureType, seq: number }
 
-// Host starts the game (lobby -> buying). No payload.
-{ type: "startGame" }
+// Lobby (the `lobby` and `countdown` phases only). Team and character changes are refused while
+// the player is ready. There is no "start game" message: the match starts itself once every
+// connected player is ready (see Game Phases).
+{ type: "selectTeam", teamId: TeamId }             // "red" | "blue" | ... (TEAMS)
+{ type: "selectCharacter", characterId: CharacterId } // "farmer" | "miner" | ... (CHARACTERS)
+{ type: "setReady", ready: boolean }
+{ type: "setName", name: string }                   // 2–25 characters; allowed while ready
 
-// TEMPORARY testing shortcut, host only: end the buying phase early (sent when the host closes the
-// shop popup during buying). Ignored from anyone else or outside the buying phase. No payload.
-{ type: "endBuying" }
+// Join options (colyseus joinOrCreate('GameRoom', options)); not sent on a reconnect.
+{ name?: string }  // the player's saved name (localStorage); falls back to "Player N" if missing/invalid
 
-// Buy an item (allowed during `buying` and `playing`). itemId is "ammo" or "expander"; the server
-// checks credits, phase and (for one-per-player upgrades) ownership. See Shop below.
+// Buy an item (allowed during `playing` only). itemId is "ammo", "basicGun" or "expander"; the
+// server checks credits, phase and (for one-per-player items) ownership. See Shop below.
 { type: "purchase", itemId: ShopItemId }
 
 // Reconnect (sent automatically by Colyseus client)
@@ -296,7 +306,7 @@ WebSocket via Colyseus protocol. Colyseus handles:
 { type: "structureDestroyed", structureId: string }
 { type: "phaseChanged",  phase: GamePhase, endsAt: number }
 // Sent once when the match ends (phase -> results): final standings, best first.
-{ type: "gameOver",      scores: Array<{ playerId, name, color, score, tilesOwned, kills, structures }> }
+{ type: "gameOver",      scores: Array<{ playerId, name, color, teamId, score, tilesOwned, kills, structures }> }
 
 // Sent to the originating client only (client.send, not broadcast):
 { type: "inputAck", seq: number }
@@ -321,7 +331,7 @@ Client tags each input with an incrementing `seq` number. The server stores each
 
 ### Room Setup (`GameRoom.ts`)
 
-This is the actual, verified-working implementation — not a sketch. Per-player transient state (last input, host tracking, a projectile-id counter) lives as private fields on the room rather than in the synced schema, since clients don't need to see it.
+This is the actual, verified-working implementation — not a sketch. Per-player transient state (last input, a projectile-id counter) lives as private fields on the room rather than in the synced schema, since clients don't need to see it.
 
 ```typescript
 import { Room, Client } from 'colyseus';
@@ -332,6 +342,8 @@ import { CombatSystem } from '../systems/CombatSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
 import { EconomySystem } from '../systems/EconomySystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
+import { LobbySystem } from '../systems/LobbySystem';
+import { CharacterSystem } from '../systems/CharacterSystem';
 import type { Broadcast } from '../systems/Broadcast';
 import { hexIndex, isValidHex, mapPixelSize } from '../hex';
 import { TICK_RATE, RECONNECT_WINDOW_SECONDS, CREDIT_PAYOUT_INTERVAL_MS } from '../constants';
@@ -340,16 +352,17 @@ import type {
   ShootMessage,
   PlaceStructureMessage,
   InputAckEvent,
+  SelectTeamMessage,
+  SelectCharacterMessage,
+  SetReadyMessage,
 } from '../types/shared';
-
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', /* ... */];
+import { isStructureType } from '../types/shared';
 
 export class GameRoom extends Room<GameState> {
   maxClients = 10;
 
   // NOT `inputs` — that name is reserved by the base Room class.
   private playerInputs = new Map<string, PlayerInput>();
-  private hostId: string | null = null;
   private matchFinished = false;
   private closing = false;
   private nextProjectileId = 0;
@@ -371,30 +384,36 @@ export class GameRoom extends Room<GameState> {
     this.onMessage<PlaceStructureMessage>('placeStructure', (client, msg) =>
       this.handlePlaceStructure(client, msg)
     );
-    this.onMessage('startGame', (client) => this.handleStartGame(client));
-    this.onMessage('endBuying', (client) => this.handleEndBuying(client)); // temporary testing shortcut
+    // Lobby: each validated by LobbySystem (phase, not-ready lock, known ids).
+    this.onMessage<SelectTeamMessage>('selectTeam', (client, msg) =>
+      this.withPlayer(client, (p) => LobbySystem.selectTeam(this.state, p, msg?.teamId))
+    );
+    this.onMessage<SelectCharacterMessage>('selectCharacter', (client, msg) =>
+      this.withPlayer(client, (p) => LobbySystem.selectCharacter(this.state, p, msg?.characterId))
+    );
+    this.onMessage<SetReadyMessage>('setReady', (client, msg) =>
+      this.withPlayer(client, (p) => LobbySystem.setReady(this.state, p, msg?.ready))
+    );
+    // ... and 'purchase' -> ShopSystem (playing only)
   }
 
   onJoin(client: Client): void {
     const player = new Player();
     player.id = client.sessionId;
     player.name = `Player ${this.state.players.size + 1}`;
-    player.color = PLAYER_COLORS[this.state.players.size % PLAYER_COLORS.length];
+    // An empty team first, else the smallest; sets teamId and color together.
+    LobbySystem.setTeam(player, LobbySystem.defaultTeam(this.state));
+    // Joining mid-match: no lobby to pick in, so play the default character.
+    if (this.state.phase.phase === 'playing') CharacterSystem.apply(player);
     const { width, height } = mapPixelSize(this.state.mapWidth, this.state.mapHeight);
     player.x = width / 2; // everyone spawns at map center for now — see Current Status (open question)
     player.y = height / 2;
     this.state.players.set(client.sessionId, player);
-
-    // First joiner becomes host; a newcomer also takes over if the recorded host is disconnected.
-    this.reassignHostIfNeeded();
   }
 
   async onLeave(client: Client, consented: boolean): Promise<void> {
     const player = this.state.players.get(client.sessionId);
     if (player) player.connected = false;
-
-    // Don't wait out the reconnect window: a disconnected host can't send startGame.
-    this.reassignHostIfNeeded();
 
     // No reconnect window once the match is over — let everyone go so the room can close.
     if (consented || this.state.phase.phase === 'results') {
@@ -424,18 +443,12 @@ export class GameRoom extends Room<GameState> {
     });
     this.state.players.delete(sessionId);
     this.playerInputs.delete(sessionId);
-
-    if (this.hostId === sessionId) this.hostId = null;
-    this.reassignHostIfNeeded();
   }
 
-  // Ensures the host is a connected player whenever one exists. If nobody is connected, a
-  // disconnected host is kept so they regain the role by reconnecting — but the next joiner takes it.
-  private reassignHostIfNeeded(): void {
-    const host = this.hostId === null ? undefined : this.state.players.get(this.hostId);
-    if (host?.connected) return;
-    const next = Array.from(this.state.players.values()).find((p) => p.connected);
-    if (next) this.hostId = next.id;
+  // Runs a lobby action for this client's player if they're here and connected.
+  private withPlayer(client: Client, action: (player: Player) => void): void {
+    const player = this.state.players.get(client.sessionId);
+    if (player?.connected) action(player);
   }
 
   // When the match ends: lock the room (matchmaking stops sending newcomers into it) and close it
@@ -455,6 +468,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private tick(dt: number): void {
+    LobbySystem.update(this.state, this.broadcastEvent); // ready -> countdown -> playing
     MovementSystem.update(this.state, this.playerInputs, dt);
     CollisionSystem.update(this.state, this.broadcastEvent);
     CombatSystem.update(this.state, dt, this.broadcastEvent);
@@ -484,7 +498,7 @@ export class GameRoom extends Room<GameState> {
   private handleShoot(client: Client, msg: ShootMessage): void {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
-    if (player.ammo <= 0) return;
+    if (player.gun === '' || player.ammo <= 0) return; // unarmed players can't shoot
 
     player.ammo--;
     const projectile = new Projectile();
@@ -500,6 +514,11 @@ export class GameRoom extends Room<GameState> {
   private handlePlaceStructure(client: Client, msg: PlaceStructureMessage): void {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
+
+    // Structures come out of the player's inventory (their character's starting kit, for now).
+    if (!isStructureType(msg.structureType)) return;
+    const slot = player.structureInventory.indexOf(msg.structureType);
+    if (slot === -1) return;
 
     // Validate first — an out-of-range column would otherwise wrap onto another row.
     if (!isValidHex(msg.tileX, msg.tileY, this.state.mapWidth, this.state.mapHeight)) return;
@@ -517,13 +536,9 @@ export class GameRoom extends Room<GameState> {
     structure.ownerId = client.sessionId;
     structure.tileX = msg.tileX;
     structure.tileY = msg.tileY;
+    structure.type = msg.structureType;
+    player.structureInventory.splice(slot, 1);
     this.state.structures.set(structure.id, structure);
-  }
-
-  private handleStartGame(client: Client): void {
-    if (client.sessionId !== this.hostId) return;
-    if (this.state.phase.phase !== 'lobby') return;
-    PhaseSystem.transitionTo(this.state, 'buying', this.broadcastEvent);
   }
 }
 ```
@@ -590,14 +605,20 @@ export class Player extends Schema {
   @type('number')  vy: number = 0;
   @type('number')  angle: number = 0;            // facing/aim, radians, world space
   @type('number')  health: number = 100;
-  @type('number')  ammo: number = 30;
+  @type('number')  ammo: number = 0;             // ammo/credits/gun/inventory/upgrades: set from the character at match start
   @type('number')  tilesOwned: number = 0;
   @type('number')  kills: number = 0;
   @type('number')  score: number = 0;            // computed by ScoreSystem: tiles + kills x 50 + structures (no credits)
-  @type('number')  credits: number = 100;        // STARTING_CREDITS
-  @type('number')  claimRadius: number = 32;     // world px (BASE_CLAIM_RADIUS); 64 once the Expander is owned            // see EconomySystem
+  @type('number')  credits: number = 0;          // see EconomySystem
+  @type('number')  claimRadius: number = 32;     // world px (BASE_CLAIM_RADIUS); 80 once the Expander is owned
   @type('boolean') connected: boolean = true;
-  @type('string')  color: string = '';           // hex color for tile ownership
+  @type('string')  color: string = '';           // always the team's color (TEAMS)
+  @type('string')  teamId: string = '';          // a TeamId; same team = allies
+  @type('string')  character: string = 'farmer'; // a CharacterId (DEFAULT_CHARACTER), picked in the lobby
+  @type('boolean') ready: boolean = false;       // lobby only
+  @type('string')  gun: string = '';             // a GunId, or '' = unarmed (can't shoot)
+  @type(['string']) structureInventory = new ArraySchema<string>(); // StructureTypes left to place
+  @type(['string']) upgrades = new ArraySchema<string>();           // UpgradeIds, e.g. 'boost'
 }
 
 export class Tile extends Schema {
@@ -619,12 +640,13 @@ export class Structure extends Schema {
   @type('string')  ownerId: string = '';
   @type('number')  tileX: number = 0;
   @type('number')  tileY: number = 0;
+  @type('string')  type: string = 'fort';   // a StructureType; all types behave the same for now
   @type('number')  health: number = 100;
   @type('number')  maxHealth: number = 100;
 }
 
 export class GamePhaseState extends Schema {
-  @type('string')  phase: string = 'lobby';  // lobby | buying | playing | results
+  @type('string')  phase: string = 'lobby';  // lobby | countdown | playing | results
   @type('number')  endsAt: number = 0;       // server timestamp ms
 }
 
@@ -669,7 +691,8 @@ Known limitation: the map's pixel bounds are a rectangle, but the hex edge is ja
 
 ### Tile Claiming
 - Players claim tiles by moving over unclaimed tiles or enemy tiles while the match is in the `playing` phase. Each tick a player claims **the hex they're standing on plus every hex whose center is within their `claimRadius`** of them (`CollisionSystem.claimTiles`). The base radius is `BASE_CLAIM_RADIUS = HEX_SIZE` (32 world px) — in the open that's just the hex under you (neighbor centers are ~55 px away), though standing near a hex edge can also claim the neighbor. The **Expander** raises it to `EXPANDER_CLAIM_RADIUS` = 4 × `PLAYER_RADIUS` = 80 px (it was 64 px when the player radius was 16), which claims 7 hexes when centered on one (own + 6 neighbors) and up to 9 depending on position; radius claiming steals enemy tiles exactly like walking over them does.
-- **A hex holding another player's structure can't be claimed** — the structure protects its tile (`isProtectedFrom`). Without this rule a large claim radius would routinely flip tiles out from under structures, breaking "you own the tile your structure is on"; the owner can still claim it, and anyone can still shoot the structure down.
+- **Teammates never take each other's tiles** (2026-09-26): a hex owned by a teammate is skipped, so allies expand around each other rather than stealing back and forth. Enemy tiles are taken as before.
+- **A hex holding an enemy's structure can't be claimed** — the structure protects its tile (`isProtectedFrom`; a teammate's structure doesn't block you, but its tile is a teammate's anyway). Without this rule a large claim radius would routinely flip tiles out from under structures, breaking "you own the tile your structure is on"; the owner can still claim it, and anyone can still shoot the structure down.
 - Verified 2026-09-20: the search window matches a brute-force scan of every hex exactly (1,200 random positions incl. map edges, 0 mismatches; at 80 px the Expander claims 2–9 hexes per tick depending on position — 1–7 at the earlier 64 px); a base-radius player at a hex center claims 1, an Expander owner claims 7 when centered on a hex; stolen tiles keep both players' `tilesOwned` consistent with the tile array.
 - Tile ownership stored as `ownerId` string in the flat `tiles` array
 - On claim: update tile, increment player's `tilesOwned`, decrement the previous owner's if any
@@ -680,24 +703,57 @@ Known limitation: the map's pixel bounds are a rectangle, but the hex edge is ja
 
 | Phase | Description | Duration |
 |---|---|---|
-| `lobby` | Players join | Until the host sends `startGame` |
-| `buying` | A quick shopping window. Nothing else is allowed: no movement, claiming, shooting or building, and no credit payouts | 30s (`BUY_PHASE_DURATION_MS`) |
-| `playing` | The whole match: claim tiles, shoot, build, earn credits — all at once. The shop stays available on the player's own time | 5 minutes (`MATCH_DURATION_MS`) |
+| `lobby` | Players join and pick a team, a character, and Ready (see [Lobby, characters and teams](#lobby-characters-and-teams)) | Until every connected player is ready |
+| `countdown` | Everyone is ready. Still the lobby screen, showing "Starting in 3…"; nobody moves. **Cancelled back to `lobby`** if anyone un-readies or a new (unready) player joins | 3s (`COUNTDOWN_DURATION_MS`) |
+| `playing` | The whole match: claim tiles, shoot, build, earn credits, shop — all at once | 5 minutes (`MATCH_DURATION_MS`) |
 | `results` | Match over. The room is **locked** (matchmaking stops sending newcomers into it) and closes when this timer ends, or immediately if the last player leaves | 60s (`RESULTS_DURATION_MS`) |
 
-History: `claiming` (90s) and `combat` (120s) were merged into `playing` on 2026-09-20; a short `buying` phase was then added between the lobby and play (players still can buy during play). Every player starts with 100 credits (`STARTING_CREDITS`) to spend. The buy menu is a mock-up (see Planned Features #9). Today every player still spawns with a gun and 30 ammo purely so combat can be tested; the plan is to make guns and ammo purchases.
+History: `claiming` (90s) and `combat` (120s) were merged into `playing` on 2026-09-20; a 30s `buying` phase was then added between the lobby and play, and **removed on 2026-09-26** along with the host's `startGame` (and the temporary `endBuying`) when the ready-up lobby replaced them — shopping now happens during play only.
 
-**Dev/testing time scale:** set the environment variable `PHASE_TIME_SCALE` (e.g. `0.02`) on the server to shrink every phase duration, so a whole match runs in seconds. It's only read in `server/src/constants.ts` and is unset normally.
+**Dev/testing time scale:** set the environment variable `PHASE_TIME_SCALE` (e.g. `0.02`) on the server to shrink every phase duration (the countdown included), so a whole match runs in seconds. It's only read in `server/src/constants.ts` and is unset normally.
 
 - Server owns all timers. `endsAt` is a server epoch timestamp (ms); client uses this for display countdown and corrects any local drift.
-- `lobby` has no timer — the first player to join becomes `hostId`, and only that client's `startGame` message advances the phase. If the host disconnects, `GameRoom.reassignHostIfNeeded` immediately promotes the first connected player (join order) — it doesn't wait for the reconnect window. If nobody else is connected the disconnected host is kept, so they get the role back by reconnecting; the next player to join takes it instead. A host who reconnects after being replaced does not get it back.
-- Phase transitions broadcast a `phaseChanged` message with the new phase and `endsAt`.
+- `LobbySystem.update` (first in the tick) owns `lobby` ⇄ `countdown` → `playing`: lobby → countdown once `everyoneReady` (every *connected* player is ready, and there's at least one), countdown → lobby as soon as that stops being true, countdown → playing when its timer runs out — at which point every player gets their character's starting kit (`CharacterSystem.apply`). `PhaseSystem.update` only times `playing` → `results`.
+- There is **no host** any more: nobody has to press Start, so nobody needs the role. (The old `hostId`/`reassignHostIfNeeded` handover logic was removed with it.)
+- Phase transitions broadcast a `phaseChanged` message with the new phase and `endsAt` (including a cancelled countdown going back to `lobby`, with `endsAt: 0`).
+
+### Lobby, characters and teams
+
+Implemented 2026-09-26. Everything below is validated server-side in `LobbySystem`; the client's locked controls are a convenience.
+
+- **Messages** (lobby and countdown phases only): `selectTeam { teamId }`, `selectCharacter { characterId }`, `setReady { ready }`. Unknown ids and non-boolean `ready` are ignored. **Team and character are locked while you're ready** — un-ready to change them — so what everyone saw when they readied is what starts.
+- **Names** (added 2026-09-26): `normalizePlayerName` (shared) collapses whitespace runs to one space, strips control characters and trims, then requires **2–25 characters** counted as people count them (an emoji is one; `nameLength` uses code points). Anything else is allowed. The client sends its saved name as a join option, and `setName` renames in the lobby (not locked by being ready — it changes nothing that matters). **Names are unique:** if another player already has the name (ignoring case), the server gives you the first free `name (1)`, `name (2)`, … — shortening the name if needed so it still fits in 25 (`LobbySystem.uniqueName`). This also fixed the old duplicate `Player N` names after someone left. Invalid names are ignored; renaming is refused once the match starts.
+- **Disconnected players don't hold the lobby up** (they're left out of `everyoneReady`). If they reconnect during the match they play whatever they'd picked.
+- **Joining mid-match** (the room is only locked in `results`): the newcomer plays the default character (Farmer) with its kit applied immediately.
+
+**Teams are colors.** `TEAMS` (in `types/shared.ts`, mirrored) has 8: red, blue, green, yellow, purple, teal, orange, gray. `Player.teamId` holds one and `Player.color` is always that team's color, so everything that already drew in the player's color (tiles, body, structures, claim ring) shows the team with no rendering changes. A newcomer gets the first team nobody is on yet, else the smallest (`LobbySystem.defaultTeam`), so by default everyone is on their own team — a free-for-all — until players pick the same color. Anyone can join any team; there's no size limit or balancing.
+
+**What being teammates means** (`areAllies` in `server/src/teams.ts`: same player, or the same non-empty `teamId`; a player who left the room is nobody's ally):
+- No friendly fire: shots pass through teammates and teammates' structures (`CombatSystem`).
+- Teammates' structures aren't solid to you (`MovementSystem`), like your own.
+- You don't take a teammate's tiles (`CollisionSystem.claimTiles`).
+- **Tiles, credits and score stay per player.** The results screen adds a team table (sum of members' scores) when at least one team has two or more players. Pooled team tiles/credits and a team win condition are still open (Planned Features #2).
+
+**Characters** (`CHARACTERS` in `types/shared.ts`, mirrored; first-pass values, expected to change). Picked in the lobby (default Farmer); the kit replaces whatever the player had when the countdown finishes:
+
+| Character | Gun | Ammo | Credits | Structures | Upgrades |
+|---|---|---|---|---|---|
+| Farmer | none | 0 | 50 | farm | — |
+| Miner | none | 0 | 50 | mine | — |
+| Builder | none | 0 | 50 | fort | — |
+| Robot | none | 0 | 50 | — | boost (top speed × `BOOST_SPEED_MULTIPLIER` = 1.25) |
+| Scientist | none | 0 | 50 | power plant | — |
+| Smuggler | basic | 15 | 15 | — | — |
+
+- **Structure inventory:** `Player.structureInventory` lists the structures you can still place, one entry each. `placeStructure` names a `structureType` from it and uses one up; with an empty inventory you can't build (until the shop sells structures). `Structure.type` records which one was placed. All four types (farm, mine, fort, power plant) **behave identically for now** — same health, same 25 points, same look.
+- **Guns:** `Player.gun` is `''` (unarmed) or a `GunId` (`'basic'`). Unarmed players can't shoot (the server ignores `shoot`; the client doesn't send it and hides the mobile fire button). The **Basic gun** can be bought in the shop. Ammo can be bought without a gun.
+- **Art per character** is planned (Planned Features #7); for now everyone is the same circle in their team color.
 
 ### Movement
 
 Movement is continuous, at **any angle**, and eased rather than snapping between headings.
 
-- **Server (`MovementSystem`)**: movement only happens during `playing` (velocities are zeroed in every other phase). Each tick, the target velocity is `dir × PLAYER_SPEED`, where `dir`'s length is measured **on-screen** — `hypot(dir.x, dir.y × SCREEN_Y_SCALE)`, clamped to ≤ 1 with a small deadzone; magnitude scales speed, so an analog joystick can walk slowly. `SCREEN_Y_SCALE` (0.6, `server/src/constants.ts`) must equal the client's `ISO_SQUASH`. The effect: a full push straight up the screen is a world vector of length 1/0.6 ≈ 1.67 (≈ 333 world px/s) yet looks exactly as fast as one sideways (200 px/s), and the cap is an ellipse in world space, so a cheating client can't exceed top speed in any direction. `GameRoom.handleInput` accordingly allows world-y up to `1 / SCREEN_Y_SCALE`. Set `SCREEN_Y_SCALE = 1` for plain world-uniform speed. This (and projectile speed in `CombatSystem`) is where the server knows about the view's tilt — a deliberate tradeoff: it means the same on-screen speed for everyone at the cost of moving farther in world units vertically (crossing the map top-to-bottom, 3,575 world px, takes about 10.7s vs 15.4s left-to-right). Actual velocity moves toward the target by at most `PLAYER_ACCEL × dt` (1200 px/s²) — the *same* limit applies when speeding up, stopping, and turning, so a full reverse takes a fraction of a second instead of flipping instantly. Then `position += velocity × dt`, clamped to the map rectangle (velocity is zeroed on the axis that hit the edge). `vx`/`vy` are synced so clients can extrapolate. Verified with a script: ramp to 200 px/s in ~4 ticks, headings ease from 45° to −73° over ~5 ticks, and a stop takes ~4 ticks.
+- **Server (`MovementSystem`)**: movement only happens during `playing` (velocities are zeroed in every other phase). Each tick, the target velocity is `dir × PLAYER_SPEED` (× `BOOST_SPEED_MULTIPLIER` = 1.25 for players with the `boost` upgrade, e.g. the Robot; acceleration is unchanged), where `dir`'s length is measured **on-screen** — `hypot(dir.x, dir.y × SCREEN_Y_SCALE)`, clamped to ≤ 1 with a small deadzone; magnitude scales speed, so an analog joystick can walk slowly. `SCREEN_Y_SCALE` (0.6, `server/src/constants.ts`) must equal the client's `ISO_SQUASH`. The effect: a full push straight up the screen is a world vector of length 1/0.6 ≈ 1.67 (≈ 333 world px/s) yet looks exactly as fast as one sideways (200 px/s), and the cap is an ellipse in world space, so a cheating client can't exceed top speed in any direction. `GameRoom.handleInput` accordingly allows world-y up to `1 / SCREEN_Y_SCALE`. Set `SCREEN_Y_SCALE = 1` for plain world-uniform speed. This (and projectile speed in `CombatSystem`) is where the server knows about the view's tilt — a deliberate tradeoff: it means the same on-screen speed for everyone at the cost of moving farther in world units vertically (crossing the map top-to-bottom, 3,575 world px, takes about 10.7s vs 15.4s left-to-right). Actual velocity moves toward the target by at most `PLAYER_ACCEL × dt` (1200 px/s²) — the *same* limit applies when speeding up, stopping, and turning, so a full reverse takes a fraction of a second instead of flipping instantly. Then `position += velocity × dt`, clamped to the map rectangle (velocity is zeroed on the axis that hit the edge). `vx`/`vy` are synced so clients can extrapolate. Verified with a script: ramp to 200 px/s in ~4 ticks, headings ease from 45° to −73° over ~5 ticks, and a stop takes ~4 ticks.
 - **Input is a world-space vector plus a facing angle**, so the server is agnostic to how the client derived it. The server keeps only the *latest* input per player (overwrite, not a queue).
 - **Stale input is dropped.** If no input arrives for `INPUT_STALE_MS` (750ms) the player is treated as pressing nothing and coasts to a stop. Without this, a client that goes silent — a backgrounded browser tab pauses Phaser's loop, or the connection stalls — leaves the player running in their last direction indefinitely (found and fixed 2026-09-20). Clients therefore re-send at least every 250ms while active.
 - **Right-click to move (desktop):** right-click the map to set a destination; the player walks there without holding a key, and a ring on the ground marks it. It eases off over the last `TARGET_SLOW_DISTANCE` (80 world px) so the player stops on the spot — measured 2026-09-20: a 300 px trip took 2.0 s, ramped to 200 px/s, stopped 9 px from the target with no overshoot. The target clears on arrival, or when there's no progress for `TARGET_STUCK_MS` (1.2 s — e.g. the spot is inside another player's structure or off the map), and **pressing any movement key (arrows or WASD) or using the joystick cancels it and hands control back**. Left click still shoots; the browser context menu is disabled on the canvas. Purely client-side: it just drives the same `input` vector the keys would, so the server is unchanged.
@@ -705,7 +761,8 @@ Movement is continuous, at **any angle**, and eased rather than snapping between
 - **Smoothness on the client**: see [Client — Phaser Game](#client--phaser-game) — rendered positions chase server state with frame-rate-independent smoothing plus a little velocity extrapolation. There is **no client-side prediction yet**, so your own input still takes about one round trip plus a server tick to show up (imperceptible on localhost, noticeable at 100ms+ latency). Prediction with reconciliation is the next step for latency hiding.
 
 ### PvP Shooting
-- Client sends `shoot` message with an angle; server rejects it outside the `playing` phase or if the player is out of `ammo`
+- Client sends `shoot` message with an angle; server rejects it outside the `playing` phase, if the player has no gun (`Player.gun === ''`), or if they're out of `ammo`
+- **No friendly fire:** projectiles pass through the shooter's teammates and their structures (see [Lobby, characters and teams](#lobby-characters-and-teams))
 - Server spawns a `Projectile` in state at the shooter's current position, decrementing `ammo` by 1 — **there is currently no ammo regeneration or reload**, so a player can run out permanently within a match; add a regen tick or pickup mechanic before this ships
 - `CombatSystem` advances all projectiles each tick, checks collision against players and structures, and removes projectiles on hit, out-of-bounds, or after `PROJECTILE_LIFETIME_MS` (tracked via `Projectile.spawnedAt`, not wall-clock elapsed time inferred from ticks)
 - **Projectile speed is on-screen, like player movement.** A projectile's `speed` (400) is measured with world y scaled by `SCREEN_Y_SCALE`, so a shot fired up or down the screen moves ~667 world px/s vertically and looks exactly as fast as one fired sideways (400 world px/s). `CombatSystem` divides the heading `(cos, sin)` by its on-screen length `hypot(cos, sin × SCREEN_Y_SCALE)`; the client mirrors this in `projectileWorldVelocity` to extrapolate between ticks. Side effects: vertical shots travel farther in world units over their 2s lifetime (about 1,333 vs 800 px), and they cover ~33 world px per tick vs 20 sideways — see the swept hit test under [Collision Detection](#collision-detection).
@@ -720,27 +777,28 @@ Movement is continuous, at **any angle**, and eased rather than snapping between
 
 - **Credits are excluded** (they'll be spent, so counting them would make buying cost points).
 - Score is *derived*, not accumulated: it drops when tiles or structures are lost, not only when gained. Kills are permanent (a kill is banked even if the victim later respawns).
-- `STRUCTURE_POINTS` is a **placeholder** for the single generic structure; the planned types (city hall 1000, school 250, house 100, fort 25) will each get a value once `Structure` has a `type`.
+- `STRUCTURE_POINTS` is a **placeholder**: `Structure` now has a `type` (farm, mine, fort, power plant — from the characters' kits), but every type is still worth the same 25. Per-type values come with real structure behavior.
 - Colyseus syncs a field only when its value changes, so recomputing every tick costs nothing on the wire. The client's `scoreFor()` just reads `Player.score`.
 - Verified with scripts (10 tiles + 2 kills + 2 structures + 9999 credits = 160; losing a structure → 135) and end to end with two clients (6 tiles → score 6; building a structure → +25).
 
 ### Shop
-Buying works through one message, `purchase { itemId }`, handled by `GameRoom.handlePurchase` → `ShopSystem.purchase`. It is allowed in the `buying` and `playing` phases only, for connected players. The server re-validates everything (unknown ids, credits, ownership); the client's disabled buttons are just a convenience.
+Buying works through one message, `purchase { itemId }`, handled by `GameRoom.handlePurchase` → `ShopSystem.purchase`. It is allowed in the `playing` phase only (there's no separate shopping phase since 2026-09-26), for connected players. The server re-validates everything (unknown ids, credits, ownership); the client's disabled buttons are just a convenience.
 
 | Item | Cost | Effect |
 |---|---|---|
 | **Ammo pack** | **30 credits** (1 credit per shot × a pack of 30) | +30 ammo. Repeatable; **no ammo cap** yet. |
+| **Basic gun** | **40 credits** | Lets you shoot (`Player.gun = 'basic'`). **One per player** — refused if you're already armed (e.g. a Smuggler). Added 2026-09-26, since only the Smuggler starts armed. |
 | **Expander** | **100 credits** | Claim radius becomes 80 world px (from 32; **4 × the player radius**), permanently — it survives respawns. **One per player** (a second purchase is rejected). The client draws a semi-transparent circle in the player's color on the ground at that radius, visible to everyone. |
 
 - **Shared catalog:** the item list, prices and pack size live in `SHOP_ITEMS` / `AMMO_PACK_SIZE` / `AMMO_CREDITS_PER_SHOT` in `types/shared.ts`, a block that must stay **identical** in `server/src/types/shared.ts` and `client/src/types/shared.ts` (hand-copied, like the rest of that file). Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS` and `EXPANDER_RADIUS_MULTIPLIER` are server constants; the client only sees the resulting `Player.claimRadius` (and mirrors the base value to decide when to show the circle).
-- **Starting budget:** 100 credits buys the Expander outright, or three ammo packs plus change. (Players also still spawn with 30 ammo for testing.)
+- **Starting budget:** set by the character (50 for most, 15 for the Smuggler). 50 buys the Basic gun with 10 left, or one ammo pack; the Expander (100) now takes a while of territory income to afford.
 - **The circle** (`GameScene.updateClaimRing`): an ellipse of the claim-radius diameter, squashed by `ISO_SQUASH` like everything on the ground (160×96 scene px for 80 world px), filled with the player's color at `CLAIM_RING_FILL_ALPHA` and outlined at `CLAIM_RING_STROKE_ALPHA`, at depth −0.4 so it sits above the terrain but under every entity. It's created when the radius exceeds the base, resized if the radius changes, and destroyed with the player.
 - Verified: unit script (affordability, ammo math, second Expander rejected, junk ids like `__proto__`/`toString`/`null` rejected with credits untouched); browser (buying ammo took credits 100 → 70 and ammo 30 → 60, and the Expander button disabled at 70; buying the Expander at 100 left "Owned", the ring appeared in the player's color at 128×77, and a short walk claimed a two-hex-wide swath).
 
 ### Economy (Credits)
 - Every player with `tilesOwned > 0` earns 1 credit per owned tile, once every `CREDIT_PAYOUT_INTERVAL_MS` (10s)
 - `EconomySystem` runs only during `playing` — no payouts in `lobby` (no tiles are ownable yet) or `results` (match is already decided)
-- Credits are a spendable currency for the shop and are **not part of the score**. Every player **starts with 100** (`STARTING_CREDITS`) so they can shop in the `buying` phase; they then earn more during play. See [Shop](#shop) for what they buy.
+- Credits are a spendable currency for the shop and are **not part of the score**. Starting credits come from the player's character (50, or 15 for the Smuggler; `STARTING_CREDITS` was removed 2026-09-26); they then earn more during play. See [Shop](#shop) for what they buy.
 - Uses a wall-clock `GameState.nextPayoutAt` timestamp rather than counting ticks, so it stays correct if `TICK_RATE` ever changes — same pattern as `GamePhaseState.endsAt`
 - No discrete broadcast event for a payout — `Player.credits` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
 - Spending is the only sink: credits leave when a purchase succeeds (`ShopSystem.purchase`). Nothing else consumes them.
@@ -768,16 +826,28 @@ The client's networking code is built and has been exercised end-to-end against 
 // App.tsx (actual, simplified)
 if (gameOver || (connected && phase === 'results')) return <ResultsScreen />;  // final standings
 if (status !== 'connected') return <ConnectPrompt />;      // idle / connecting / reconnecting / error
-if (phase !== 'lobby') return <GameScreen />;                // buying / playing
-return <LobbyList />;                                        // phase === 'lobby'
+if (phase === 'lobby' || phase === 'countdown') return <LobbyScreen />;
+return <GameScreen />;                                       // playing
 ```
 
-`GameScreen` (`src/screens/GameScreen.tsx`) hosts the Phaser canvas plus the HUD, leaderboard, mobile joystick, and build-mode button — see [Client — Phaser Game](#client--phaser-game) for how those pieces fit together. `ResultsScreen` is its own screen; there's no dedicated `MenuScreen`/standalone `LobbyScreen` split yet (the connect prompt and lobby are still inline in `App.tsx`); splitting those out is straightforward follow-up whenever `App.tsx` grows unwieldy, but wasn't necessary yet.
+`GameScreen` (`src/screens/GameScreen.tsx`) hosts the Phaser canvas plus the HUD, leaderboard, mobile joystick, and build-mode button — see [Client — Phaser Game](#client--phaser-game) for how those pieces fit together. `ResultsScreen` and `LobbyScreen` are their own screens; only the connect prompt is still inline in `App.tsx`.
+
+### Lobby screen
+
+Built 2026-09-26 (`screens/LobbyScreen.tsx`; rules in [Lobby, characters and teams](#lobby-characters-and-teams)). A full-screen dark page in the results screen's style:
+- **Player list:** one row per player in join order — color dot, name ("(disconnected)" if so), team, character, ready state. **Your row has the controls:** a **name field** (edit in place; sent on Enter or leaving the field, Esc cancels; red border and "2–25 characters" hint while invalid; 16px text so iOS Safari doesn't zoom in on focus; `enterKeyHint="done"`, `autoComplete="nickname"`), a Team `<select>` (the 8 team names, each with its current player count, left border in your color), a Character `<select>`, and a **Ready** toggle (yellow "Ready" → green "✓ Ready"; press again to cancel). Both selects are disabled while you're ready. Other rows are read-only ("✓ Ready" / "Not ready"). Below 560px wide each row wraps: name, then the two selects side by side, then a full-width Ready button.
+- **Saved name:** `utils/playerName.ts` keeps the last name you set in `localStorage` (`sector42.playerName`; reads and writes are wrapped, so blocked storage just means no memory) and `GameContext` sends it with every fresh join, so it carries over from game to game and across page loads. The name you *typed* is saved, not the suffixed one, so you don't collect "(1) (1)" over time.
+- **Selects are `appearance: none` with a drawn arrow:** Safari ignored the dark styling and drew its own glossy controls (reported 2026-09-26). They're a stopgap — see Planned Features #10.
+- **Status line:** "Set your name, pick a team and a character, then press Ready." → "Waiting for N more players to get ready…" once you're ready → a large "Starting in 3…" during the countdown (`usePhaseCountdown` at a 100 ms tick so the first number isn't stale).
+- **Your character card:** name, one-line description, and the starting kit (gun, ammo, credits, structures, upgrades) from `CHARACTERS`.
+- A short note explains what teammates mean. Notices (disconnect/reconnect toasts) show here too.
+- `GameContext` exposes `selectTeam`, `selectCharacter` and `setReady` (replacing `startGame`/`endBuying`), and its roster signature now includes team, character, ready, gun, inventory and upgrades. `structureInventory`/`upgrades` are `ArraySchema`s, whose item changes don't fire the player's `onChange`, so the context also subscribes to their `onAdd`/`onRemove`.
+- Verified in the browser 2026-09-26 on private ports with two tabs: default teams, switching to a teammate's color (count shows "Red (2)"), picking the Smuggler updates the card, both Ready → "Starting in 3…" → the match, with each tab's HUD showing its own kit; the layout at 375px.
 
 ### Results screen
 
 Built 2026-09-20 (`screens/ResultsScreen.tsx`). When the match ends the server broadcasts one `gameOver` message with the **final standings** (best first: score, then kills, then tiles — the tie-break order is a placeholder); `App` shows the results screen as soon as it arrives.
-- **Content:** a headline ("You win!", "`<name>` wins!", or "Tie: A & B"), a table of rank / player (color dot, "(you)") / score / tiles / kills / structures with your row highlighted, a one-line score formula, the "room closes in Ns" countdown, and **Play again** / **Main menu** buttons.
+- **Content:** a headline ("You win!", "`<name>` wins!", or "Tie: A & B"), a **team table** (team, players, total score — only when some team had two or more players; `utils/results.ts`'s `teamTotals`), a table of rank / player (color dot, "(you)") / score / tiles / kills / structures with your row highlighted, a one-line score formula, the "room closes in Ns" countdown, and **Play again** / **Main menu** buttons.
 - **Ties:** players with the same score share a rank, and every rank-1 player is a co-winner. There's no real tie-break yet.
 - **Survives the room closing:** the standings live in `GameContext` (`gameOver`, plus `lastSessionId` so "(you)" still works) rather than the room, so the screen stays up after the room closes, switching its note to "This room has closed." Standings come from the server snapshot, so they don't change if someone leaves during the results period. If the snapshot ever didn't arrive, `App` falls back to `scoresFromPlayers(players)` while still connected (structure counts show as 0 in that fallback).
 - **Buttons:** *Play again* → `playAgain()` (leave the old room, clear the results, `connect()` into a fresh lobby); *Main menu* → `exitResults()` (leave and clear, back to the connect screen). `GameContext.leave()` now nulls `roomRef` synchronously and `onLeave` ignores rooms we've already walked away from, so the old room's late close event can't clobber the new connection.
@@ -853,11 +923,12 @@ Touch support needed no protocol changes, confirming what [Planned Features](#pl
 
 `HUD.tsx`, `ScoreBadge.tsx`, `Leaderboard.tsx` and the buttons render on top of the Phaser canvas (absolutely positioned `<div>`s in `GameScreen`), reading from `GameContext` — the same reactive `players`/`phase`/`phaseEndsAt` state already used by the lobby screen. This avoids re-deriving Colyseus reactivity a second time inside Phaser.
 
-- **HUD** (top left): phase countdown, health, ammo, tiles, credits.
+- **HUD** (top left): phase countdown, health, gun ("none" or its name), ammo, tiles, credits, structures left to build (e.g. "Farm" or "none"), and upgrades if any.
 - **Score badge** (top center, always visible): the local player's score. Real scoring doesn't exist yet, so `utils/score.ts`'s `scoreFor()` returns credits; the badge and the leaderboard both go through it, so implementing [Planned Features #3](#planned-features) means changing that one function. Until then the badge and the HUD's Credits line show the same number.
 - **Leaderboard** (popup): hidden by default; a top-right **Leaderboard** button (highlighted while open) or the **`L`** key toggles it, and **`Esc`**, the × button or a click on the dimmed backdrop closes it. It's a centered panel over the canvas (rank, color, name, score, tiles, kills, disconnected flag), ranked by `scoreFor`.
-- **Shop** (popup, mock-up): a **Shop** button below the Leaderboard button (visible in the `buying` and `playing` phases) or the **`B`** key toggles it; it opens by itself when the buying phase starts and closes when play begins. Only one popup (shop or leaderboard) is open at a time; `Esc` closes either. `GameScreen` mounts exactly when the buying phase starts, so it initializes with the shop open (and otherwise reacts to phase changes by adjusting state during render, React's recommended alternative to setting state in an effect).
-- **Fire button** (touch only, during the match only): a hold-to-fire button in the bottom-right corner; the **Build** button stacks above it on touch, and sits in the corner on desktop.
+- **Shop** (popup): a **Shop** button below the Leaderboard button (during the match) or the **`B`** key toggles it. Only one popup (shop or leaderboard) is open at a time; `Esc` closes either. It shows credits, ammo and whether you're armed; Basic gun and Expander show "Owned" once you have them.
+- **Build button** (bottom right, during the match): "Build Farm (1)" — the next structure in your inventory and how many are left — or a disabled "Nothing to build". Arming it makes the next tap place that structure on one of your tiles (the server uses up that inventory entry). `GameScreen` keeps the scene's build mode in sync with its own state through an effect, so the 5 s auto-disarm and running out of structures both return taps to shooting (previously the timeout reset the button but not the scene).
+- **Fire button** (touch only, during the match only, and only once you have a gun): a hold-to-fire button in the bottom-right corner; the **Build** button stacks above it on touch, and sits in the corner on desktop.
 - **Viewport fit:** `GameScreen`'s container is `position: fixed; inset: 0`. It used to be `100vw × 100vh` inside the Vite template's `#root` (1126px wide, `min-height: 100svh`, centered text), which made the page scroll and clipped the right-hand overlays, and made the overlay text centered. Panels also set `text-align: left` explicitly.
 
 ---
@@ -874,12 +945,12 @@ Client opens WebSocket → Colyseus routes to GameRoom by ID
 ### Valid States
 
 ```
-CREATED ──► LOBBY ──► BUYING ──► PLAYING ──► RESULTS ──► CLOSED
-                         │           │          │
-                   (30s timer)  (5 min timer)  (60s timer, room locked)
+CREATED ──► LOBBY ⇄ COUNTDOWN ──► PLAYING ──► RESULTS ──► CLOSED
+                         │             │          │
+                    (3s timer)   (5 min timer)  (60s timer, room locked)
 ```
 
-`LOBBY` → `BUYING` is the one transition that isn't timer-driven — it happens when the host's client sends `startGame` (see `GameRoom.handleStartGame`).
+`LOBBY` → `COUNTDOWN` happens when every connected player is ready; `COUNTDOWN` → `LOBBY` if that stops being true before the 3s are up (see `LobbySystem`).
 
 ### Closing a finished room
 
@@ -923,7 +994,7 @@ Other clients: see the frozen entity via the Player.connected field's delta sync
        │                                 │
 Player reconnects                  allowReconnection's promise rejects
 Client presents reconnectionToken  Server: release player's tiles, delete player,
-player.connected = true again      promote a new host if needed (cleanupPlayer)
+player.connected = true again      (cleanupPlayer)
 ```
 
 > Implementation note (Colyseus 0.16.5): there is a single `onLeave(client, consented)` hook, not the split `onDrop`/`onReconnect`/`onLeave` hooks a newer Colyseus line uses. `allowReconnection` is awaited directly inside `onLeave` when `!consented`: the `await` resolves if the client reconnects in time (Colyseus swaps the underlying connection back onto the same `Client`/session transparently — there's no separate `onReconnect` hook to mark `connected = true` in, so `GameRoom.onLeave` does it itself right after the `await` succeeds) and rejects once the window expires, which the `catch` block treats as the final departure. See the `GameRoom.ts` code under [Server — Colyseus](#server--colyseus). The `playerDisconnected`/`playerReconnected` broadcast events from the original design are **not implemented** — clients currently learn about connection state only via the `Player.connected` field's delta sync. On the client side, `GameConnection.ts`'s reconnection support (via `client.reconnect(token)`) is implemented and used automatically by `GameContext`'s retry loop on an unexpected drop — see [Client — React Shell](#client--react-shell).
@@ -945,7 +1016,7 @@ player.connected = true again      promote a new host if needed (cleanupPlayer)
 - Frozen players are still valid targets (shooting them continues — `CombatSystem` doesn't check `connected` before applying hits)
 - Their owned tiles are retained during the reconnect window
 - Structures they placed remain active
-- If the disconnecting player was the host, `onLeave` promotes the next connected player immediately (doesn't wait for the reconnect window); see `reassignHostIfNeeded`
+- In the lobby, a disconnected player is left out of the ready check, so they don't block the countdown
 
 ---
 
@@ -1172,7 +1243,7 @@ async function runBot(roomId: string) {
 | Room with 0 active players | Room disposed cleanly, no memory leak |
 | Full room (10 players) | 11th join rejected with clear error |
 | Server kill mid-match | Clients handle dropped WS connection, show reconnecting UI |
-| Host disconnects | Next connected player is promoted immediately and can send `startGame` (verified 2026-09-20 with a headless two-client script: uncleanly dropped host, then the remaining player started the match; also a newcomer taking over when the only host was disconnected) |
+| Player drops in the lobby | Left out of the ready check, so the others' countdown starts without them (`tools/e2e.js`, 2026-09-26). The earlier host-handover row is gone with the host role |
 | Browser tab backgrounded/hidden mid-move | Player coasts to a stop within ~1s (stale-input cutoff) instead of running on |
 | Player runs out of ammo | Shots are rejected server-side; no regen yet, so this is currently permanent for the rest of the match |
 
@@ -1345,33 +1416,36 @@ The server's `tsconfig.json` needs a few settings beyond the client's, driven by
 
 ## Current Status & Known Issues
 
-_As of 2026-09-20 (after the hex/isometric prototype, phase merge and buying phase)._ Server and client both typecheck and lint clean, and the game runs end to end in a browser: join → lobby → start → mouse-aimed movement on an isometric hex map → tile claiming → credits → shooting. Nothing about teams, scoring, or the results flow has been built yet.
+_As of 2026-09-26 (after the ready-up lobby, characters and teams)._ Server and client both typecheck and lint clean, and the game runs end to end in a browser: join → lobby (team, character, ready) → 3 s countdown → mouse-aimed movement on an isometric hex map → tile claiming → credits → shooting (once armed) → building from your inventory → results.
 
 ### Working (browser- or script-verified)
-- Join/lobby, host `startGame`, phase timers, credits payout, HUD, leaderboard (browser).
+- **Lobby, characters and teams** (2026-09-26: `tools/check-rules.js`, `tools/e2e.js`, and a two-tab browser pass on private ports): ready-up and the countdown (cancelled by un-readying or a newcomer; not held up by a disconnected player); team/character locked while ready and junk values refused; default teams fill empty colors first; every character's kit applied exactly at match start (and to a mid-match joiner); unarmed players can't shoot; the Basic gun arms you, once; structures come out of the inventory and carry their type; Robot boost speed; no friendly fire on teammates or their structures, teammates' structures walkable, teammates' tiles not taken; standings carry `teamId`. In the browser: the lobby at desktop and 375px width, Smuggler HUD kit, building the Farmer's farm (score +25, Build button disabled after), buying the Basic gun.
+- **Player names** (2026-09-26: `check-rules.js`, `e2e.js`, and the browser): normalization and the 2–25 limit (emoji count as one), unique "(N)" suffixes ignoring case and still within 25, "Player N" fallback, renaming while ready but not mid-match, the join option. In the browser: the invalid hint on a 1-character name, Enter commits, the name saved to localStorage, and a second tab joining as "… (1)" with it; the row at 375px. Safari itself wasn't available to test the select fix.
+- Join, phase timers, credits payout, HUD, leaderboard (browser).
 - **Disconnect notices, reconnect, screen edge** (headless clients + browser, 2026-09-20): both other players get disconnect and reconnect events (the returning player doesn't); toasts show and fade; a tab reconnects in ~330 ms when it becomes visible (simulated); players stop exactly 20 px inside the map edge and the camera keeps them centered and fully visible there.
 - **Shop: ammo and Expander** (unit + brute-force scripts and the browser, 2026-09-20): purchases validated (affordability, one Expander per player, junk ids rejected); radius claiming matches a brute-force scan; the shop UI buys ammo and the Expander, the tinted ring appears in the player's color, and enemy structures protect their hexes from claiming.
-- **Results screen, right-click move, shop-close-starts-match** (server scripts + browser, 2026-09-20): the server broadcasts a correctly ordered `gameOver` snapshot to everyone; the results screen shows it, counts down, persists after the room closes, and *Play again* joins a fresh lobby; closing the shop during buying starts play (host only — a non-host's `endBuying` is ignored); right-click walks to a spot and stops without overshoot, and arrow keys/WASD cancel it.
-- **Buying phase, shop mock-up and room closing** (scripts with scaled phase times, plus the browser): starting credits are 100; during `buying` nothing moves, shoots or claims and no credits accrue; play starts on schedule; the shop opens by itself in `buying`, closes when play begins, and toggles with the Shop button / `B` (`Esc` closes; only one popup at a time); at the end the finished room is locked, closes on its 60s timer (or at once when the last player leaves), and the client returns to the connect screen without a reconnect loop.
+- **Results screen, right-click move** (server scripts + browser, 2026-09-20): the server broadcasts a correctly ordered `gameOver` snapshot to everyone; the results screen shows it, counts down, persists after the room closes, and *Play again* joins a fresh lobby; right-click walks to a spot and stops without overshoot, and arrow keys/WASD cancel it.
+- **Shop popup and room closing** (scripts with scaled phase times, plus the browser, 2026-09-20; the `buying` phase this was verified with was removed 2026-09-26): the shop toggles with the Shop button / `B` (`Esc` closes; only one popup at a time); at the end the finished room is locked, closes on its 60s timer (or at once when the last player leaves), and the client returns to the connect screen without a reconnect loop.
 - **Merged `playing` phase, new score, 50 damage, solid structures** (scripts + a two-client end-to-end run on 2026-09-20): shooting works the instant the match starts; score = tiles (+25 per structure, +50 per kill) with credits excluded; a structure blocks other players, who slide around it (744-approach sweep: 0 overlaps, 0 frozen), while its owner passes through; two hits kill. The merged-phase UI has had only a short browser look (see Testing).
 - **Combat controls and UI** (third browser pass): Space/click firing with the fire interval, the projectile placeholder art in flight, hold-to-fire on the mobile FIRE button (release verified), building on a hex on touch, the always-visible score badge, the leaderboard popup (button, `L`, `Esc`), separate borders on claimed hexes, and no page scrollbars.
 - **Hex map + isometric rendering**: terrain draws correctly; the hover outline lands exactly on the hex under the mouse (picking matches the drawn grid); under the first (mouse-relative) control scheme, `W` carried the player diagonally toward the cursor and claimed a line of hexes — the default is now on-screen WASD, which has been typechecked but **not yet re-run in a browser**; a click in combat fires a shot (ammo 30 → 29) (browser).
 - Hex math round-trips exactly for all 4,096 tiles; velocity ramp/turn/decel numbers; off-map positions don't claim; stale input is dropped after 750ms (scripts).
 - Reconnection token flow and the projectile/structure/phase server logic (scripts).
-- Host handover: with the host's connection dropped uncleanly, the remaining player can start the match; a newcomer takes over when the only host is disconnected (headless two-client script).
 
 ### Implemented but not yet exercised in a real browser
-Structure *destruction* by shots, projectile hits on other players, the mobile joystick and `unproject` conversion on a real touch device (only emulated in a pane), the leaderboard with more than one player, reconnect after refresh/drop, real multi-player sessions, the results screen, and the stale-input fix under a genuinely backgrounded tab.
+The results screen's team table, a real match between armed teammates and enemies (friendly fire is script-verified only), the Robot's boost in play, Structure *destruction* by shots, projectile hits on other players, the mobile joystick and `unproject` conversion on a real touch device (only emulated in a pane), the leaderboard with more than one player, reconnect after refresh/drop, real multi-player sessions, the results screen, and the stale-input fix under a genuinely backgrounded tab.
 
 ### Known bugs / rough edges
-- **The lobby/connect screens still use the Vite template's layout** (`#root`/`App.css`: fixed 1126px column, centered text, leftover hero/counter styles). Only the game screen is viewport-fixed. Cosmetic.
+- **The connect screen still uses the Vite template's layout** (`#root`/`App.css`: fixed 1126px column, centered text, leftover hero/counter styles). The lobby, game and results screens are viewport-fixed. Cosmetic.
 - **No server-side fire-rate limit.** The 200ms cooldown lives in the client (`tryShoot`); a modified client can spend all 30 ammo in one tick. Ammo is finite, so it's bounded, but the server should own this (e.g. a per-player last-shot timestamp in `GameRoom.handleShoot`) — a game-rule decision, so not done yet.
 - **Results screen is basic.** No winner tie-break beyond shared ranks, no per-player details or match stats, and "Play again" starts a *new* lobby rather than a rematch in the same room. The server also doesn't tell late-leaving players anything special.
 - **No client-side prediction.** Rendering is smoothed and extrapolated, but your own movement still waits for the server round trip (see Movement). Fine on localhost; needs work before real-world latency.
 - **Map corners aren't hex-covered:** movement is clamped to the map rectangle, but the hex edge is jagged, so a player can stand over no hex (claiming ignores it).
 - **Everything is one height:** the reference art has elevation, cliffs, water and mountains; the prototype has a single flat height, so cliff faces show only on the map edge. Structures are plain boxes and players are circles.
-- **Little to spend credits on yet** — only ammo packs and the Expander (the rest of the shop is a "coming soon" list). See Planned Features #9.
-- **Players spawn armed with 30 ammo** purely for testing; the plan is for guns/ammo to be purchases only.
+- **Little to spend credits on yet** — ammo packs, the Basic gun and the Expander (the rest of the shop is a "coming soon" list). There's no way to get more structures once your starting one is placed. See Planned Features #9.
+- **Structure types are cosmetic data only.** Farm, mine, fort and power plant are stored (`Structure.type`) but behave, score and look the same.
+- **Other players' lobby rows wrap loosely at phone width** (team, character and "Not ready" land on separate lines). Cosmetic; to revisit with the custom pickers (Planned Features #10).
+- **Everyone can pick the same team**, leaving nobody to fight. Allowed on purpose for now; no balancing or team-size cap.
 - **A backgrounded tab's dropped connection: partly addressed.** Reported 2026-09-20 (Chrome blue vs Safari red: blue vanished from Safari's view). Fixed since: dropped players are drawn dimmed instead of hidden, everyone gets disconnect/reconnect notices, failed reconnects keep retrying for the whole window, and a tab reconnects immediately when it becomes visible. **Still unconfirmed:** *why* blue's connection dropped in the first place (likely browser throttling/freezing of the hidden tab), and the visible-tab trigger was tested by simulating the visibility change, not with a real backgrounded browser. When testing with two browsers, keep both windows visible. Untested idea: an indicator for players who are off-screen.
 - **A ~19 fps report on the developer's machine (two browsers open) is unexplained.** The measurable scaling problems were fixed (see Performance pass), but it was never reproduced. Next step: the backtick readout's fps, ms/frame and renderer line from that machine — low fps with small ms/frame points at the GPU/browser (software WebGL, two windows sharing a GPU), not the game code.
 - **Ammo never regenerates and has no cap** — the only source is buying packs (30 credits per 30 shots).
@@ -1402,19 +1476,20 @@ Captured 2026-09-20 as design ideas; the Phaser game view work session that foll
 - Wired into `GameRoom.tick()` alongside the other systems; `nextPayoutAt` is initialized in `onCreate()`.
 - Verified live: a throwaway script joined, claimed tiles, waited 11s, and confirmed `credits` incremented by exactly `tilesOwned` after one payout cycle.
 
-### 2. Teams — not yet implemented
+### 2. Teams — first version ✅ implemented (2026-09-26)
 
-- New schema: `GameState.teams: MapSchema<Team>`, where `Team` has `id`, `color`, and (if credits are pooled — see below) `credits`. `Player` gets a `teamId: string` field (empty string = free-for-all/no team, same convention as `Tile.ownerId`).
-- **Tile ownership needs a real decision here.** Today `Tile.ownerId` stores a player's `sessionId`. "Tiles all belong to the team" means either: (a) keep `Tile.ownerId` as the *player* id but always render/derive tile color from `player.teamId`'s team color, treating individual claims as team-attributed; or (b) change `Tile.ownerId` to store the *team* id directly once teams are active, so any teammate's presence claims for the team as a single pool. (b) is closer to what's described ("teammate's tiles all belong to the team") and simpler for `CollisionSystem`'s claim logic (no per-player tile counts to reconcile within a team), but it's a real schema/logic change, not just a rendering tweak — decide before implementing.
-- Credits: either **pooled at the team level** (one `Team.credits`, split only at scoring time or spendable as a shared pool) or **distributed evenly to each teammate's own `Player.credits`** every payout tick. The request says "credits are distributed evenly between teammates," which reads as the latter — `EconomySystem` would compute `teamTiles / teamSize` per payout and credit each connected teammate that amount (need a rounding/remainder rule for team sizes that don't divide evenly). Note `EconomySystem` currently pays each player individually based on their own `tilesOwned` — that logic will need to branch on whether teams are active.
-- Friendly fire: `CombatSystem.checkProjectilePlayerCollision` (or wherever the hit is applied) needs an early-out when `shooter.teamId !== '' && shooter.teamId === target.teamId`. Same idea for structures: `handlePlaceStructure`'s occupancy check already prevents overlap, but damaging/destroying needs a same-team guard added to whatever resolves projectile-vs-structure hits.
-- Open question: how are teams formed? Not designed yet — options are a lobby team-select UI (host or self-assign before `startGame`), auto-balancing on join, or a `joinTeam`/`leaveTeam` message during the `lobby` phase. Needs a decision before the client lobby screen can be built out.
+Built as described in [Lobby, characters and teams](#lobby-characters-and-teams): teams are the 8 colors in the shared `TEAMS` catalog, chosen in the lobby (`selectTeam`), stored as `Player.teamId` (no separate `GameState.teams` map — a team has no state of its own yet). Teammates are allies: no friendly fire on players or structures, teammates' structures are walkable, and teammates don't take each other's tiles. **Tiles, credits and score stay per player** (tile-ownership option (a) from the original plan, without pooling); the results screen sums scores per team.
+
+Still open, each a real decision rather than a follow-up:
+- **Pooling.** Tiles belonging to the team (`Tile.ownerId` = team id, option (b)), and/or credits split evenly between teammates on each payout (with a remainder rule). Either changes `CollisionSystem`, `EconomySystem` and `ScoreSystem`.
+- **Team win condition:** does the best team win (sum or average of scores?), or the best player?
+- **Team size and balancing:** today anyone can join any color, including everyone on one team.
 
 ### 3. Scoring and win condition — scoring ✅ implemented (first version); win condition not yet
 
 - **Implemented (2026-09-20):** `Player.score` = tiles × 1 + kills × 50 + structures × 25, computed by `ScoreSystem` (see [Score](#score)); credits are excluded. The score badge and leaderboard show it. Match length is a single 5-minute `playing` phase (`MATCH_DURATION_MS`).
 - **Still to do:**
-  - Structure types with their own values (**city hall 1000, school 250, house 100, fort 25**): `Structure` needs a `type` field (`'cityHall' | 'school' | 'house' | 'fort'`), a per-type points lookup replacing `STRUCTURE_POINTS`, a `structureType` on the `placeStructure` message, and a type picker in the client (likely part of the buy menu, #9).
+  - Structure types with their own values: `Structure.type` and `placeStructure.structureType` **exist since 2026-09-26** (farm, mine, fort, power plant — the characters' starting structures; the earlier idea was city hall 1000, school 250, house 100, fort 25). Still needed: a per-type points lookup replacing `STRUCTURE_POINTS`, what each type *does*, and a way to get more (the shop, #9).
   - The win condition: **displayed** on the results screen (highest score wins, co-winners on a tie; see [Results screen](#results-screen)), but not yet more than that — team-level scoring (sum or average, decide) once teams exist, and a real tie-break, are still open.
   - The point values are first-pass numbers to tune in playtesting; the formula is expected to change as the buy menu lands.
 
@@ -1445,21 +1520,26 @@ Driven by reference art showing hex tiles with mountains, trees, water and cliff
 
 Simulate the local player with the same acceleration model as `MovementSystem` (share the step function between client and server), replay unacknowledged inputs against each authoritative update (the `seq`/`inputAck` plumbing already exists for this), and correct smoothly. Do this once latency is a real concern; the extrapolation/smoothing already in place hides tick-rate stepping but not round-trip delay.
 
-### 9. Shop and upgrades — ammo and Expander built; the rest planned
+### 9. Shop and upgrades — ammo, Basic gun and Expander built; the rest planned
 
-**Where it lives (decided 2026-09-20):** a short **30-second `buying` phase** right after the lobby and before play, *plus* the same shop available during play on the player's own time (a Shop button or `B`; nothing pauses while it's open). Players start with **100 credits**.
+**Where it lives:** during play, on the player's own time (a Shop button or `B`; nothing pauses while it's open). A 30-second `buying` phase before play existed from 2026-09-20 until **2026-09-26**, when the ready-up lobby replaced it; starting credits now come from the character (50, or 15 for the Smuggler).
 
-**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures).
-
-**Temporary testing shortcut:** closing the shop popup during the buying phase (× / Esc / backdrop / Shop button) ends buying and starts the match — the client sends `endBuying`, which only the host's message can trigger (`GameRoom.handleEndBuying`). Remove it once there's a reason to stay in the buying phase.
+**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures). The **Basic gun** (40 credits, one per player) was added 2026-09-26, since only the Smuggler starts armed. (The temporary `endBuying` shortcut went with the buying phase.)
 
 **Still to design and build:**
-- More items: better guns (damage / fire rate), armor, and the structure types (see #3), each as an entry in the shared `SHOP_ITEMS` catalog plus an effect in `ShopSystem`.
-- **Ammo:** decide on a cap; ammo still never regenerates (buying is the only source). Players eventually start *without* a gun or ammo and buy them; for now everyone spawns armed with 30 so combat can be tested.
+- More items: better guns (damage / fire rate), armor, and more structures of each type (farm, mine, fort, power plant — see #3) to refill the inventory, each as an entry in the shared `SHOP_ITEMS` catalog plus an effect in `ShopSystem`.
+- **Ammo:** decide on a cap; ammo still never regenerates (buying is the only source). Only the Smuggler starts with a gun (and 15 ammo); everyone else buys one.
 - **Candidate constraint:** only allow buying/upgrading during play while standing on your own territory (or near a city hall) so shopping carries risk. Not decided.
 - The server-side fire-rate limit belongs here too (per-gun fire rate).
-- Balance: the Expander is strong (up to 9× claiming per step) for 100 credits — the price of one purchase at the start. Watch for snowballing (territory income plus purchases compound for whoever leads); consider cost scaling, a radius cap, or making upgrades stackable with rising prices.
+- Balance: the Expander is strong (up to 9× claiming per step) for 100 credits — no longer affordable at the start (≤ 50 credits), so it's now a mid-match buy. Watch for snowballing (territory income plus purchases compound for whoever leads); consider cost scaling, a radius cap, or making upgrades stackable with rising prices.
 - Mobile: the Shop button and popup fit a 375px viewport in principle but haven't been tried on a real device.
+
+### 10. Custom lobby pickers — planned (requested 2026-09-26)
+
+Replace the lobby's native `<select>`s (currently restyled with `appearance: none` as a stopgap):
+- **Team picker:** a row/grid of **color swatches**, sized for touch on mobile (at least ~44px targets), showing which colors have players and which is yours.
+- **Character picker:** a custom component — likely cards with the character's art (once there is art, #7) and kit, rather than a text list.
+- Tidy other players' rows at phone width at the same time (see Known Issues).
 
 ---
 
@@ -1485,7 +1565,7 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 | Linting | ESLint 10 flat config (both projects) | oxlint (Vite's default), legacy `.eslintrc.json` | Vite 8's default `oxlint` was swapped for full ESLint to get typescript-eslint + React rules; ESLint 10 requires flat config, so `.eslintrc.json` from older docs doesn't apply |
 | TypeScript version pin | `~6.0.2` on both projects | Latest (7.x) | `typescript-eslint` 8.70 currently requires TS `<6.1.0` as a peer dependency |
 | PvP death handling | Respawn at map center, full health, kills/tiles preserved | Elimination, sudden-death end-of-match | This is a territory-claiming game, not a deathmatch — PvP is a tool for defending/contesting tiles, not the win condition, so a defeated player should get back in the fight quickly |
-| Host concept | First player to join a room is `hostId`; only they can send `startGame`; reassigned to next connected player on host departure | No host (auto-start at max players or after a lobby timer), server-side matchmaking-assigned host | Simplest to implement for a scaffold; a lobby timer or player-ready-up voting could replace this later without changing the wire protocol much |
+| Host concept — **superseded 2026-09-26 (ready-up lobby)** | First player to join a room is `hostId`; only they can send `startGame`; reassigned to next connected player on host departure | No host (auto-start at max players or after a lobby timer), server-side matchmaking-assigned host | Simplest to implement for a scaffold; a lobby timer or player-ready-up voting could replace this later without changing the wire protocol much |
 | Ammo | Finite (30), decrements per shot, no regen yet | Infinite ammo, regen over time, reload mechanic | Left as a known gap — finite ammo without regen makes for a hard stop mid-match, which is a real gameplay concern to resolve before this ships, not just a technical TODO |
 | Cross-system event emission | Plain `Broadcast` callback type (`(type, payload) => void`) passed into each system's `update()` | Systems import the Room directly; a shared EventEmitter singleton; Room does all broadcasting itself, systems return event lists | Keeps systems as pure-ish functions operating only on `GameState` + a callback, so they're testable without a live Colyseus `Room` — see the direct system tests in Testing Multiplayer Locally, which exist specifically because client-side end-to-end testing is currently blocked |
 | Per-projectile lifetime tracking | Store `spawnedAt` on the `Projectile` schema itself | Module-level `Map<id, timestamp>` inside `CombatSystem` | Systems are shared singletons imported once and reused by every `GameRoom` instance — module-level mutable state keyed by projectile id would leak across concurrent rooms. Storing it on the synced schema costs a few bytes per projectile but is correct per-room and per-instance |
@@ -1521,14 +1601,14 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 | Damage | 50 per hit vs 100 health (two-hit kill) | 25 per hit (previous) | Requested. Armor and better guns will modify this later |
 | Structures are solid | Others can't enter a structure's hex; they slide around it; the owner passes freely; a player already inside can walk out | Structures only stop projectiles (previous); no exceptions for owners | Requested. Implemented as circle-vs-hexagon with rounded corners; sliding uses the push-out direction at the player's *current* position (using the destination's normal leaves players frozen at corners), and a small distance tolerance so tangential slides aren't mistaken for approaching. Validated with a 744-approach sweep (0 overlaps, 0 frozen; the only stops were dead-on flat-wall hits) and a two-client run |
 | Finished-room lifecycle | Lock the room when the match ends; close it after a 60s results period (`RESULTS_DURATION_MS`) or immediately when the last player leaves; no reconnect window during `results` | Leave finished rooms open (previous); a 2–3 minute grace period | Finished rooms were being reused by `joinOrCreate`. There's no formal standard for the timeout; a minute is enough to look at results, and there's no results screen/rematch to justify longer. One constant to change |
-| Buying phase | A 30s `buying` phase between lobby and playing (nothing else allowed), plus in-play shopping on the player's own time | No buying phase, only an in-game menu (decided earlier the same day); a long shopping phase | Reversed by request: a quick shared shopping window gives a clean start, while play-time buying keeps the game continuous. Also removes the "shoot before anyone has claimed anything" problem without a protected phase |
-| Starting credits | 100 (`STARTING_CREDITS`), set as the schema default | 0 with payouts only | Requested, so there's something to spend in the buying phase |
+| Buying phase — **superseded 2026-09-26 (ready-up lobby)** | A 30s `buying` phase between lobby and playing (nothing else allowed), plus in-play shopping on the player's own time | No buying phase, only an in-game menu (decided earlier the same day); a long shopping phase | Reversed by request: a quick shared shopping window gives a clean start, while play-time buying keeps the game continuous. Also removes the "shoot before anyone has claimed anything" problem without a protected phase |
+| Starting credits — **superseded 2026-09-26 (ready-up lobby)** | 100 (`STARTING_CREDITS`), set as the schema default | 0 with payouts only | Requested, so there's something to spend in the buying phase |
 | Server-closed room vs. client | Client treats close codes 1000 and 4000 as deliberate | Only 1000 (previous) | The server closes finished rooms with Colyseus's `CONSENTED` code (4000); treating it as a dropped connection would send the client into its reconnect loop and silently into a new lobby |
 | `PHASE_TIME_SCALE` | Env var scaling all phase lengths, read once in `constants.ts` | Editing constants for tests; waiting real time | Testing the full lifecycle took minutes of waiting per browser run; a scale of 0.02–0.1 runs a whole match in seconds without touching code. Not for production use |
 | Results screen data | The server sends one `gameOver` snapshot of final standings; the client keeps it in context and shows the screen even after the room closes | Read live room state; a screen that needs the room to stay open | Live state changes if someone leaves and vanishes when the room closes. A snapshot is stable and lets the screen outlive the room. Ties share a rank (no tie-break yet) |
 | Results screen actions | *Play again* (new lobby) and *Main menu* | Auto-drop players into a new lobby when the room closes; rematch in the same room | Deliberate choice rather than a surprise. The 60s room timer plus a persisted screen means nothing is lost when the room closes. Same-room rematch would need a reset flow and is deferred |
 | Click-to-move | Right-click sets a world-space target the client walks toward via the normal `input` vector; eases off near it; cancels on arrival, no progress for 1.2 s, or any movement key/joystick | Server-side pathing/targets; left-click to move | Requested. Doing it client-side needs no server change and reuses smoothing, screen-uniform speed and structure sliding. Speed is scaled by distance (not a hard stop) to avoid overshoot despite ~100–200 ms input latency; a no-progress timeout stops it chasing an unreachable spot |
-| Ending buying early (temporary) | Closing the shop during `buying` sends `endBuying`; only the host's is honored | Waiting out the 30s; letting any player end it | Requested testing shortcut: with a mock shop there's nothing to do while buying. Host-only so one player closing their popup can't start the match for everyone; to be removed when the real buy menu exists |
+| Ending buying early (temporary) — **superseded 2026-09-26 (ready-up lobby)** | Closing the shop during `buying` sends `endBuying`; only the host's is honored | Waiting out the 30s; letting any player end it | Requested testing shortcut: with a mock shop there's nothing to do while buying. Host-only so one player closing their popup can't start the match for everyone; to be removed when the real buy menu exists |
 | Claim layer rendering | 512-px chunk `RenderTexture`s, re-baking only chunks whose hex owners changed (diff against `renderedOwners`) | One full-map claim texture re-baked on every change (previous); per-hex incremental stamping | Re-bake cost grew with every claimed hex (7.7 ms at 442 → projected ~20 ms at ~1,100) and would spike late in a match; chunks bound it (2.3 ms flat). Per-hex stamping was rejected: the 2px claim border spills onto neighbors, so un-claiming a hex would leave artifacts unless its neighbors were repainted too. Chunks keep the exact previous visuals and the same "redraw what's claimed here from state" logic |
 | React roster updates | Publish a new `players` array only when a *displayed* field changes (signature check) | Publish on every Colyseus `onChange` (previous) | Positions/velocity/aim change every tick per moving player and are never shown in React, yet each one re-rendered the whole provider tree (~30 renders/s measured). Now ~6/s |
 | GPU selection | `powerPreference: 'high-performance'` | Browser default | Dual-GPU laptops default to the integrated GPU; the game is a good reason to ask for the discrete one. Harmless elsewhere |
@@ -1544,8 +1624,18 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 | Disconnect/reconnect notices | Server broadcasts `playerDisconnected` / `playerReconnected` (with names) to everyone but the returning player; client shows auto-dismissing toasts | Rely on the leaderboard's "(disconnected)" flag; notify only the host | Requested: all players should know. Toasts are visible where players actually look; the events already existed in the shared types |
 | Reconnect triggers | Retry every 1.5 s for the length of the server window, and reconnect immediately on `visibilitychange` / `online` | Single retry timer; give up after one failed attempt (previous) | Hidden tabs throttle timers, and one failed attempt (e.g. right after waking) shouldn't strand the player on an error screen |
 | Screen edge | Camera has no bounds (always centers the player); players stay `MAP_EDGE_MARGIN` inside the map | Keep the bounded camera; clamp the player to the visible screen | A bounded camera pinned the player against the screen edge at the map's edge, clipping the body. Centering always keeps them fully visible at any window size; the margin keeps the body on the terrain. Cost: empty space visible beyond the map |
-| Host reassignment | Promote the next connected player as soon as the host disconnects; a newcomer also takes over if the recorded host is disconnected; keep a lone disconnected host so a reconnect restores them | Promote only when the reconnect window expires (previous behavior); always keep the original host | A disconnected host can't send `startGame`, and the old behavior blocked a lobby for up to 3 minutes (it also made the shared dev room confusing) |
+| Host reassignment — **superseded 2026-09-26 (ready-up lobby)** | Promote the next connected player as soon as the host disconnects; a newcomer also takes over if the recorded host is disconnected; keep a lone disconnected host so a reconnect restores them | Promote only when the reconnect window expires (previous behavior); always keep the original host | A disconnected host can't send `startGame`, and the old behavior blocked a lobby for up to 3 minutes (it also made the shared dev room confusing) |
 | Stale input | Server discards input older than `INPUT_STALE_MS` (750ms); client keeps alive every 250ms | Trust the last input indefinitely (previous behavior) | A backgrounded tab pauses Phaser's loop, so "key released" never got sent and the player ran on forever. Any silent client (tab hidden, network stall) now coasts to a stop |
 | Client smoothness | Frame-rate-independent exponential smoothing toward `state + velocity × EXTRAPOLATION_S`; snap on large jumps | Fixed per-frame lerp (previous); full client-side prediction now | Hides the 20Hz tick stepping at any frame rate for little code. Prediction/reconciliation is deferred (Planned Features #8) until latency actually matters |
 | Hex rendering | Three `Graphics` layers: static base (drawn once), claims tint (dirty-flag redraw, claimed hexes only), hover outline | One `Graphics` redrawn on every `tilesClaimed`; one game object per tile | `tilesClaimed` fires nearly every tick while moving; redrawing 4,096 hexes with cliff faces each time was the expensive path. Only the small claims layer redraws |
 | Structure hit test | Projectile is inside the structure's hex (`pixelToHex` equality) | Circle or AABB approximation of a hex | Exact for a structure that fills its whole hex, and no extra geometry |
+| Starting the match | Automatic 3s countdown once every connected player is ready; cancelled if anyone un-readies or a newcomer joins; disconnected players don't block it. No Start button and no host | Host presses Start once everyone is ready; auto countdown plus a host force-start | Chosen by the developer (2026-09-26). Nobody has to be in charge, so the host role and its handover logic went away |
+| Removing the buying phase | Deleted `buying`, `startGame`, `endBuying` and `STARTING_CREDITS`; shopping is during play only; starting credits come from the character | Keep a short buying phase after the lobby | Requested: the lobby's character choice now sets the starting kit, which is what the buying phase was for |
+| Countdown as its own phase | `countdown` phase (lobby screen still shown), owned by `LobbySystem` together with applying kits at its end | Keep `lobby` and use `endsAt > 0` as "counting down" | A self-describing phase string is clearer for the client, logs and tests; `PhaseSystem` now only times `playing` |
+| Teams | A team is one of 8 colors (`TEAMS`); `Player.teamId`, with `Player.color` always the team color; newcomers get an empty color first | A `GameState.teams` map with team state; auto-balancing | Picking a team is the same as picking a color (requested), and all existing rendering already used the player color. A team has no state of its own yet, so no map |
+| What teammates share | Allies only: no friendly fire (players and structures), teammates' structures walkable, teammates' tiles not taken. Tiles, credits and score per player; results add team totals | Full pooling (tiles owned by the team, credits split evenly, team score); color only, free-for-all | Chosen by the developer (2026-09-26) as the smallest change that makes teams meaningful; pooling stays an open question |
+| Characters | 6 characters in a shared `CHARACTERS` catalog; the kit (gun, ammo, credits, structures, upgrades) replaces the player's stats when the countdown ends; locked while ready | Apply the kit at selection time; free choice after readying | Applying once at start means lobby switching can't be abused and a mid-match joiner just gets the default kit applied on join |
+| Structure inventory | `Player.structureInventory` (one entry per structure); `placeStructure` names a type from it and uses one up; `Structure.type` recorded; all types identical for now | Unlimited building with the character setting only the type | Chosen by the developer (2026-09-26): the starting structures are part of what distinguishes characters |
+| Getting a gun | Unarmed players can't shoot; a Basic gun (40 credits, one per player) in the shop | Only Smugglers can shoot until a later shop pass | Chosen by the developer (2026-09-26), so the other five characters can still fight |
+| Robot boost | `boost` upgrade multiplies top speed by 1.25 (`BOOST_SPEED_MULTIPLIER`), acceleration unchanged | Higher acceleration too; a timed boost | "Speed boost" was the spec; 1.25 is a first-pass value to tune |
+| Player names | Editable in the lobby, 2–25 characters (code points), any characters; a taken name (ignoring case) gets the first free " (N)"; saved to `localStorage` and sent as a join option | Allow duplicate names; server-side accounts | The developer allowed either; the suffix keeps names readable in the leaderboard and results and fixed the old duplicate "Player N" bug. Saving the typed (unsuffixed) name avoids stacking suffixes over games |

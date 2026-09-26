@@ -3,6 +3,7 @@ import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
 import { PROJECTILE_LIFETIME_MS, PROJECTILE_DAMAGE, SCREEN_Y_SCALE } from '../constants';
 import { mapPixelSize } from '../hex';
+import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
 import type { PlayerHitEvent } from '../types/shared';
 
@@ -21,6 +22,8 @@ function respawnPlayer(state: GameState, player: Player): void {
 /**
  * Advances all in-flight projectiles, applies hit detection against
  * players and structures, and removes expired or spent projectiles.
+ * Shots pass through the shooter's teammates and their structures (no
+ * friendly fire).
  */
 function update(state: GameState, dt: number, broadcast: Broadcast): void {
     if (state.phase.phase !== 'playing') return;
@@ -41,7 +44,8 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
         proj.y += (sin / onScreenLength) * proj.speed * dt;
 
         state.players.forEach((player) => {
-            if (toRemove.has(id) || player.id === proj.ownerId || !player.connected) return;
+            if (toRemove.has(id) || !player.connected) return;
+            if (areAllies(state, proj.ownerId, player.id)) return;
             if (!CollisionSystem.checkProjectilePlayerCollision(proj, player, prev)) return;
 
             toRemove.add(id);
@@ -60,7 +64,7 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
         });
 
         state.structures.forEach((structure) => {
-            if (toRemove.has(id) || structure.ownerId === proj.ownerId) return;
+            if (toRemove.has(id) || areAllies(state, proj.ownerId, structure.ownerId)) return;
             if (!CollisionSystem.checkProjectileStructureCollision(proj, structure)) return;
 
             toRemove.add(id);

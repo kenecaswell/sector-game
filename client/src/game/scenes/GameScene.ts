@@ -467,13 +467,13 @@ export class GameScene extends Phaser.Scene {
         if (this.spaceKey?.isDown || this.fireHeld) this.tryShoot(this.aimAngle);
     }
 
-    /** Sends a shot unless it's on cooldown, outside the match, or out of ammo (the server enforces the last two too). */
+    /** Sends a shot unless it's on cooldown, outside the match, unarmed or out of ammo (the server enforces the last three too). */
     private tryShoot(angle: number): void {
         const now = performance.now();
         if (now - this.lastShotAt < FIRE_INTERVAL_MS) return;
         if (this.room.state.phase.phase !== 'playing') return;
         const me = this.room.state.players.get(this.sessionId);
-        if (!me || me.ammo <= 0) return;
+        if (!me || me.gun === '' || me.ammo <= 0) return;
 
         this.lastShotAt = now;
         this.callbacks.onShoot(angle);

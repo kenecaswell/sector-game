@@ -1,6 +1,6 @@
 import { useGameConnection } from './context/GameContext';
 import { GameScreen } from './screens/GameScreen';
-import { NoticeStack } from './components/NoticeStack';
+import { LobbyScreen } from './screens/LobbyScreen';
 import { ResultsScreen } from './screens/ResultsScreen';
 import { scoresFromPlayers } from './utils/results';
 import './App.css';
@@ -14,10 +14,8 @@ function App() {
         players,
         sessionId,
         lastSessionId,
-        notices,
         gameOver,
         connect,
-        startGame,
         playAgain,
         exitResults,
     } = useGameConnection();
@@ -58,32 +56,11 @@ function App() {
         );
     }
 
-    if (phase !== 'lobby') {
-        return <GameScreen />;
+    if (phase === 'lobby' || phase === 'countdown') {
+        return <LobbyScreen />;
     }
 
-    return (
-        <section id="center">
-            <NoticeStack notices={notices} />
-            <div>
-                <h1>Sector 42</h1>
-                <p>Waiting in lobby…</p>
-            </div>
-            <ul>
-                {players.map((player) => (
-                    <li key={player.id} style={{ color: player.color }}>
-                        {player.name}
-                        {player.id === sessionId ? ' (you)' : ''} — tiles: {player.tilesOwned},
-                        kills: {player.kills}
-                        {!player.connected ? ' (disconnected)' : ''}
-                    </li>
-                ))}
-            </ul>
-            <button type="button" className="counter" onClick={startGame}>
-                Start Game
-            </button>
-        </section>
-    );
+    return <GameScreen />;
 }
 
 export default App;
