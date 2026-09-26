@@ -11,7 +11,7 @@ const { dist, section, check, finish } = require('./lib');
 const { GameState, Player, Structure, Projectile } = dist('state/GameState.js');
 const { MovementSystem } = dist('systems/MovementSystem.js');
 const { CombatSystem } = dist('systems/CombatSystem.js');
-const { hexCenter, hexEdgeContact } = dist('hex.js');
+const { hexCenter, structureContact } = dist('hex.js');
 const C = dist('constants.js');
 
 const DT = 1 / C.TICK_RATE;
@@ -26,7 +26,7 @@ function world() {
 }
 
 // ---------------------------------------------------------------------------------------------
-section('Structures are solid to everyone but their owner');
+section('Structures (the 7-hex hexagon) are solid to everyone but their owner');
 {
     const center = hexCenter(10, 10);
     let approaches = 0;
@@ -35,11 +35,12 @@ section('Structures are solid to everyone but their owner');
     let wallStops = 0;
     let closest = Infinity;
 
-    // Walk a non-owner into the structure's hex from every direction and offset, holding the
+    // Walk a non-owner into the structure's hexagon from every direction and offset (it's ~170px
+    // across, so start 260px out and sweep offsets across its whole width), holding the
     // input for a long time. They must slide around it: never overlap it, never freeze while
     // still pushing sideways. (Walking dead-on into a flat wall just stops, like any wall.)
     for (let angle = 0; angle < 360; angle += 15) {
-        for (let offset = -60; offset <= 60; offset += 4) {
+        for (let offset = -130; offset <= 130; offset += 8) {
             const a = (angle * Math.PI) / 180;
             const dir = { x: Math.cos(a), y: Math.sin(a) };
             const state = world();
@@ -51,8 +52,8 @@ section('Structures are solid to everyone but their owner');
             state.structures.set('s', structure);
             const player = new Player();
             player.id = 'enemy';
-            player.x = center.x - dir.x * 160 - dir.y * offset;
-            player.y = center.y - dir.y * 160 + dir.x * offset;
+            player.x = center.x - dir.x * 260 - dir.y * offset;
+            player.y = center.y - dir.y * 260 + dir.x * offset;
             state.players.set('enemy', player);
             const inputs = new Map([['enemy', { dir, seq: 1, receivedAt: Date.now() }]]);
 
@@ -61,17 +62,17 @@ section('Structures are solid to everyone but their owner');
             for (let tick = 0; tick < 160; tick++) {
                 inputs.get('enemy').receivedAt = Date.now();
                 MovementSystem.update(state, inputs, DT);
-                closest = Math.min(closest, hexEdgeContact(player.x, player.y, 10, 10).distance);
+                closest = Math.min(closest, structureContact(player.x, player.y, 10, 10).distance);
                 if (Math.hypot(player.x - previous.x, player.y - previous.y) > 0.5)
                     lastMoved = tick;
                 previous = { x: player.x, y: player.y };
             }
             approaches++;
-            if (hexEdgeContact(player.x, player.y, 10, 10).distance < C.PLAYER_RADIUS - 0.5)
+            if (structureContact(player.x, player.y, 10, 10).distance < C.PLAYER_RADIUS - 0.5)
                 overlaps++;
             const mid = player.x > 50 && player.x < 3000 && player.y > 50 && player.y < 3500;
             if (lastMoved < 150 && mid) {
-                const n = hexEdgeContact(player.x, player.y, 10, 10);
+                const n = structureContact(player.x, player.y, 10, 10);
                 const sideways = Math.abs(dir.x * -n.ny + dir.y * n.nx);
                 if (sideways > 0.1) frozen++;
                 else wallStops++;
@@ -110,11 +111,11 @@ section('Structures are solid to everyone but their owner');
         for (let i = 0; i < ticks; i++) {
             inputs.get(playerId).receivedAt = Date.now();
             MovementSystem.update(state, inputs, DT);
-            deepest = Math.min(deepest, hexEdgeContact(player.x, player.y, 10, 10).distance);
+            deepest = Math.min(deepest, structureContact(player.x, player.y, 10, 10).distance);
         }
         return { player, deepest };
     };
-    const owner = run('owner', center.x - 150, center.y, { x: 1, y: 0 }, 60);
+    const owner = run('owner', center.x - 260, center.y, { x: 1, y: 0 }, 60);
     check(
         'the owner walks straight through their own structure',
         owner.deepest < 0 && owner.player.x > center.x + 40

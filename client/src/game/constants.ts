@@ -19,7 +19,9 @@ export const PROJECTILE_RADIUS = 6;
 export const ISO_SQUASH = 0.6;
 export const HEX_DEPTH = 12; // screen px of the cliff face under each hex
 export const BODY_LIFT = 10; // screen px a player/projectile floats above the ground
-export const STRUCTURE_LIFT = 8;
+// Structures are drawn as a raised slab in the shape of their 7-hex hexagon (see hex.ts): a top face
+// this many screen px above the ground, with side faces down to it.
+export const STRUCTURE_HEIGHT = 14;
 
 // How often movement input is sent to the server. Sending faster than the
 // server's tick rate (20Hz = 50ms) wastes bandwidth since the server only
@@ -74,3 +76,19 @@ export const HEX_OUTLINE_COLOR = 0x1a1a2e;
 export const CLAIM_BLEND = 0.65; // how strongly an owner's color tints a claimed hex top
 export const CLAIM_BORDER_DARKEN = 0.1; // border of a claimed hex: its fill, darkened by this much
 export const CLAIM_BORDER_WIDTH = 2;
+
+// --- Structures (placeholder look until there's art) ---
+// Top-face color by structure type. The sides and the border are the owner's team color, so the
+// type reads from the top and the team from the edge. Chosen muted/pale so the team edge stands out.
+export const STRUCTURE_COLORS: Record<string, number> = {
+    farm: 0xc5d86d, // pale lime: a field
+    mine: 0x6d4c41, // dark brown: earth
+    fort: 0xb0a18a, // sandstone
+    power: 0x80deea, // pale cyan: electric
+};
+export const STRUCTURE_DEFAULT_COLOR = 0xdddddd; // an unknown type
+export const STRUCTURE_SIDE_DARKEN = 0.35; // team color, darkened this much, for the side faces
+export const STRUCTURE_BORDER_WIDTH = 3;
+export const BUILD_PREVIEW_OK_COLOR = 0xf1c40f;
+export const BUILD_PREVIEW_BAD_COLOR = 0xe74c3c;
+export const BUILD_PREVIEW_TAP_MS = 1200; // touch has no hover: a refused tap shows its outline this long

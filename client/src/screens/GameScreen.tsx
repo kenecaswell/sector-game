@@ -11,12 +11,9 @@ import { MobileJoystick } from '../components/MobileJoystick';
 import { DebugStats } from '../components/DebugStats';
 import { FireButton } from '../components/FireButton';
 import { ScoreBadge } from '../components/ScoreBadge';
-import { BASE_CLAIM_RADIUS } from '../game/constants';
 import { STRUCTURE_NAMES, isStructureType } from '../types/shared';
 import { isTouchDevice } from '../utils/device';
 import { scoreFor } from '../utils/score';
-
-const BUILD_MODE_ARMED_MS = 5000;
 
 export function GameScreen() {
     const {
@@ -65,28 +62,6 @@ export function GameScreen() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [room, sessionId]);
 
-    useEffect(() => {
-        if (!buildModeArmed) return;
-        const timeout = window.setTimeout(() => setBuildModeArmed(false), BUILD_MODE_ARMED_MS);
-        return () => window.clearTimeout(timeout);
-    }, [buildModeArmed]);
-
-    // L toggles the leaderboard, B the shop, Esc closes either, ` toggles the FPS readout. Phaser only
-    // captures the keys it registers (WASD, arrows, Space), so these don't conflict.
-    useEffect(() => {
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.repeat) return;
-            if (event.key === 'l' || event.key === 'L') {
-                setPanel((open) => (open === 'leaderboard' ? 'none' : 'leaderboard'));
-            } else if (event.key === 'b' || event.key === 'B') {
-                setPanel((open) => (open === 'shop' ? 'none' : 'shop'));
-            } else if (event.key === 'Escape') setPanel('none');
-            else if (event.key === '`') setShowStats((show) => !show);
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, []);
-
     const getGame = useCallback(() => gameRef.current, []);
 
     const getScene = (): GameScene | undefined =>
@@ -99,16 +74,39 @@ export function GameScreen() {
     // Build mode only counts while there's something left to build.
     const buildArmed = buildModeArmed && canBuild;
 
-    // The scene follows this state, so the timeout above and running out of structures both put the
-    // next tap back to shooting.
+    // The scene follows this state, so leaving build mode (Esc, B) or running out of structures puts
+    // the next tap back to shooting.
     useEffect(() => {
         const scene = gameRef.current?.scene.getScene('GameScene') as GameScene | undefined;
         scene?.setBuildMode(buildArmed);
     }, [buildArmed]);
 
-    const toggleBuildMode = () => {
+    // Build mode stays on until you build, press B again, or press Esc (no timeout).
+    const toggleBuildMode = useCallback(() => {
         if (canBuild) setBuildModeArmed(!buildArmed);
-    };
+    }, [canBuild, buildArmed]);
+
+    // B toggles build mode, E the shop, L the leaderboard; Esc leaves build mode and closes either
+    // popup; ` toggles the FPS readout. Phaser only captures the keys it registers (WASD, arrows,
+    // Space), so these don't conflict.
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.repeat) return;
+            const key = event.key.toLowerCase();
+            if (key === 'l') {
+                setPanel((open) => (open === 'leaderboard' ? 'none' : 'leaderboard'));
+            } else if (key === 'e' && shopAvailable) {
+                setPanel((open) => (open === 'shop' ? 'none' : 'shop'));
+            } else if (key === 'b' && phase === 'playing') {
+                toggleBuildMode();
+            } else if (key === 'escape') {
+                setPanel('none');
+                setBuildModeArmed(false);
+            } else if (key === '`') setShowStats((show) => !show);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [shopAvailable, phase, toggleBuildMode]);
 
     return (
         // Fixed to the viewport, outside the page's normal flow. (Sizing this 100vw x 100vh inside the
@@ -144,14 +142,7 @@ export function GameScreen() {
                 />
             )}
             {panel === 'shop' && shopAvailable && (
-                <BuyMenu
-                    credits={me?.credits ?? 0}
-                    ammo={me?.ammo ?? 0}
-                    hasExpander={(me?.claimRadius ?? 0) > BASE_CLAIM_RADIUS + 0.5}
-                    hasGun={!!me?.gun}
-                    onBuy={purchase}
-                    onClose={() => setPanel('none')}
-                />
+                <BuyMenu player={me} onBuy={purchase} onClose={() => setPanel('none')} />
             )}
 
             {phase === 'playing' && (
@@ -159,7 +150,11 @@ export function GameScreen() {
                     type="button"
                     tabIndex={-1}
                     disabled={!canBuild}
-                    title={canBuild ? undefined : 'No structures left to build'}
+                    title={
+                        canBuild
+                            ? 'Build mode (B). Esc to cancel.'
+                            : 'No structures left. Buy more in the shop (E).'
+                    }
                     onClick={(e) => {
                         e.currentTarget.blur(); // so Space keeps meaning "shoot"
                         toggleBuildMode();
@@ -178,7 +173,7 @@ export function GameScreen() {
                     }}
                 >
                     {buildArmed
-                        ? 'Tap one of your tiles to build…'
+                        ? 'Pick a spot — all 7 hexes must be yours'
                         : canBuild
                           ? `Build ${STRUCTURE_NAMES[nextStructure]} (${me?.structureInventory.length})`
                           : 'Nothing to build'}

@@ -8,7 +8,7 @@ import {
     PLAYER_SPEED,
     SCREEN_Y_SCALE,
 } from '../constants';
-import { hexEdgeContact, mapPixelSize } from '../hex';
+import { mapPixelSize, structureContact } from '../hex';
 import { areAllies } from '../teams';
 
 export interface PlayerInput {
@@ -151,10 +151,10 @@ function findBlockingStructure(
     for (const structure of state.structures.values()) {
         if (areAllies(state, structure.ownerId, playerId)) continue;
 
-        const to = hexEdgeContact(toX, toY, structure.tileX, structure.tileY);
+        const to = structureContact(toX, toY, structure.tileX, structure.tileY);
         if (to.distance >= PLAYER_RADIUS) continue;
 
-        const from = hexEdgeContact(fromX, fromY, structure.tileX, structure.tileY);
+        const from = structureContact(fromX, fromY, structure.tileX, structure.tileY);
         // Tolerance: sliding along an edge keeps the distance the same up to floating-point
         // noise, and that must not count as "getting closer" or the player freezes in place.
         if (to.distance < from.distance - APPROACH_EPSILON) return { nx: from.nx, ny: from.ny };

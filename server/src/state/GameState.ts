@@ -1,6 +1,6 @@
 import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
-import { BASE_CLAIM_RADIUS } from '../constants';
-import { DEFAULT_CHARACTER } from '../types/shared';
+import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
+import { DEFAULT_CHARACTER, GUN_DAMAGE } from '../types/shared';
 
 export class Player extends Schema {
     @type('string') id: string = '';
@@ -10,7 +10,8 @@ export class Player extends Schema {
     @type('number') vx: number = 0; // px/sec — synced so clients can extrapolate smoothly between ticks
     @type('number') vy: number = 0;
     @type('number') angle: number = 0; // facing/aim direction in radians (world space)
-    @type('number') health: number = 100;
+    @type('number') health: number = BASE_MAX_HEALTH;
+    @type('number') maxHealth: number = BASE_MAX_HEALTH; // ARMOR_MAX_HEALTH with the Armor upgrade
     // Ammo, credits, gun, structure inventory and upgrades are all set from the chosen character's
     // starting kit when the match starts (CharacterSystem); these defaults only matter in the lobby.
     @type('number') ammo: number = 0;
@@ -41,6 +42,7 @@ export class Projectile extends Schema {
     @type('number') angle: number = 0;
     @type('number') speed: number = 400; // on-screen pixels/sec (see SCREEN_Y_SCALE)
     @type('number') spawnedAt: number = 0; // server timestamp ms, for lifetime expiry
+    @type('number') damage: number = GUN_DAMAGE.basic; // set from the shooter's gun when fired
 }
 
 export class Structure extends Schema {

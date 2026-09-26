@@ -14,7 +14,7 @@ const path = require('path');
 const { root, dist, colyseusClient, section, check, finish, sleep } = require('./lib');
 
 const { Client } = colyseusClient();
-const { pixelToHex } = dist('hex.js');
+const { pixelToHex, hexCenter, hexNeighbors, structureFootprint } = dist('hex.js');
 const C = dist('constants.js');
 const shared = dist('types/shared.js');
 
@@ -114,6 +114,21 @@ async function hold(room, x, y, ms) {
 async function startMatch(...rooms) {
     rooms.forEach((room) => room.send('setReady', { ready: true }));
     await waitFor(() => phaseOf(rooms[0]) === 'playing', 5000);
+}
+/** Walks the player to within a few px of a world point (stopping there). */
+async function goTo(room, target, ms = 4000) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+        const dx = target.x - me(room).x;
+        const dy = target.y - me(room).y;
+        const distance = Math.hypot(dx, dy);
+        if (distance < 8) break;
+        const scale = Math.min(1, distance / 60); // ease off so we stop on the spot
+        move(room, (dx / distance) * scale, (dy / distance) * scale);
+        await sleep(50);
+    }
+    move(room, 0, 0);
+    await sleep(250);
 }
 const hexUnder = (room) => pixelToHex(me(room).x, me(room).y);
 const drop = (room) => room.connection.transport.ws.close(4001); // an unclean close, like a network drop
@@ -250,18 +265,46 @@ async function lifecycle() {
             `score ${me(b).score}, tiles ${me(b).tilesOwned}`
         );
 
-        await hold(a, -1, 0, 600);
+        // A structure needs all 7 hexes of its footprint: walk over a hex left of the spawn (away
+        // from b's trail), then over each of its neighbors.
+        const start = hexUnder(a);
+        const spot = { col: start.col - 4, row: start.row };
+        const tryBuild = (structureType) =>
+            a.send('placeStructure', {
+                tileX: spot.col,
+                tileY: spot.row,
+                structureType,
+                seq: ++seq,
+            });
+        await goTo(a, hexCenter(spot.col, spot.row));
+        tryBuild('farm');
         await sleep(300);
-        const spot = hexUnder(a);
-        a.send('placeStructure', { tileX: spot.col, tileY: spot.row, structureType: 'fort' });
+        check(
+            "you can't build unless all 7 footprint hexes are yours",
+            a.state.structures.size === 0 && me(a).structureInventory.length === 1
+        );
+        for (const n of hexNeighbors(spot.col, spot.row)) await goTo(a, hexCenter(n.col, n.row));
         await sleep(300);
-        check('you can only build what is in your inventory', a.state.structures.size === 0);
-        a.send('placeStructure', { tileX: spot.col, tileY: spot.row, structureType: 'farm' });
+        const tiles = a.state.tiles;
+        const ownsAll = structureFootprint(spot.col, spot.row).every(
+            (h) => tiles[h.row * 64 + h.col].ownerId === a.sessionId
+        );
+        tryBuild('fort');
+        await sleep(300);
+        check(
+            'you can only build what is in your inventory',
+            ownsAll && a.state.structures.size === 0,
+            ownsAll ? '' : 'did not manage to claim the whole footprint'
+        );
+        tryBuild('farm');
         await sleep(300);
         const built = Array.from(a.state.structures.values())[0];
         check(
-            'building uses up a structure from the inventory',
-            !!built && built.type === 'farm' && me(a).structureInventory.length === 0
+            'building on a fully owned footprint uses up a structure from the inventory',
+            !!built &&
+                built.type === 'farm' &&
+                built.tileX === spot.col &&
+                me(a).structureInventory.length === 0
         );
 
         await waitFor(() => phaseOf(a) === 'results', 25000);
@@ -328,22 +371,24 @@ async function shop() {
     await withServer(0.05, async () => {
         const a = await join(new Client(URL));
         await startMatch(a);
+        // A Farmer starts with 50 credits: enough for an ammo pack, not for anything that costs 100.
         const start = me(a).credits;
-        a.send('purchase', { itemId: 'expander' });
+        for (const itemId of ['basicGun', 'expander', 'farm']) a.send('purchase', { itemId });
         await sleep(300);
         check(
-            "an item you can't afford is refused",
-            me(a).claimRadius === C.BASE_CLAIM_RADIUS && me(a).credits === start
+            "items you can't afford are refused",
+            me(a).gun === '' &&
+                me(a).claimRadius === C.BASE_CLAIM_RADIUS &&
+                me(a).structureInventory.length === 1 &&
+                me(a).credits === start
         );
-        a.send('purchase', { itemId: 'basicGun' });
+        a.send('purchase', { itemId: 'ammo' });
         await sleep(300);
         check(
-            'buying the Basic gun costs its price and arms you',
-            me(a).gun === 'basic' && me(a).credits === start - shared.SHOP_ITEMS.basicGun.cost
+            'buying ammo over the wire costs its price and adds the pack',
+            me(a).ammo === shared.AMMO_PACK_SIZE &&
+                me(a).credits === start - shared.SHOP_ITEMS.ammo.cost
         );
-        a.send('purchase', { itemId: 'basicGun' });
-        await sleep(300);
-        check('a second gun is refused', me(a).credits === start - shared.SHOP_ITEMS.basicGun.cost);
 
         const late = await join(new Client(URL));
         check(

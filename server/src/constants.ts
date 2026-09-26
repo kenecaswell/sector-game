@@ -27,7 +27,9 @@ export const MAP_EDGE_MARGIN = 20;
 export const PLAYER_RADIUS = 20; // pixels: body size, projectile hit radius, structure collision
 
 export const PROJECTILE_RADIUS = 6; // pixels, for player collision
-export const PROJECTILE_DAMAGE = 50; // players start at 100 health, so two hits kill (armor and better guns come later)
+// Damage per hit comes from the shooter's gun (GUN_DAMAGE in types/shared.ts: basic 50, big 100).
+export const BASE_MAX_HEALTH = 100; // two basic-gun hits kill
+export const ARMOR_MAX_HEALTH = 200; // with the Armor upgrade: +100%
 export const PROJECTILE_LIFETIME_MS = 2000;
 
 // Phase lengths. PHASE_TIME_SCALE (an environment variable, dev/testing only) shrinks them all so

@@ -21,7 +21,9 @@ const { EconomySystem } = dist('systems/EconomySystem.js');
 const { ShopSystem } = dist('systems/ShopSystem.js');
 const { LobbySystem } = dist('systems/LobbySystem.js');
 const { CharacterSystem } = dist('systems/CharacterSystem.js');
-const { hexCenter, pixelToHex, mapPixelSize } = dist('hex.js');
+const { hexCenter, pixelToHex, mapPixelSize, hexNeighbors, structureFootprint } = dist('hex.js');
+const H = dist('hex.js');
+const { StructureSystem } = dist('systems/StructureSystem.js');
 const C = dist('constants.js');
 const shared = dist('types/shared.js');
 
@@ -423,7 +425,7 @@ section('Teams');
         mate.health === 100 && passedThrough
     );
     fire(enemy);
-    check('an enemy still takes damage', enemy.health === 100 - C.PROJECTILE_DAMAGE);
+    check('an enemy still takes damage', enemy.health === 100 - shared.GUN_DAMAGE.basic);
 
     const mateFort = addStructure(state, 'm', 40, 40);
     const c = hexCenter(40, 40);
@@ -497,8 +499,8 @@ section('Combat and score');
     };
     shoot();
     check(
-        'one hit does PROJECTILE_DAMAGE',
-        target.health === 100 - C.PROJECTILE_DAMAGE,
+        'one basic-gun hit does GUN_DAMAGE.basic',
+        target.health === 100 - shared.GUN_DAMAGE.basic,
         `health ${target.health}`
     );
     shoot();
@@ -547,57 +549,145 @@ section('Combat and score');
 // ---------------------------------------------------------------------------------------------
 section('Shop');
 {
-    const ammo = shared.SHOP_ITEMS.ammo;
-    const expander = shared.SHOP_ITEMS.expander;
-    const gun = shared.SHOP_ITEMS.basicGun;
+    const I = shared.SHOP_ITEMS;
+    const buyer = (credits = 10000) => {
+        const p = new Player();
+        p.credits = credits;
+        return p;
+    };
     const p = new Player();
     check(
-        'before their kit is applied, players have no credits, ammo or gun and the base radius',
-        p.credits === 0 && p.ammo === 0 && p.gun === '' && p.claimRadius === C.BASE_CLAIM_RADIUS
+        'before their kit is applied, players have no credits, ammo or gun, 100 health, base radius',
+        p.credits === 0 &&
+            p.ammo === 0 &&
+            p.gun === '' &&
+            p.health === 100 &&
+            p.maxHealth === 100 &&
+            p.claimRadius === C.BASE_CLAIM_RADIUS
     );
-    p.credits = 100;
     check(
-        'an ammo pack costs AMMO_PACK_SIZE x AMMO_CREDITS_PER_SHOT credits',
-        ammo.cost === shared.AMMO_PACK_SIZE * shared.AMMO_CREDITS_PER_SHOT,
-        `${ammo.cost}`
+        'prices: guns 100/200, upgrades and structures 100, ammo 1 per shot',
+        I.basicGun.cost === 100 &&
+            I.bigGun.cost === 200 &&
+            ['boost', 'armor', 'expander', 'farm', 'mine', 'fort', 'power'].every(
+                (id) => I[id].cost === 100
+            ) &&
+            I.ammo.cost === shared.AMMO_PACK_SIZE * shared.AMMO_CREDITS_PER_SHOT
     );
-    const ok = ShopSystem.purchase(p, 'ammo');
-    check(
-        'buying ammo deducts the cost and adds a pack',
-        ok && p.credits === 100 - ammo.cost && p.ammo === shared.AMMO_PACK_SIZE
-    );
-    p.credits = gun.cost;
-    check(
-        'the Basic gun arms the player',
-        ShopSystem.purchase(p, 'basicGun') && p.gun === 'basic' && p.credits === 0
-    );
-    p.credits = 1000;
-    check(
-        'only one gun per player',
-        ShopSystem.purchase(p, 'basicGun') === false && p.credits === 1000
-    );
-    p.credits = ammo.cost - 1;
-    check(
-        'cannot buy without enough credits',
-        ShopSystem.purchase(p, 'ammo') === false && p.credits === ammo.cost - 1
-    );
-    p.credits = expander.cost;
-    check(
-        'the Expander sets the claim radius to EXPANDER_CLAIM_RADIUS',
-        ShopSystem.purchase(p, 'expander') &&
-            p.claimRadius === C.EXPANDER_CLAIM_RADIUS &&
-            p.credits === 0
-    );
-    p.credits = 1000;
-    check(
-        'only one Expander per player',
-        ShopSystem.purchase(p, 'expander') === false && p.credits === 1000
-    );
-    const junk = ['gun', '', null, undefined, 42, {}, '__proto__', 'toString', 'constructor'];
-    check(
-        'junk item ids are rejected and cost nothing',
-        junk.every((id) => ShopSystem.purchase(p, id) === false) && p.credits === 1000
-    );
+    {
+        const b = buyer(I.ammo.cost - 1);
+        check(
+            'cannot buy without enough credits',
+            ShopSystem.purchase(b, 'ammo') === false && b.credits === I.ammo.cost - 1
+        );
+        b.credits = 1000;
+        check(
+            'ammo adds a pack (even without a gun) and can be bought again',
+            ShopSystem.purchase(b, 'ammo') &&
+                ShopSystem.purchase(b, 'ammo') &&
+                b.ammo === 2 * shared.AMMO_PACK_SIZE &&
+                b.credits === 1000 - 2 * I.ammo.cost
+        );
+    }
+    {
+        const b = buyer(1000);
+        check('the basic gun arms you', ShopSystem.purchase(b, 'basicGun') && b.gun === 'basic');
+        check('...only once', !ShopSystem.purchase(b, 'basicGun') && b.credits === 900);
+        check(
+            'the big gun replaces it',
+            ShopSystem.purchase(b, 'bigGun') && b.gun === 'big' && b.credits === 700
+        );
+        check(
+            "...and you can't go back to the basic gun or buy the big one twice",
+            !ShopSystem.purchase(b, 'basicGun') &&
+                !ShopSystem.purchase(b, 'bigGun') &&
+                b.credits === 700
+        );
+        const c = buyer(1000);
+        check(
+            'the big gun can be bought without the basic one first',
+            ShopSystem.purchase(c, 'bigGun') && c.gun === 'big'
+        );
+    }
+    {
+        const b = buyer(1000);
+        b.health = 40; // hurt
+        check(
+            'armor doubles max health and adds the extra 100 right away',
+            ShopSystem.purchase(b, 'armor') && b.maxHealth === 200 && b.health === 140
+        );
+        check(
+            'boost is an upgrade you keep',
+            ShopSystem.purchase(b, 'boost') && b.upgrades.includes('boost')
+        );
+        check(
+            'the Expander sets the claim radius to EXPANDER_CLAIM_RADIUS',
+            ShopSystem.purchase(b, 'expander') && b.claimRadius === C.EXPANDER_CLAIM_RADIUS
+        );
+        const credits = b.credits;
+        check(
+            'every upgrade is one per player',
+            ['armor', 'boost', 'expander'].every((id) => !ShopSystem.purchase(b, id)) &&
+                b.credits === credits
+        );
+        const robot = buyer(1000);
+        robot.character = 'robot';
+        CharacterSystem.apply(robot);
+        robot.credits = 1000;
+        check("a Robot can't buy the boost it starts with", !ShopSystem.purchase(robot, 'boost'));
+    }
+    {
+        const b = buyer(1000);
+        const ok = ['farm', 'farm', 'mine', 'fort', 'power'].every((id) =>
+            ShopSystem.purchase(b, id)
+        );
+        check(
+            'structures add to the inventory, as many as you can pay for',
+            ok && b.structureInventory.join() === 'farm,farm,mine,fort,power' && b.credits === 500
+        );
+    }
+    {
+        const b = buyer(1000);
+        const junk = ['gun', '', null, undefined, 42, {}, '__proto__', 'toString', 'constructor'];
+        check(
+            'junk item ids are rejected and cost nothing',
+            junk.every((id) => ShopSystem.purchase(b, id) === false) && b.credits === 1000
+        );
+    }
+    {
+        const state = world();
+        const shooter = addPlayer(state, 'a', 100, 100);
+        const target = addPlayer(state, 't', 1500, 1500);
+        const shot = new Projectile();
+        shot.id = 'big';
+        shot.ownerId = 'a';
+        shot.x = target.x - 1;
+        shot.y = target.y;
+        shot.damage = shared.GUN_DAMAGE.big;
+        shot.spawnedAt = Date.now();
+        state.projectiles.set(shot.id, shot);
+        CombatSystem.update(state, DT, () => {});
+        check(
+            'a big-gun hit (100) kills an unarmored player outright; they respawn at full health',
+            shooter.kills === 1 && target.health === 100
+        );
+        target.upgrades.push('armor');
+        CharacterSystem.applyUpgradeEffects(target);
+        target.health = target.maxHealth;
+        const again = new Projectile();
+        again.id = 'big2';
+        again.ownerId = 'a';
+        again.x = target.x - 1;
+        again.y = target.y;
+        again.damage = shared.GUN_DAMAGE.big;
+        again.spawnedAt = Date.now();
+        state.projectiles.set(again.id, again);
+        CombatSystem.update(state, DT, () => {});
+        check(
+            '...but an armored one survives it with 100 left',
+            target.health === 100 && shooter.kills === 1
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -705,6 +795,214 @@ section('Claiming');
 }
 
 // ---------------------------------------------------------------------------------------------
+section('Structures (7-hex footprint)');
+{
+    const R = C.HEX_SIZE;
+    let badNeighbors = 0;
+    for (const [col, row] of [
+        [10, 10],
+        [11, 10],
+        [0, 0],
+        [63, 63],
+    ]) {
+        const c = hexCenter(col, row);
+        const ns = hexNeighbors(col, row);
+        const unique = new Set(ns.map((n) => `${n.col},${n.row}`)).size === 6;
+        const adjacent = ns.every((n) => {
+            const d = hexCenter(n.col, n.row);
+            return Math.abs(Math.hypot(d.x - c.x, d.y - c.y) - Math.sqrt(3) * R) < 1e-6;
+        });
+        if (!unique || !adjacent) badNeighbors++;
+    }
+    check('hexNeighbors gives the 6 adjacent hexes (even and odd columns)', badNeighbors === 0);
+
+    const corners = H.STRUCTURE_CORNER_OFFSETS;
+    let area = 0;
+    for (let i = 0; i < 6; i++) {
+        const a = corners[i];
+        const b = corners[(i + 1) % 6];
+        area += a.x * b.y - b.x * a.y;
+    }
+    area = Math.abs(area) / 2;
+    const hexArea = ((3 * Math.sqrt(3)) / 2) * R * R;
+    check(
+        'the structure hexagon is flat-topped with twice a hex radius (the area of 4 hexes)',
+        Math.abs(area - 4 * hexArea) < 1e-6 &&
+            Math.abs(corners[0].x - 2 * R) < 1e-9 &&
+            Math.abs(corners[0].y) < 1e-9,
+        `${(area / hexArea).toFixed(4)} hexes`
+    );
+    // Each corner is a vertex of the grid: a corner of some hex in the footprint.
+    const center = hexCenter(20, 20);
+    const gridVertex = (p) =>
+        structureFootprint(20, 20).some((h) => {
+            const hc = hexCenter(h.col, h.row);
+            return [0, 1, 2, 3, 4, 5].some((k) => {
+                const a = (k * Math.PI) / 3;
+                return (
+                    Math.hypot(hc.x + R * Math.cos(a) - p.x, hc.y + R * Math.sin(a) - p.y) < 1e-6
+                );
+            });
+        });
+    check(
+        "its corners are grid vertices (corners of the footprint's outer hexes)",
+        corners.every((c) => gridVertex({ x: center.x + c.x, y: center.y + c.y }))
+    );
+
+    // Two structures whose footprints don't share a hex never overlap (separating-axis test).
+    const poly = (col, row) => {
+        const c = hexCenter(col, row);
+        return corners.map((o) => ({ x: c.x + o.x, y: c.y + o.y }));
+    };
+    const overlapDepth = (p, q) => {
+        let min = Infinity;
+        for (const shape of [p, q]) {
+            for (let i = 0; i < 6; i++) {
+                const a = shape[i];
+                const b = shape[(i + 1) % 6];
+                const nx = b.y - a.y;
+                const ny = a.x - b.x;
+                const len = Math.hypot(nx, ny);
+                const proj = (pts) => pts.map((v) => (v.x * nx + v.y * ny) / len);
+                const pp = proj(p);
+                const qq = proj(q);
+                const depth = Math.min(
+                    Math.max(...pp) - Math.min(...qq),
+                    Math.max(...qq) - Math.min(...pp)
+                );
+                min = Math.min(min, depth);
+            }
+        }
+        return min; // <= 0: separated or touching
+    };
+    // The hexagon stays inside its own footprint (sampled on a fine grid, a hair inside the edge),
+    // so structures with separate footprints can never overlap.
+    let outside = 0;
+    for (let u = -1; u <= 1; u += 0.02) {
+        for (let v = -1; v <= 1; v += 0.02) {
+            const p = {
+                x: center.x + u * 2 * R * 0.999,
+                y: center.y + v * Math.sqrt(3) * R * 0.999,
+            };
+            const inHexagon = corners.every((a, i) => {
+                const b = corners[(i + 1) % 6];
+                return (
+                    (b.x - a.x) * (p.y - center.y - a.y) - (b.y - a.y) * (p.x - center.x - a.x) >= 0
+                );
+            });
+            if (!inHexagon) continue;
+            const h = pixelToHex(p.x, p.y);
+            if (!structureFootprint(20, 20).some((f) => f.col === h.col && f.row === h.row))
+                outside++;
+        }
+    }
+    check(
+        'the hexagon lies entirely inside its 7-hex footprint',
+        outside === 0,
+        `${outside} points outside`
+    );
+    let pairs = 0;
+    let worst = -Infinity;
+    for (const [col, row] of [
+        [20, 20],
+        [21, 20],
+    ]) {
+        const base = new Set(structureFootprint(col, row).map((h) => `${h.col},${h.row}`));
+        for (let c = col - 5; c <= col + 5; c++) {
+            for (let r = row - 5; r <= row + 5; r++) {
+                if (structureFootprint(c, r).some((h) => base.has(`${h.col},${h.row}`))) continue;
+                pairs++;
+                worst = Math.max(worst, overlapDepth(poly(col, row), poly(c, r)));
+            }
+        }
+    }
+    check(
+        `structures with separate footprints never overlap (${pairs} placements)`,
+        worst < 1e-6,
+        `deepest overlap ${worst.toFixed(3)}px`
+    );
+}
+{
+    const own = (state, id, col, row) => {
+        for (const h of structureFootprint(col, row)) state.tiles[h.row * 64 + h.col].ownerId = id;
+    };
+    const state = world();
+    own(state, 'a', 20, 20);
+    check(
+        'you can build when all 7 footprint hexes are yours',
+        StructureSystem.canPlace(state, 'a', 20, 20)
+    );
+    check('...but not someone else', !StructureSystem.canPlace(state, 'b', 20, 20));
+    state.tiles[hexNeighbors(20, 20)[3].row * 64 + hexNeighbors(20, 20)[3].col].ownerId = 'b';
+    check('one footprint hex not yours: refused', !StructureSystem.canPlace(state, 'a', 20, 20));
+    const edge = world();
+    own(edge, 'a', 0, 10);
+    for (let r = 0; r < 64; r++) edge.tiles[r * 64].ownerId = 'a';
+    check(
+        'the map edge (a footprint hex off the map) is refused',
+        !StructureSystem.canPlace(edge, 'a', 0, 10) &&
+            !StructureSystem.canPlace(edge, 'a', 5, 0) &&
+            !StructureSystem.canPlace(edge, 'a', 63, 30)
+    );
+    const packed = world();
+    own(packed, 'a', 20, 20);
+    own(packed, 'a', 22, 20);
+    addStructure(packed, 'a', 20, 20);
+    check(
+        "footprints can't overlap another structure's",
+        !StructureSystem.canPlace(packed, 'a', 22, 20) &&
+            !StructureSystem.canPlace(packed, 'a', 20, 20)
+    );
+    own(packed, 'a', 23, 21);
+    const apart = !structureFootprint(23, 21).some((h) =>
+        structureFootprint(20, 20).some((g) => g.col === h.col && g.row === h.row)
+    );
+    check(
+        '...but can sit right next to it',
+        apart && StructureSystem.canPlace(packed, 'a', 23, 21)
+    );
+}
+{
+    const state = world();
+    const foe = addPlayer(state, 'f');
+    for (const h of structureFootprint(30, 30)) state.tiles[h.row * 64 + h.col].ownerId = 'o';
+    addPlayer(state, 'o', 0, 0);
+    addStructure(state, 'o', 30, 30);
+    let claimedAny = false;
+    for (const h of structureFootprint(30, 30)) {
+        const c = hexCenter(h.col, h.row);
+        foe.x = c.x;
+        foe.y = c.y;
+        foe.claimRadius = C.EXPANDER_CLAIM_RADIUS;
+        const events = [];
+        CollisionSystem.claimTiles(state, foe, events);
+        if (
+            events.some((t) =>
+                structureFootprint(30, 30).some((g) => g.col === t.x && g.row === t.y)
+            )
+        )
+            claimedAny = true;
+    }
+    check('all 7 footprint hexes are protected from enemy claiming', !claimedAny);
+
+    const s = [...state.structures.values()][0];
+    const c = hexCenter(30, 30);
+    const inner = H.STRUCTURE_CORNER_OFFSETS.map((o) => ({
+        x: c.x + o.x * 0.95,
+        y: c.y + o.y * 0.95,
+    }));
+    const outer = H.STRUCTURE_CORNER_OFFSETS.map((o) => ({
+        x: c.x + o.x * 1.05,
+        y: c.y + o.y * 1.05,
+    }));
+    check(
+        'shots hit anywhere inside the hexagon and nowhere outside it',
+        inner.every((p) => CollisionSystem.checkProjectileStructureCollision(p, s)) &&
+            outer.every((p) => !CollisionSystem.checkProjectileStructureCollision(p, s))
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
 section('Shared types');
 {
     // types/shared.ts is hand-copied to the client; everything after the header comment must match.
@@ -715,6 +1013,18 @@ section('Shared types');
     check(
         'server and client types/shared.ts are identical (apart from the header comment)',
         body('server/src/types/shared.ts') === body('client/src/types/shared.ts')
+    );
+    // The hand-copied part of hex.ts: everything from the first export down to where each side's
+    // own code begins (server-only collisions / client-only projection).
+    const hexShared = (file, end) => {
+        const text = fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+        const shared = text.slice(text.indexOf('export const HEX_HEIGHT'), text.indexOf(end));
+        return shared.replace(/\/\/ -+\n$/, ''); // drop the separator line above the marker
+    };
+    check(
+        'server and client hex.ts share identical grid and structure math',
+        hexShared('server/src/hex.ts', '// Server-only') ===
+            hexShared('client/src/game/hex.ts', '// Isometric projection')
     );
 }
 

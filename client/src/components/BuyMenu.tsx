@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ShopItemId } from '../types/shared';
-import { SHOP_ITEMS } from '../types/shared';
-
-// Ideas that aren't buyable yet. Shown so the menu communicates what's coming; replace an entry
-// with a real item in SHOP_ITEMS (types/shared.ts, mirrored on the server) when it's built.
-const COMING_SOON = [
-    { name: 'Better gun', description: 'More damage, faster fire rate' },
-    { name: 'Armor', description: 'Take less damage from hits' },
-    { name: 'Structures', description: 'More farms, mines, forts and power plants' },
-];
+import type { PlayerState } from '../types/gameState';
+import type { GunId, ShopCategory, ShopItemId } from '../types/shared';
+import {
+    GUN_NAMES,
+    SHOP_CATEGORY_NAMES,
+    SHOP_ITEMS,
+    SHOP_ITEM_IDS,
+    ownsShopItem,
+} from '../types/shared';
 
 // Button looks live in real CSS because inline styles can't express :hover / :active. The class
 // names are prefixed so they can't collide with anything else on the page.
@@ -48,20 +47,20 @@ const BUTTON_CSS = `
 const BOUGHT_FLASH_MS = 700;
 
 interface BuyMenuProps {
-    credits: number;
-    ammo: number;
-    hasExpander: boolean;
-    hasGun: boolean;
+    player: PlayerState | undefined;
     onBuy: (itemId: ShopItemId) => void;
     onClose: () => void;
 }
 
 /**
- * Shop popup over the game canvas; GameScreen lets players toggle it during the match. Clicking the dimmed backdrop, the close button, or
- * pressing Esc closes it. The server validates every purchase; the buttons just avoid offering
- * ones that would be rejected (not enough credits, or an upgrade you already own).
+ * Shop popup over the game canvas; GameScreen lets players toggle it during the match (E). Items
+ * are grouped by category, straight from the shared SHOP_ITEMS catalog. Clicking the dimmed
+ * backdrop, the close button, or pressing Esc closes it. The server validates every purchase; the
+ * buttons just avoid offering ones that would be rejected (not enough credits, or `ownsShopItem`:
+ * an upgrade you already have or a gun that isn't better than yours).
  */
-export function BuyMenu({ credits, ammo, hasExpander, hasGun, onBuy, onClose }: BuyMenuProps) {
+export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
+    const credits = player?.credits ?? 0;
     // Which item's button is showing its "bought" confirmation right now. It's shown when the
     // button is pressed (the server accepts any purchase the button allowed, barring a race).
     const [boughtId, setBoughtId] = useState<ShopItemId | null>(null);
@@ -77,7 +76,7 @@ export function BuyMenu({ credits, ammo, hasExpander, hasGun, onBuy, onClose }: 
 
     const buttonFor = (itemId: ShopItemId) => {
         const item = SHOP_ITEMS[itemId];
-        const owned = (itemId === 'expander' && hasExpander) || (itemId === 'basicGun' && hasGun);
+        const owned = !!player && ownsShopItem(player, itemId);
         const affordable = credits >= item.cost;
         const bought = boughtId === itemId;
         const label = bought ? '✓' : owned ? 'Owned' : `${item.cost} cr`;
@@ -163,50 +162,53 @@ export function BuyMenu({ credits, ammo, hasExpander, hasGun, onBuy, onClose }: 
                     }}
                 >
                     <span style={{ color: '#f1c40f' }}>Credits: {credits}</span>
-                    <span>Ammo: {ammo}</span>
-                    <span>{hasGun ? 'Armed' : 'No gun'}</span>
+                    <span>Ammo: {player?.ammo ?? 0}</span>
+                    <span>{GUN_NAMES[player?.gun as GunId] ?? 'No gun'}</span>
                 </div>
 
                 <div style={{ marginBottom: 10, opacity: 0.8 }}>
                     Shopping is on your own time — the game keeps running.
                 </div>
 
-                {(Object.keys(SHOP_ITEMS) as ShopItemId[]).map((itemId) => {
-                    const item = SHOP_ITEMS[itemId];
-                    return (
+                {(Object.keys(SHOP_CATEGORY_NAMES) as ShopCategory[]).map((category) => (
+                    <section key={category} aria-label={SHOP_CATEGORY_NAMES[category]}>
                         <div
-                            key={itemId}
                             style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 8,
-                                padding: '8px 0',
-                                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                fontSize: 12,
+                                letterSpacing: 1,
+                                opacity: 0.6,
+                                margin: '12px 0 2px',
+                                textTransform: 'uppercase',
                             }}
                         >
-                            <div>
-                                <div style={{ fontWeight: 'bold' }}>{item.name}</div>
-                                <div style={{ fontSize: 12, opacity: 0.7 }}>{item.description}</div>
-                            </div>
-                            {buttonFor(itemId)}
+                            {SHOP_CATEGORY_NAMES[category]}
                         </div>
-                    );
-                })}
-
-                <div style={{ fontSize: 12, opacity: 0.7, margin: '12px 0 4px' }}>COMING SOON</div>
-                {COMING_SOON.map((entry) => (
-                    <div
-                        key={entry.name}
-                        style={{
-                            padding: '6px 0',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                            opacity: 0.5,
-                        }}
-                    >
-                        <div style={{ fontWeight: 'bold' }}>{entry.name}</div>
-                        <div style={{ fontSize: 12 }}>{entry.description}</div>
-                    </div>
+                        {SHOP_ITEM_IDS.filter((id) => SHOP_ITEMS[id].category === category).map(
+                            (itemId) => (
+                                <div
+                                    key={itemId}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 8,
+                                        padding: '8px 0',
+                                        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                                    }}
+                                >
+                                    <div>
+                                        <div style={{ fontWeight: 'bold' }}>
+                                            {SHOP_ITEMS[itemId].name}
+                                        </div>
+                                        <div style={{ fontSize: 12, opacity: 0.7 }}>
+                                            {SHOP_ITEMS[itemId].description}
+                                        </div>
+                                    </div>
+                                    {buttonFor(itemId)}
+                                </div>
+                            )
+                        )}
+                    </section>
                 ))}
             </div>
         </div>

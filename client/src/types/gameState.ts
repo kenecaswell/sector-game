@@ -18,6 +18,7 @@ export interface PlayerState {
     vy: number;
     angle: number;
     health: number;
+    maxHealth: number; // 200 with the Armor upgrade
     ammo: number;
     tilesOwned: number;
     kills: number;
@@ -46,6 +47,7 @@ export interface ProjectileState {
     angle: number;
     speed: number;
     spawnedAt: number;
+    damage: number; // from the shooter's gun
 }
 
 export interface StructureState {

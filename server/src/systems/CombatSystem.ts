@@ -1,7 +1,7 @@
 import type { GameState, Player } from '../state/GameState';
 import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
-import { PROJECTILE_LIFETIME_MS, PROJECTILE_DAMAGE, SCREEN_Y_SCALE } from '../constants';
+import { PROJECTILE_LIFETIME_MS, SCREEN_Y_SCALE } from '../constants';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
@@ -11,7 +11,7 @@ function respawnPlayer(state: GameState, player: Player): void {
     // Territory-claiming game, not a deathmatch — a defeated player respawns
     // at the map center with full health rather than being eliminated.
     // Kills and tilesOwned are untouched.
-    player.health = 100;
+    player.health = player.maxHealth;
     const { width, height } = mapPixelSize(state.mapWidth, state.mapHeight);
     player.x = width / 2;
     player.y = height / 2;
@@ -49,10 +49,10 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
             if (!CollisionSystem.checkProjectilePlayerCollision(proj, player, prev)) return;
 
             toRemove.add(id);
-            player.health = Math.max(0, player.health - PROJECTILE_DAMAGE);
+            player.health = Math.max(0, player.health - proj.damage);
             broadcast('playerHit', {
                 targetId: player.id,
-                damage: PROJECTILE_DAMAGE,
+                damage: proj.damage,
                 shooterId: proj.ownerId,
             } satisfies PlayerHitEvent);
 
@@ -68,7 +68,7 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
             if (!CollisionSystem.checkProjectileStructureCollision(proj, structure)) return;
 
             toRemove.add(id);
-            StructureSystem.applyDamage(state, structure.id, PROJECTILE_DAMAGE, broadcast);
+            StructureSystem.applyDamage(state, structure.id, proj.damage, broadcast);
         });
 
         const outOfBounds = proj.x < 0 || proj.y < 0 || proj.x > width || proj.y > height;

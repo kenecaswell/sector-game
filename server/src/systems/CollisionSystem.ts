@@ -1,6 +1,13 @@
 import type { GameState } from '../state/GameState';
 import { HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
-import { hexCenter, hexIndex, isValidHex, pixelToHex } from '../hex';
+import {
+    hexCenter,
+    hexIndex,
+    inStructureFootprint,
+    isValidHex,
+    pixelToHex,
+    structureContact,
+} from '../hex';
 import type { Broadcast } from './Broadcast';
 import type { TilesClaimedEvent } from '../types/shared';
 import { areAllies } from '../teams';
@@ -31,20 +38,19 @@ function checkProjectilePlayerCollision(
     return Math.sqrt(dx * dx + dy * dy) < PROJECTILE_RADIUS + PLAYER_RADIUS;
 }
 
-// A structure fills its whole hex, so a projectile hits it exactly when the
-// projectile is inside that hex.
+// A projectile hits a structure when it's inside the structure's hexagon (see hex.ts). Shots
+// move at most ~33px a tick and the hexagon is ~150px across, so testing the end point is enough.
 function checkProjectileStructureCollision(
     proj: { x: number; y: number },
     structure: { tileX: number; tileY: number }
 ): boolean {
-    const { col, row } = pixelToHex(proj.x, proj.y);
-    return col === structure.tileX && row === structure.tileY;
+    return structureContact(proj.x, proj.y, structure.tileX, structure.tileY).distance <= 0;
 }
 
 /**
  * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
- * their `claimRadius` (the Expander upgrade doubles it). A hex holding an enemy's structure can't
- * be claimed — the structure protects its tile — and a teammate's hex is left alone.
+ * their `claimRadius` (the Expander upgrade doubles it). A hex in an enemy structure's footprint
+ * can't be claimed — the structure protects its tile — and a teammate's hex is left alone.
  */
 function claimTiles(
     state: GameState,
@@ -85,10 +91,10 @@ function claimTiles(
     }
 }
 
-/** True if a structure owned by an enemy of `playerId` stands on this hex. */
+/** True if this hex is part of the footprint of a structure owned by an enemy of `playerId`. */
 function isProtectedFrom(state: GameState, col: number, row: number, playerId: string): boolean {
     for (const structure of state.structures.values()) {
-        if (structure.tileX === col && structure.tileY === row)
+        if (inStructureFootprint(col, row, structure.tileX, structure.tileY))
             return !areAllies(state, structure.ownerId, playerId);
     }
     return false;

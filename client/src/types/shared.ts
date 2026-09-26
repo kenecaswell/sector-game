@@ -138,51 +138,6 @@ export interface GameOverEvent {
     scores: FinalScore[];
 }
 
-// --- Shop --------------------------------------------------------------------------------------
-// The catalog is shared so the server (validation) and client (menu) always agree on prices.
-// Keep this block identical in server/src/types/shared.ts and client/src/types/shared.ts.
-export type ShopItemId = 'ammo' | 'basicGun' | 'expander';
-
-export interface ShopItem {
-    id: ShopItemId;
-    name: string;
-    description: string;
-    cost: number; // credits
-}
-
-export const AMMO_PACK_SIZE = 30; // shots per purchase
-export const AMMO_CREDITS_PER_SHOT = 1;
-
-export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
-    ammo: {
-        id: 'ammo',
-        name: 'Ammo pack',
-        description: `${AMMO_PACK_SIZE} shots (${AMMO_CREDITS_PER_SHOT} credit per shot)`,
-        cost: AMMO_PACK_SIZE * AMMO_CREDITS_PER_SHOT,
-    },
-    basicGun: {
-        id: 'basicGun',
-        name: 'Basic gun',
-        description: 'Lets you shoot (you still need ammo). One per player.',
-        cost: 40,
-    },
-    expander: {
-        id: 'expander',
-        name: 'Expander',
-        description: 'Claim hexes in a much larger radius. One per player.',
-        cost: 100,
-    },
-};
-
-export function isShopItemId(value: unknown): value is ShopItemId {
-    return typeof value === 'string' && Object.hasOwn(SHOP_ITEMS, value);
-}
-
-// Client -> Server: buy an item (allowed during the `playing` phase only).
-export interface PurchaseMessage {
-    itemId: ShopItemId;
-}
-
 // --- Teams -------------------------------------------------------------------------------------
 // A team is a color: players who pick the same one are allies (no friendly fire, they can walk
 // through each other's structures and don't take each other's tiles). Tiles, credits and score
@@ -216,8 +171,8 @@ export function isTeamId(value: unknown): value is TeamId {
 // Picked in the lobby; the server applies the starting kit when the match starts. Structure types
 // all behave the same for now. Keep this block identical on both sides too.
 export type StructureType = 'farm' | 'mine' | 'fort' | 'power';
-export type GunId = 'basic';
-export type UpgradeId = 'boost';
+export type GunId = 'basic' | 'big';
+export type UpgradeId = 'boost' | 'armor' | 'expander';
 export type CharacterId = 'farmer' | 'miner' | 'builder' | 'robot' | 'scientist' | 'smuggler';
 
 export interface Character {
@@ -238,9 +193,24 @@ export const STRUCTURE_NAMES: Record<StructureType, string> = {
     power: 'Power plant',
 };
 
-export const GUN_NAMES: Record<GunId, string> = { basic: 'Basic gun' };
+export const GUN_NAMES: Record<GunId, string> = { basic: 'Basic gun', big: 'Big gun' };
 
-export const UPGRADE_NAMES: Record<UpgradeId, string> = { boost: 'Speed boost' };
+// Damage per hit. Players have 100 health (200 with armor).
+export const GUN_DAMAGE: Record<GunId, number> = { basic: 50, big: 100 };
+
+export function isGunId(value: unknown): value is GunId {
+    return typeof value === 'string' && Object.hasOwn(GUN_NAMES, value);
+}
+
+export const UPGRADE_NAMES: Record<UpgradeId, string> = {
+    boost: 'Speed boost',
+    armor: 'Armor',
+    expander: 'Expander',
+};
+
+export function isUpgradeId(value: unknown): value is UpgradeId {
+    return typeof value === 'string' && Object.hasOwn(UPGRADE_NAMES, value);
+}
 
 export const DEFAULT_CHARACTER: CharacterId = 'farmer';
 
@@ -315,4 +285,137 @@ export function isCharacterId(value: unknown): value is CharacterId {
 
 export function isStructureType(value: unknown): value is StructureType {
     return typeof value === 'string' && Object.hasOwn(STRUCTURE_NAMES, value);
+}
+
+// --- Shop --------------------------------------------------------------------------------------
+// The catalog is shared so the server (validation) and client (menu) always agree on prices and
+// on what you already own. Each item says what it gives; ShopSystem applies it. Keep this block
+// identical in server/src/types/shared.ts and client/src/types/shared.ts.
+export type ShopItemId =
+    | 'basicGun'
+    | 'bigGun'
+    | 'ammo'
+    | 'boost'
+    | 'armor'
+    | 'expander'
+    | 'farm'
+    | 'mine'
+    | 'fort'
+    | 'power';
+
+export type ShopCategory = 'weapons' | 'upgrades' | 'structures';
+
+export const SHOP_CATEGORY_NAMES: Record<ShopCategory, string> = {
+    weapons: 'Weapons',
+    upgrades: 'Upgrades',
+    structures: 'Structures',
+};
+
+export interface ShopItem {
+    id: ShopItemId;
+    category: ShopCategory;
+    name: string;
+    description: string;
+    cost: number; // credits
+    // What buying it gives you (exactly one of these):
+    gun?: GunId; // replaces your gun
+    ammo?: number; // adds shots
+    upgrade?: UpgradeId; // one per player
+    structure?: StructureType; // adds one to your structure inventory (buy as many as you like)
+}
+
+export const AMMO_PACK_SIZE = 30; // shots per purchase
+export const AMMO_CREDITS_PER_SHOT = 1;
+export const STRUCTURE_COST = 100;
+
+const structureItem = (id: StructureType): ShopItem => ({
+    id,
+    category: 'structures',
+    name: STRUCTURE_NAMES[id],
+    description: 'One more to build. Needs 7 hexes of your own.',
+    cost: STRUCTURE_COST,
+    structure: id,
+});
+
+export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
+    basicGun: {
+        id: 'basicGun',
+        category: 'weapons',
+        name: GUN_NAMES.basic,
+        description: `Lets you shoot (you still need ammo). ${GUN_DAMAGE.basic} damage per hit.`,
+        cost: 100,
+        gun: 'basic',
+    },
+    bigGun: {
+        id: 'bigGun',
+        category: 'weapons',
+        name: GUN_NAMES.big,
+        description: `${GUN_DAMAGE.big} damage per hit (double). Replaces the basic gun.`,
+        cost: 200,
+        gun: 'big',
+    },
+    ammo: {
+        id: 'ammo',
+        category: 'weapons',
+        name: 'Ammo pack',
+        description: `${AMMO_PACK_SIZE} shots (${AMMO_CREDITS_PER_SHOT} credit per shot)`,
+        cost: AMMO_PACK_SIZE * AMMO_CREDITS_PER_SHOT,
+        ammo: AMMO_PACK_SIZE,
+    },
+    boost: {
+        id: 'boost',
+        category: 'upgrades',
+        name: UPGRADE_NAMES.boost,
+        description: 'Move 25% faster.',
+        cost: 100,
+        upgrade: 'boost',
+    },
+    armor: {
+        id: 'armor',
+        category: 'upgrades',
+        name: UPGRADE_NAMES.armor,
+        description: 'Double your health (200 instead of 100).',
+        cost: 100,
+        upgrade: 'armor',
+    },
+    expander: {
+        id: 'expander',
+        category: 'upgrades',
+        name: UPGRADE_NAMES.expander,
+        description: 'Claim hexes in a much larger radius.',
+        cost: 100,
+        upgrade: 'expander',
+    },
+    farm: structureItem('farm'),
+    mine: structureItem('mine'),
+    fort: structureItem('fort'),
+    power: structureItem('power'),
+};
+
+export const SHOP_ITEM_IDS = Object.keys(SHOP_ITEMS) as ShopItemId[];
+
+export function isShopItemId(value: unknown): value is ShopItemId {
+    return typeof value === 'string' && Object.hasOwn(SHOP_ITEMS, value);
+}
+
+/**
+ * True if buying `itemId` would get the player nothing: an upgrade they already have, or a gun
+ * that isn't better than theirs (the basic gun once you have any gun, the big gun once you have
+ * it). Ammo and structures can always be bought again. The server refuses these purchases; the
+ * menu shows them as owned.
+ */
+export function ownsShopItem(
+    player: { gun: string; upgrades: { includes(value: string): boolean } },
+    itemId: ShopItemId
+): boolean {
+    const item = SHOP_ITEMS[itemId];
+    if (item.upgrade) return player.upgrades.includes(item.upgrade);
+    if (item.gun === 'basic') return player.gun !== '';
+    if (item.gun === 'big') return player.gun === 'big';
+    return false;
+}
+
+// Client -> Server: buy an item (allowed during the `playing` phase only).
+export interface PurchaseMessage {
+    itemId: ShopItemId;
 }

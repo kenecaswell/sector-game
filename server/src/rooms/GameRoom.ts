@@ -9,7 +9,8 @@ import { ScoreSystem } from '../systems/ScoreSystem';
 import { ShopSystem } from '../systems/ShopSystem';
 import { LobbySystem } from '../systems/LobbySystem';
 import { CharacterSystem } from '../systems/CharacterSystem';
-import { hexIndex, isValidHex, mapPixelSize } from '../hex';
+import { StructureSystem } from '../systems/StructureSystem';
+import { mapPixelSize } from '../hex';
 import type { Broadcast } from '../systems/Broadcast';
 import {
     TICK_RATE,
@@ -32,7 +33,7 @@ import type {
     SetNameMessage,
     JoinOptions,
 } from '../types/shared';
-import { isStructureType } from '../types/shared';
+import { GUN_DAMAGE, isGunId, isStructureType } from '../types/shared';
 
 export class GameRoom extends Room<GameState> {
     maxClients = 10;
@@ -232,6 +233,7 @@ export class GameRoom extends Room<GameState> {
         projectile.y = player.y;
         projectile.angle = msg.angle;
         projectile.spawnedAt = Date.now();
+        projectile.damage = GUN_DAMAGE[isGunId(player.gun) ? player.gun : 'basic'];
 
         this.state.projectiles.set(projectile.id, projectile);
     }
@@ -245,16 +247,8 @@ export class GameRoom extends Room<GameState> {
         const slot = player.structureInventory.indexOf(msg.structureType);
         if (slot === -1) return;
 
-        // Validate first — an out-of-range column would otherwise wrap onto another row.
-        if (!isValidHex(msg.tileX, msg.tileY, this.state.mapWidth, this.state.mapHeight)) return;
-        const tile = this.state.tiles[hexIndex(msg.tileX, msg.tileY, this.state.mapWidth)];
-        if (!tile || tile.ownerId !== client.sessionId) return; // must place on a tile you own
-
-        let occupied = false;
-        this.state.structures.forEach((s) => {
-            if (s.tileX === msg.tileX && s.tileY === msg.tileY) occupied = true;
-        });
-        if (occupied) return;
+        // The whole 7-hex footprint must be yours, on the map, and free.
+        if (!StructureSystem.canPlace(this.state, client.sessionId, msg.tileX, msg.tileY)) return;
 
         const structure = new Structure();
         structure.id = `struct-${msg.tileX}-${msg.tileY}`;

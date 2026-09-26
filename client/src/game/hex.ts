@@ -82,6 +82,59 @@ export function hexIndex(col: number, row: number, cols: number): number {
     return row * cols + col;
 }
 
+// --- Structures ----------------------------------------------------------------------------------
+// A structure is centered on a hex and occupies it plus its 6 neighbors (its "footprint"). Its
+// solid, drawn shape is a flat-top hexagon (like the tiles) with twice a tile's radius: the largest
+// flat-top hexagon that fits inside the footprint — each corner lands exactly on a notch where two
+// outer hexes meet. So it never reaches outside its footprint, and structures never overlap.
+export const STRUCTURE_RADIUS = 2 * HEX_SIZE;
+const STRUCTURE_ROTATION = 0; // flat top, like the tiles
+
+/** The structure hexagon's corners relative to its center hex's center (world space, clockwise). */
+export const STRUCTURE_CORNER_OFFSETS = Array.from({ length: 6 }, (_, i) => {
+    const angle = STRUCTURE_ROTATION + (i * Math.PI) / 3;
+    return { x: STRUCTURE_RADIUS * Math.cos(angle), y: STRUCTURE_RADIUS * Math.sin(angle) };
+});
+
+// Odd-q neighbor offsets (dcol, drow), clockwise from upper right. Odd columns sit half a hex lower.
+const EVEN_COL_NEIGHBORS = [
+    [1, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [-1, -1],
+    [0, -1],
+];
+const ODD_COL_NEIGHBORS = [
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [0, -1],
+];
+
+/** The six hexes around (col, row). Some may be off the map — check with `isValidHex`. */
+export function hexNeighbors(col: number, row: number): HexCoord[] {
+    const offsets = col & 1 ? ODD_COL_NEIGHBORS : EVEN_COL_NEIGHBORS;
+    return offsets.map(([dc, dr]) => ({ col: col + dc, row: row + dr }));
+}
+
+/** The 7 hexes a structure centered on (col, row) occupies, center first. */
+export function structureFootprint(col: number, row: number): HexCoord[] {
+    return [{ col, row }, ...hexNeighbors(col, row)];
+}
+
+/** True if hex (col, row) is part of the footprint of a structure centered on (centerCol, centerRow). */
+export function inStructureFootprint(
+    col: number,
+    row: number,
+    centerCol: number,
+    centerRow: number
+): boolean {
+    return structureFootprint(centerCol, centerRow).some((h) => h.col === col && h.row === row);
+}
+
 // ---------------------------------------------------------------------------
 // Isometric projection (client-only)
 // ---------------------------------------------------------------------------
@@ -112,4 +165,10 @@ export function hexCorners(col: number, row: number): Point[] {
         );
     }
     return corners;
+}
+
+/** The structure hexagon for a structure centered on (col, row), in projected space. */
+export function structureCorners(col: number, row: number): Point[] {
+    const center = hexCenter(col, row);
+    return STRUCTURE_CORNER_OFFSETS.map((c) => project(center.x + c.x, center.y + c.y));
 }

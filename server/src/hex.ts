@@ -79,54 +79,111 @@ export function hexIndex(col: number, row: number, cols: number): number {
     return row * cols + col;
 }
 
-// Outward unit normals of a flat-top hex's six edges (at 30°, 90°, ... in y-down space).
-const EDGE_NORMALS = Array.from({ length: 6 }, (_, i) => {
-    const angle = Math.PI / 6 + (i * Math.PI) / 3;
-    return { x: Math.cos(angle), y: Math.sin(angle) };
+// --- Structures ----------------------------------------------------------------------------------
+// A structure is centered on a hex and occupies it plus its 6 neighbors (its "footprint"). Its
+// solid, drawn shape is a flat-top hexagon (like the tiles) with twice a tile's radius: the largest
+// flat-top hexagon that fits inside the footprint — each corner lands exactly on a notch where two
+// outer hexes meet. So it never reaches outside its footprint, and structures never overlap.
+export const STRUCTURE_RADIUS = 2 * HEX_SIZE;
+const STRUCTURE_ROTATION = 0; // flat top, like the tiles
+
+/** The structure hexagon's corners relative to its center hex's center (world space, clockwise). */
+export const STRUCTURE_CORNER_OFFSETS = Array.from({ length: 6 }, (_, i) => {
+    const angle = STRUCTURE_ROTATION + (i * Math.PI) / 3;
+    return { x: STRUCTURE_RADIUS * Math.cos(angle), y: STRUCTURE_RADIUS * Math.sin(angle) };
 });
 
-// Corners relative to the hex center (flat-top: at 0°, 60°, ...).
-const CORNERS = Array.from({ length: 6 }, (_, i) => {
-    const angle = (i * Math.PI) / 3;
-    return { x: HEX_SIZE * Math.cos(angle), y: HEX_SIZE * Math.sin(angle) };
-});
+// Odd-q neighbor offsets (dcol, drow), clockwise from upper right. Odd columns sit half a hex lower.
+const EVEN_COL_NEIGHBORS = [
+    [1, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [-1, -1],
+    [0, -1],
+];
+const ODD_COL_NEIGHBORS = [
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [0, -1],
+];
+
+/** The six hexes around (col, row). Some may be off the map — check with `isValidHex`. */
+export function hexNeighbors(col: number, row: number): HexCoord[] {
+    const offsets = col & 1 ? ODD_COL_NEIGHBORS : EVEN_COL_NEIGHBORS;
+    return offsets.map(([dc, dr]) => ({ col: col + dc, row: row + dr }));
+}
+
+/** The 7 hexes a structure centered on (col, row) occupies, center first. */
+export function structureFootprint(col: number, row: number): HexCoord[] {
+    return [{ col, row }, ...hexNeighbors(col, row)];
+}
+
+/** True if hex (col, row) is part of the footprint of a structure centered on (centerCol, centerRow). */
+export function inStructureFootprint(
+    col: number,
+    row: number,
+    centerCol: number,
+    centerRow: number
+): boolean {
+    return structureFootprint(centerCol, centerRow).some((h) => h.col === col && h.row === row);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Server-only below (structure collisions); not copied to the client.
+
+interface ConvexShape {
+    corners: Array<{ x: number; y: number }>; // relative to the shape's center, in order
+    normals: Array<{ x: number; y: number }>; // outward unit normal of the edge corners[i] -> [i+1]
+    inradius: number; // center-to-edge distance
+}
+
+function regularHexagon(circumradius: number, rotation: number): ConvexShape {
+    const corners = Array.from({ length: 6 }, (_, i) => {
+        const angle = rotation + (i * Math.PI) / 3;
+        return { x: circumradius * Math.cos(angle), y: circumradius * Math.sin(angle) };
+    });
+    const normals = Array.from({ length: 6 }, (_, i) => {
+        const angle = rotation + Math.PI / 6 + (i * Math.PI) / 3;
+        return { x: Math.cos(angle), y: Math.sin(angle) };
+    });
+    return { corners, normals, inradius: circumradius * Math.cos(Math.PI / 6) };
+}
+
+const STRUCTURE_SHAPE = regularHexagon(STRUCTURE_RADIUS, STRUCTURE_ROTATION);
 
 /**
- * Where a world point sits relative to a hex, for circle-vs-hex collisions.
- * `distance` is the true distance to the hexagon's boundary (positive outside,
- * negative inside), so the region within r of a hex has rounded corners.
- * (nx, ny) is the direction to push a point out: the nearest edge's normal
- * along a flat side, or the direction away from the nearest corner near a
- * vertex, which lets a moving circle slide smoothly around it.
- *
- * Server-only (used for structure collisions); not copied to the client.
+ * Where a point (dx, dy), relative to a shape's center, sits against that convex shape, for
+ * circle-vs-shape collisions. `distance` is the true distance to the boundary (positive outside,
+ * negative inside), so the region within r of the shape has rounded corners. (nx, ny) is the
+ * direction to push a point out: the nearest edge's normal along a flat side, or the direction
+ * away from the nearest corner near a vertex, which lets a moving circle slide smoothly around it.
  */
-export function hexEdgeContact(
-    x: number,
-    y: number,
-    col: number,
-    row: number
+function shapeContact(
+    dx: number,
+    dy: number,
+    shape: ConvexShape
 ): { distance: number; nx: number; ny: number } {
-    const center = hexCenter(col, row);
-    const dx = x - center.x;
-    const dy = y - center.y;
-
     // Signed distance to each edge's line: the largest is the nearest edge, and if it's
     // <= 0 the point is inside (and that value is exactly how far inside).
     let inside = { distance: -Infinity, nx: 0, ny: 0 };
-    for (const normal of EDGE_NORMALS) {
-        const distance = dx * normal.x + dy * normal.y - HEX_HEIGHT / 2; // HEX_HEIGHT/2 = inradius
+    for (const normal of shape.normals) {
+        const distance = dx * normal.x + dy * normal.y - shape.inradius;
         if (distance > inside.distance) inside = { distance, nx: normal.x, ny: normal.y };
     }
     if (inside.distance <= 0) return inside;
 
-    // Outside: nearest point on the boundary (each of the six edges is a segment).
+    // Outside: nearest point on the boundary (each edge is a segment).
+    const { corners } = shape;
     let bestDistSq = Infinity;
     let bestX = 0;
     let bestY = 0;
-    for (let i = 0; i < 6; i++) {
-        const a = CORNERS[i];
-        const b = CORNERS[(i + 1) % 6];
+    for (let i = 0; i < corners.length; i++) {
+        const a = corners[i];
+        const b = corners[(i + 1) % corners.length];
         const abX = b.x - a.x;
         const abY = b.y - a.y;
         const t = Math.max(
@@ -146,4 +203,15 @@ export function hexEdgeContact(
     return distance > 0
         ? { distance, nx: (dx - bestX) / distance, ny: (dy - bestY) / distance }
         : inside;
+}
+
+/** `shapeContact` against the hexagon of a structure centered on hex (col, row). */
+export function structureContact(
+    x: number,
+    y: number,
+    col: number,
+    row: number
+): { distance: number; nx: number; ny: number } {
+    const center = hexCenter(col, row);
+    return shapeContact(x - center.x, y - center.y, STRUCTURE_SHAPE);
 }

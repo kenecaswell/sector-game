@@ -104,9 +104,9 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
 | Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
-| Build a structure | **Build** button (shows your next structure and how many you have left), then click a hex you own | **Build** button (above FIRE), then tap a hex you own |
+| Build a structure | `B` or the **Build** button (shows your next structure and how many you have left), then click where to put it — the outline is yellow where you can build, red where you can't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
-| Shop | **Shop** button (below Leaderboard) or `B`; `Esc` closes | **Shop** button |
+| Shop | **Shop** button (below Leaderboard) or `E`; `Esc` closes | **Shop** button |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 
 Your score is always shown at the top center. The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
@@ -133,9 +133,21 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Smuggler starts with one), build the structures your character started with on hexes you own, and earn credits. The shop stays available from the **Shop** button (or `B`) — the game keeps running while it's open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
-**Shop** (during the match) — **Ammo pack**: 30 credits for 30 shots (1 credit per shot). **Basic gun**: 40 credits, one per player — lets you shoot. **Expander**: 100 credits, one per player — greatly enlarges the radius in which you claim hexes (4 × the player radius), and shows as a large tinted circle in your color around you. Hexes with an enemy's structure on them can't be claimed. More items (better guns, armor, more structures) are planned.
+**Shop** (during the match; `E`):
 
-**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. A hit does 50 damage against 100 health, so two hits kill. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
+| | Item | Cost | What it does |
+|---|---|---|---|
+| Weapons | Basic gun | 100 | Lets you shoot, 50 damage per hit |
+| | Big gun | 200 | 100 damage per hit; replaces the basic gun |
+| | Ammo pack | 30 | 30 shots |
+| Upgrades | Speed boost | 100 | Move 25% faster |
+| | Armor | 100 | 200 health instead of 100 |
+| | Expander | 100 | Claim hexes in a much larger radius (shown as a tinted circle around you) |
+| Structures | Farm, Mine, Fort, Power plant | 100 each | One more structure to build |
+
+Upgrades are one each and last the whole match. Hexes with an enemy's structure on them can't be claimed.
+
+**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you build on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, mine: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
 Every 10 seconds each player earns 1 credit per hex they own, to spend in the shop. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 

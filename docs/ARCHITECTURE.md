@@ -27,7 +27,7 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 
 **Kept in sync by hand** (there is no shared package). Change both sides together:
 - `server/src/types/shared.ts` ⇄ `client/src/types/shared.ts` — messages, events and the **shop catalog** (`SHOP_ITEMS`). Checked automatically by `tools/check-rules.js`.
-- `server/src/hex.ts` ⇄ `client/src/game/hex.ts` — shared hex math (the server-only `hexEdgeContact` is not copied; the client adds the iso projection).
+- `server/src/hex.ts` ⇄ `client/src/game/hex.ts` — shared hex math, including the structure footprint and hexagon (the server-only `structureContact` collision code is not copied; the client adds the iso projection). The shared part is also checked by `tools/check-rules.js`.
 - `SCREEN_Y_SCALE` (server constants) = `ISO_SQUASH` (client constants); `HEX_SIZE` and `PLAYER_RADIUS` mirror across the two constants files.
 - `client/src/types/gameState.ts` mirrors the server's `GameState` schema.
 - Projectile velocity: `CombatSystem` ⇄ the client's `projectileWorldVelocity`.
@@ -211,7 +211,7 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 │   │   ├── components/
 │   │   │   ├── HUD.tsx             # Own player's health/gun/ammo/tiles/credits/structures/upgrades + phase countdown (top left)
 │   │   │   ├── ScoreBadge.tsx      # Always-visible own score (top center)
-│   │   │   ├── BuyMenu.tsx         # Shop popup: real ammo/Basic gun/Expander purchases + "coming soon" placeholders
+│   │   │   ├── BuyMenu.tsx         # Shop popup: the SHOP_ITEMS catalog grouped by category (weapons, upgrades, structures)
 │   │   │   ├── Leaderboard.tsx     # Popup listing all players by score; toggled from GameScreen
 │   │   │   ├── MobileJoystick.tsx  # Drag-based virtual joystick (touch input)
 │   │   │   └── FireButton.tsx      # Hold-to-fire button (touch, during the match only)
@@ -289,7 +289,8 @@ WebSocket via Colyseus protocol. Colyseus handles:
 // Join options (colyseus joinOrCreate('GameRoom', options)); not sent on a reconnect.
 { name?: string }  // the player's saved name (localStorage); falls back to "Player N" if missing/invalid
 
-// Buy an item (allowed during `playing` only). itemId is "ammo", "basicGun" or "expander"; the
+// Buy an item (allowed during `playing` only). itemId is a ShopItemId: "basicGun", "bigGun", "ammo",
+// "boost", "armor", "expander", "farm", "mine", "fort" or "power" (see SHOP_ITEMS); the
 // server checks credits, phase and (for one-per-player items) ownership. See Shop below.
 { type: "purchase", itemId: ShopItemId }
 
@@ -605,6 +606,7 @@ export class Player extends Schema {
   @type('number')  vy: number = 0;
   @type('number')  angle: number = 0;            // facing/aim, radians, world space
   @type('number')  health: number = 100;
+  @type('number')  maxHealth: number = 100;      // 200 with the Armor upgrade
   @type('number')  ammo: number = 0;             // ammo/credits/gun/inventory/upgrades: set from the character at match start
   @type('number')  tilesOwned: number = 0;
   @type('number')  kills: number = 0;
@@ -618,7 +620,7 @@ export class Player extends Schema {
   @type('boolean') ready: boolean = false;       // lobby only
   @type('string')  gun: string = '';             // a GunId, or '' = unarmed (can't shoot)
   @type(['string']) structureInventory = new ArraySchema<string>(); // StructureTypes left to place
-  @type(['string']) upgrades = new ArraySchema<string>();           // UpgradeIds, e.g. 'boost'
+  @type(['string']) upgrades = new ArraySchema<string>();           // UpgradeIds: 'boost' | 'armor' | 'expander'
 }
 
 export class Tile extends Schema {
@@ -633,6 +635,7 @@ export class Projectile extends Schema {
   @type('number')  angle: number = 0;
   @type('number')  speed: number = 400;    // on-screen pixels/sec (see SCREEN_Y_SCALE)
   @type('number')  spawnedAt: number = 0;  // server timestamp ms, for lifetime expiry
+  @type('number')  damage: number = 50;    // from the shooter's gun (GUN_DAMAGE)
 }
 
 export class Structure extends Schema {
@@ -692,7 +695,7 @@ Known limitation: the map's pixel bounds are a rectangle, but the hex edge is ja
 ### Tile Claiming
 - Players claim tiles by moving over unclaimed tiles or enemy tiles while the match is in the `playing` phase. Each tick a player claims **the hex they're standing on plus every hex whose center is within their `claimRadius`** of them (`CollisionSystem.claimTiles`). The base radius is `BASE_CLAIM_RADIUS = HEX_SIZE` (32 world px) — in the open that's just the hex under you (neighbor centers are ~55 px away), though standing near a hex edge can also claim the neighbor. The **Expander** raises it to `EXPANDER_CLAIM_RADIUS` = 4 × `PLAYER_RADIUS` = 80 px (it was 64 px when the player radius was 16), which claims 7 hexes when centered on one (own + 6 neighbors) and up to 9 depending on position; radius claiming steals enemy tiles exactly like walking over them does.
 - **Teammates never take each other's tiles** (2026-09-26): a hex owned by a teammate is skipped, so allies expand around each other rather than stealing back and forth. Enemy tiles are taken as before.
-- **A hex holding an enemy's structure can't be claimed** — the structure protects its tile (`isProtectedFrom`; a teammate's structure doesn't block you, but its tile is a teammate's anyway). Without this rule a large claim radius would routinely flip tiles out from under structures, breaking "you own the tile your structure is on"; the owner can still claim it, and anyone can still shoot the structure down.
+- **A hex in an enemy structure's footprint can't be claimed** — the structure protects all 7 of its hexes (`isProtectedFrom`; a teammate's structure doesn't block you, but its tile is a teammate's anyway). Without this rule a large claim radius would routinely flip tiles out from under structures, breaking "you own the tile your structure is on"; the owner can still claim it, and anyone can still shoot the structure down.
 - Verified 2026-09-20: the search window matches a brute-force scan of every hex exactly (1,200 random positions incl. map edges, 0 mismatches; at 80 px the Expander claims 2–9 hexes per tick depending on position — 1–7 at the earlier 64 px); a base-radius player at a hex center claims 1, an Expander owner claims 7 when centered on a hex; stolen tiles keep both players' `tilesOwned` consistent with the tile array.
 - Tile ownership stored as `ownerId` string in the flat `tiles` array
 - On claim: update tile, increment player's `tilesOwned`, decrement the previous owner's if any
@@ -745,8 +748,19 @@ Implemented 2026-09-26. Everything below is validated server-side in `LobbySyste
 | Scientist | none | 0 | 50 | power plant | — |
 | Smuggler | basic | 15 | 15 | — | — |
 
-- **Structure inventory:** `Player.structureInventory` lists the structures you can still place, one entry each. `placeStructure` names a `structureType` from it and uses one up; with an empty inventory you can't build (until the shop sells structures). `Structure.type` records which one was placed. All four types (farm, mine, fort, power plant) **behave identically for now** — same health, same 25 points, same look.
-- **Guns:** `Player.gun` is `''` (unarmed) or a `GunId` (`'basic'`). Unarmed players can't shoot (the server ignores `shoot`; the client doesn't send it and hides the mobile fire button). The **Basic gun** can be bought in the shop. Ammo can be bought without a gun.
+- **Structure inventory:** `Player.structureInventory` lists the structures you can still place, one entry each. `placeStructure` names a `structureType` from it and uses one up; with an empty inventory you can't build (until the shop sells structures). `Structure.type` records which one was placed. All four types (farm, mine, fort, power plant) **behave identically for now** — same health, same 25 points — and differ only in color (see [Structures: footprint and shape](#structures-footprint-and-shape)).
+
+### Structures: footprint and shape
+
+Changed 2026-09-26 from one hex to seven.
+- **Footprint:** a structure is placed on a center hex and occupies it plus its 6 neighbors (`structureFootprint` / `hexNeighbors` in the shared part of `hex.ts`). **Placement rule** (`StructureSystem.canPlace`, mirrored by the client's build preview): all 7 hexes must be on the map (so nothing at the edge), owned by the builder (a teammate's hexes don't count), and not part of another structure's footprint. Footprints may touch.
+- **Shape** (revised 2026-09-26, same day): the solid, drawn shape is a **flat-top hexagon (like the tiles) with twice a tile's radius** (`STRUCTURE_RADIUS` = 2 × `HEX_SIZE` = 64 px; `STRUCTURE_CORNER_OFFSETS`). It's the largest flat-top hexagon that fits inside the footprint: each corner lands exactly on a notch where two outer hexes meet, and its edges cut straight across the outer hexes (area = 4 hexes). So it **never reaches outside its footprint, and structures never overlap** (`tools/check-rules.js` samples the hexagon against the footprint and tests every nearby pair). The first version was the ≈19.1°-turned hexagon with exactly the 7 hexes' area (√7 × `HEX_SIZE` ≈ 85 px); this one is 2/√7 ≈ 76% of its size, as requested ("~75%, flat top").
+- **What the shape is used for:** movement collision (`structureContact`, the old single-hex `hexEdgeContact` generalized to any convex shape — same sliding and walk-out behavior, re-verified with 792 approaches), projectile hits (inside the hexagon), and drawing. The footprint (hexes) is used for placement and claim protection.
+- **Look (placeholder until art):** a raised slab (`STRUCTURE_HEIGHT` 14 screen px). The **top face is the type's color** (`STRUCTURE_COLORS` in `client/src/game/constants.ts`: farm pale lime `#c5d86d`, mine dark brown `#6d4c41`, fort sandstone `#b0a18a`, power plant pale cyan `#80deea`, chosen muted so they don't read as team colors). The **sides and a 3 px border are the owner's team color**, so the type reads from the top and the team from the edge. It's one `Graphics` per structure, drawn once. It sorts by its northmost corner, so its owner (or a teammate) standing on it draws on top instead of being hidden (they were, when it sorted by its center).
+- **Build preview:** in build mode the hover outline becomes the structure hexagon, **yellow if you can build there, red if not**. A click on a red spot does nothing and stays in build mode; on touch (no hover) a refused tap shows the red outline for 1.2 s. The Build button's armed label is "Pick a spot — all 7 hexes must be yours". **Build mode has no timeout** (the old 5 s auto-disarm was removed 2026-09-26): it stays on until you build, press **B** or the Build button again, or press **Esc**. **B** toggles it on desktop.
+- Verified 2026-09-26: `check-rules.js` (neighbors, flat-top 2-radius shape, corners on grid vertices, inside the footprint, no overlaps, every placement rule, all 7 hexes protected, hits inside/outside), `check-collisions.js`, `e2e.js` (a Farmer walks a footprint and builds over the wire), and in the browser (bots built a farm, mine and fort; the red/yellow preview; building a power plant through the UI, score +25).
+- **Guns:** `Player.gun` is `''` (unarmed) or a `GunId`: `'basic'` (50 damage per hit) or `'big'` (100). Unarmed players can't shoot (the server ignores `shoot`; the client doesn't send it and hides the mobile fire button). Both guns are sold in the shop (see [Shop](#shop)). Ammo can be bought without a gun.
+- **Upgrades:** `Player.upgrades` lists `UpgradeId`s — `'boost'` (+25% top speed), `'armor'` (max health 200 instead of 100) and `'expander'` (bigger claim radius; recorded as an upgrade since 2026-09-26, it used to be inferred from `claimRadius`). `CharacterSystem.applyUpgradeEffects` derives `maxHealth` and `claimRadius` from the list whenever it changes; the boost is read directly by `MovementSystem`.
 - **Art per character** is planned (Planned Features #7); for now everyone is the same circle in their team color.
 
 ### Movement
@@ -766,7 +780,7 @@ Movement is continuous, at **any angle**, and eased rather than snapping between
 - Server spawns a `Projectile` in state at the shooter's current position, decrementing `ammo` by 1 — **there is currently no ammo regeneration or reload**, so a player can run out permanently within a match; add a regen tick or pickup mechanic before this ships
 - `CombatSystem` advances all projectiles each tick, checks collision against players and structures, and removes projectiles on hit, out-of-bounds, or after `PROJECTILE_LIFETIME_MS` (tracked via `Projectile.spawnedAt`, not wall-clock elapsed time inferred from ticks)
 - **Projectile speed is on-screen, like player movement.** A projectile's `speed` (400) is measured with world y scaled by `SCREEN_Y_SCALE`, so a shot fired up or down the screen moves ~667 world px/s vertically and looks exactly as fast as one fired sideways (400 world px/s). `CombatSystem` divides the heading `(cos, sin)` by its on-screen length `hypot(cos, sin × SCREEN_Y_SCALE)`; the client mirrors this in `projectileWorldVelocity` to extrapolate between ticks. Side effects: vertical shots travel farther in world units over their 2s lifetime (about 1,333 vs 800 px), and they cover ~33 world px per tick vs 20 sideways — see the swept hit test under [Collision Detection](#collision-detection).
-- **Damage is 50 per hit** (`PROJECTILE_DAMAGE`) against 100 health, so two hits kill. Armor and better guns are planned as purchases (Planned Features #9); nothing modifies damage or health yet.
+- **Damage comes from the shooter's gun** (`GUN_DAMAGE` in `types/shared.ts`): basic 50, big 100. It's stamped on the projectile when fired (`Projectile.damage`), so it applies to players and structures alike. Players have `maxHealth` 100, or 200 with **Armor**: an unarmored player dies to two basic hits or one big hit; an armored one to four basic or two big. Respawns restore `maxHealth`.
 - On a killing blow, the shooter's `kills` increments and the target **respawns** (full health, repositioned to map center) rather than being eliminated — this is a territory-claiming game, not a deathmatch, so matches don't end early from PvP alone
 - Server broadcasts `playerHit` on every hit (not just kills); client should use this to play a hit effect
 
@@ -784,14 +798,22 @@ Movement is continuous, at **any angle**, and eased rather than snapping between
 ### Shop
 Buying works through one message, `purchase { itemId }`, handled by `GameRoom.handlePurchase` → `ShopSystem.purchase`. It is allowed in the `playing` phase only (there's no separate shopping phase since 2026-09-26), for connected players. The server re-validates everything (unknown ids, credits, ownership); the client's disabled buttons are just a convenience.
 
-| Item | Cost | Effect |
-|---|---|---|
-| **Ammo pack** | **30 credits** (1 credit per shot × a pack of 30) | +30 ammo. Repeatable; **no ammo cap** yet. |
-| **Basic gun** | **40 credits** | Lets you shoot (`Player.gun = 'basic'`). **One per player** — refused if you're already armed (e.g. a Smuggler). Added 2026-09-26, since only the Smuggler starts armed. |
-| **Expander** | **100 credits** | Claim radius becomes 80 world px (from 32; **4 × the player radius**), permanently — it survives respawns. **One per player** (a second purchase is rejected). The client draws a semi-transparent circle in the player's color on the ground at that radius, visible to everyone. |
+Rebuilt 2026-09-26 as a data-driven catalog: each `SHOP_ITEMS` entry has a `category` (the menu groups by it) and says what it gives — a `gun`, `ammo`, an `upgrade` or a `structure` — and `ShopSystem.purchase` just applies that. `ownsShopItem` (shared, so the server and the menu agree) says when buying would get you nothing: an upgrade you already have, or a gun that isn't better than yours.
 
-- **Shared catalog:** the item list, prices and pack size live in `SHOP_ITEMS` / `AMMO_PACK_SIZE` / `AMMO_CREDITS_PER_SHOT` in `types/shared.ts`, a block that must stay **identical** in `server/src/types/shared.ts` and `client/src/types/shared.ts` (hand-copied, like the rest of that file). Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS` and `EXPANDER_RADIUS_MULTIPLIER` are server constants; the client only sees the resulting `Player.claimRadius` (and mirrors the base value to decide when to show the circle).
-- **Starting budget:** set by the character (50 for most, 15 for the Smuggler). 50 buys the Basic gun with 10 left, or one ammo pack; the Expander (100) now takes a while of territory income to afford.
+| Category | Item | Cost | Effect |
+|---|---|---|---|
+| Weapons | **Basic gun** | **100** | Lets you shoot; 50 damage per hit. Refused if you already have any gun. (40 until 2026-09-26.) |
+| Weapons | **Big gun** | **200** | 100 damage per hit. Replaces the basic gun; can be bought without it first. You can't go back to the basic gun. |
+| Weapons | **Ammo pack** | **30** (1 per shot) | +30 ammo. Repeatable; **no ammo cap** yet. |
+| Upgrades | **Speed boost** | **100** | +25% top speed (`BOOST_SPEED_MULTIPLIER`), like the Robot's. One per player (a Robot already has it). |
+| Upgrades | **Armor** | **100** | Max health 100 → 200 (`ARMOR_MAX_HEALTH`), and +100 health right away (a hurt player keeps their damage but gains the headroom). One per player. |
+| Upgrades | **Expander** | **100** | Claim radius becomes 80 world px (from 32; **4 × the player radius**), permanently — it survives respawns. One per player. The client draws a semi-transparent circle in the player's color on the ground at that radius, visible to everyone. |
+| Structures | **Farm**, **Mine**, **Fort**, **Power plant** | **100 each** (`STRUCTURE_COST`) | One more of that type in your structure inventory. Buy as many as you can pay for. |
+
+All upgrades are permanent for the match (they survive respawns).
+
+- **Shared catalog:** the item list, prices and what each gives live in `SHOP_ITEMS` (plus `AMMO_PACK_SIZE`, `AMMO_CREDITS_PER_SHOT`, `STRUCTURE_COST`, `GUN_DAMAGE`, `ownsShopItem`) in `types/shared.ts`, a block that must stay **identical** in `server/src/types/shared.ts` and `client/src/types/shared.ts` (hand-copied, like the rest of that file). Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS`, `EXPANDER_CLAIM_RADIUS` and the health values are server constants; the client only sees the resulting `Player.claimRadius` / `maxHealth` (and mirrors the base radius to decide when to show the circle).
+- **Starting budget:** set by the character (50 for most, 15 for the Smuggler). 50 buys one ammo pack; everything else (100+) takes a while of territory income (1 credit per hex every 10 s).
 - **The circle** (`GameScene.updateClaimRing`): an ellipse of the claim-radius diameter, squashed by `ISO_SQUASH` like everything on the ground (160×96 scene px for 80 world px), filled with the player's color at `CLAIM_RING_FILL_ALPHA` and outlined at `CLAIM_RING_STROKE_ALPHA`, at depth −0.4 so it sits above the terrain but under every entity. It's created when the radius exceeds the base, resized if the radius changes, and destroyed with the player.
 - Verified: unit script (affordability, ammo math, second Expander rejected, junk ids like `__proto__`/`toString`/`null` rejected with credits untouched); browser (buying ammo took credits 100 → 70 and ammo 30 → 60, and the Expander button disabled at 70; buying the Expander at 100 left "Owned", the ring appeared in the player's color at 128×77, and a short walk claimed a two-hex-wide swath).
 
@@ -923,11 +945,11 @@ Touch support needed no protocol changes, confirming what [Planned Features](#pl
 
 `HUD.tsx`, `ScoreBadge.tsx`, `Leaderboard.tsx` and the buttons render on top of the Phaser canvas (absolutely positioned `<div>`s in `GameScreen`), reading from `GameContext` — the same reactive `players`/`phase`/`phaseEndsAt` state already used by the lobby screen. This avoids re-deriving Colyseus reactivity a second time inside Phaser.
 
-- **HUD** (top left): phase countdown, health, gun ("none" or its name), ammo, tiles, credits, structures left to build (e.g. "Farm" or "none"), and upgrades if any.
+- **HUD** (top left): phase countdown, health ("140 / 200" — current / max), gun ("none" or its name), ammo, tiles, credits, structures left to build (e.g. "Farm" or "none"), and upgrades if any.
 - **Score badge** (top center, always visible): the local player's score. Real scoring doesn't exist yet, so `utils/score.ts`'s `scoreFor()` returns credits; the badge and the leaderboard both go through it, so implementing [Planned Features #3](#planned-features) means changing that one function. Until then the badge and the HUD's Credits line show the same number.
 - **Leaderboard** (popup): hidden by default; a top-right **Leaderboard** button (highlighted while open) or the **`L`** key toggles it, and **`Esc`**, the × button or a click on the dimmed backdrop closes it. It's a centered panel over the canvas (rank, color, name, score, tiles, kills, disconnected flag), ranked by `scoreFor`.
-- **Shop** (popup): a **Shop** button below the Leaderboard button (during the match) or the **`B`** key toggles it. Only one popup (shop or leaderboard) is open at a time; `Esc` closes either. It shows credits, ammo and whether you're armed; Basic gun and Expander show "Owned" once you have them.
-- **Build button** (bottom right, during the match): "Build Farm (1)" — the next structure in your inventory and how many are left — or a disabled "Nothing to build". Arming it makes the next tap place that structure on one of your tiles (the server uses up that inventory entry). `GameScreen` keeps the scene's build mode in sync with its own state through an effect, so the 5 s auto-disarm and running out of structures both return taps to shooting (previously the timeout reset the button but not the scene).
+- **Shop** (popup): a **Shop** button below the Leaderboard button (during the match) or the **`E`** key toggles it (it was `B` until 2026-09-26; `B` is now build mode). Only one popup (shop or leaderboard) is open at a time; `Esc` closes either. It shows your credits, ammo and gun, then the catalog grouped under Weapons, Upgrades and Structures; items you already have (`ownsShopItem`) show "Owned". The "coming soon" list is gone — everything it listed is buyable now.
+- **Build button** (bottom right, during the match): "Build Farm (1)" — the next structure in your inventory and how many are left — or a disabled "Nothing to build". Arming it makes the next tap place that structure on one of your tiles (the server uses up that inventory entry). **B** toggles build mode, **Esc** leaves it, and there's no timeout. `GameScreen` keeps the scene's build mode in sync with its own state through an effect, so leaving build mode or running out of structures returns taps to shooting.
 - **Fire button** (touch only, during the match only, and only once you have a gun): a hold-to-fire button in the bottom-right corner; the **Build** button stacks above it on touch, and sits in the corner on desktop.
 - **Viewport fit:** `GameScreen`'s container is `position: fixed; inset: 0`. It used to be `100vw × 100vh` inside the Vite template's `#root` (1126px wide, `min-height: 100svh`, centered text), which made the page scroll and clipped the right-hand overlays, and made the overlay text centered. Panels also set `text-align: left` explicitly.
 
@@ -1049,15 +1071,14 @@ function checkProjectilePlayerCollision(
 }
 ```
 
-### Projectile vs Structure (hex containment)
-A structure fills its whole hex, so a projectile hits it exactly when the projectile is inside that hex (this replaced an AABB check when the map moved from squares to hexes). This one is still an end-point test: a hex is ~55 px tall and ~64 px wide and shots move ≤ 33 px per tick, so a shot through a hex's middle always lands inside it on some tick, but one that only clips a corner can be missed. Sweep it like the player test if that ever matters:
+### Projectile vs Structure (hexagon containment)
+A projectile hits a structure when it's inside the structure's 7-hex hexagon (see [Structures: footprint and shape](#structures-footprint-and-shape); it was single-hex containment before 2026-09-26, and an AABB before the map became hexes). It's an end-point test: the hexagon is ~150 px across and shots move ≤ 33 px per tick, so only a shot clipping a corner can be missed.
 ```typescript
 function checkProjectileStructureCollision(
   proj: { x: number; y: number },
   structure: { tileX: number; tileY: number }
 ): boolean {
-  const { col, row } = pixelToHex(proj.x, proj.y);
-  return col === structure.tileX && row === structure.tileY;
+  return structureContact(proj.x, proj.y, structure.tileX, structure.tileY).distance <= 0;
 }
 ```
 
@@ -1442,8 +1463,9 @@ The results screen's team table, a real match between armed teammates and enemie
 - **No client-side prediction.** Rendering is smoothed and extrapolated, but your own movement still waits for the server round trip (see Movement). Fine on localhost; needs work before real-world latency.
 - **Map corners aren't hex-covered:** movement is clamped to the map rectangle, but the hex edge is jagged, so a player can stand over no hex (claiming ignores it).
 - **Everything is one height:** the reference art has elevation, cliffs, water and mountains; the prototype has a single flat height, so cliff faces show only on the map edge. Structures are plain boxes and players are circles.
-- **Little to spend credits on yet** — ammo packs, the Basic gun and the Expander (the rest of the shop is a "coming soon" list). There's no way to get more structures once your starting one is placed. See Planned Features #9.
-- **Structure types are cosmetic data only.** Farm, mine, fort and power plant are stored (`Structure.type`) but behave, score and look the same.
+- **Nothing to buy at the start.** Kits give at most 50 credits and everything but ammo costs 100+, so the first purchase waits on territory income (1 credit per hex every 10 s). Worth watching in playtesting; prices are first-pass.
+- **Big-gun shots look like basic ones.** `Projectile.damage` is synced, but the client doesn't draw big-gun shots differently yet.
+- **Structure types differ only in color.** Farm, mine, fort and power plant behave and score the same.
 - **Other players' lobby rows wrap loosely at phone width** (team, character and "Not ready" land on separate lines). Cosmetic; to revisit with the custom pickers (Planned Features #10).
 - **Everyone can pick the same team**, leaving nobody to fight. Allowed on purpose for now; no balancing or team-size cap.
 - **A backgrounded tab's dropped connection: partly addressed.** Reported 2026-09-20 (Chrome blue vs Safari red: blue vanished from Safari's view). Fixed since: dropped players are drawn dimmed instead of hidden, everyone gets disconnect/reconnect notices, failed reconnects keep retrying for the whole window, and a tab reconnects immediately when it becomes visible. **Still unconfirmed:** *why* blue's connection dropped in the first place (likely browser throttling/freezing of the hidden tab), and the visible-tab trigger was tested by simulating the visibility change, not with a real backgrounded browser. When testing with two browsers, keep both windows visible. Untested idea: an indicator for players who are off-screen.
@@ -1522,12 +1544,12 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 
 ### 9. Shop and upgrades — ammo, Basic gun and Expander built; the rest planned
 
-**Where it lives:** during play, on the player's own time (a Shop button or `B`; nothing pauses while it's open). A 30-second `buying` phase before play existed from 2026-09-20 until **2026-09-26**, when the ready-up lobby replaced it; starting credits now come from the character (50, or 15 for the Smuggler).
+**Where it lives:** during play, on the player's own time (a Shop button or `E`; nothing pauses while it's open). A 30-second `buying` phase before play existed from 2026-09-20 until **2026-09-26**, when the ready-up lobby replaced it; starting credits now come from the character (50, or 15 for the Smuggler).
 
-**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures). The **Basic gun** (40 credits, one per player) was added 2026-09-26, since only the Smuggler starts armed. (The temporary `endBuying` shortcut went with the buying phase.)
+**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures). The **Basic gun** was added 2026-09-26, since only the Smuggler starts armed. (The temporary `endBuying` shortcut went with the buying phase.) **Later on 2026-09-26** the catalog became data-driven and gained the Big gun, Speed boost, Armor and all four structures, the Basic gun went to 100, and the "coming soon" list was removed — see [Shop](#shop).
 
 **Still to design and build:**
-- More items: better guns (damage / fire rate), armor, and more structures of each type (farm, mine, fort, power plant — see #3) to refill the inventory, each as an entry in the shared `SHOP_ITEMS` catalog plus an effect in `ShopSystem`.
+- More items (a new entry in `SHOP_ITEMS`; a new *kind* of effect also needs a line in `ShopSystem`): per-gun fire rate, range, or spread; stronger armor; what each structure type *does*.
 - **Ammo:** decide on a cap; ammo still never regenerates (buying is the only source). Only the Smuggler starts with a gun (and 15 ammo); everyone else buys one.
 - **Candidate constraint:** only allow buying/upgrading during play while standing on your own territory (or near a city hall) so shopping carries risk. Not decided.
 - The server-side fire-rate limit belongs here too (per-gun fire rate).
@@ -1628,7 +1650,7 @@ Replace the lobby's native `<select>`s (currently restyled with `appearance: non
 | Stale input | Server discards input older than `INPUT_STALE_MS` (750ms); client keeps alive every 250ms | Trust the last input indefinitely (previous behavior) | A backgrounded tab pauses Phaser's loop, so "key released" never got sent and the player ran on forever. Any silent client (tab hidden, network stall) now coasts to a stop |
 | Client smoothness | Frame-rate-independent exponential smoothing toward `state + velocity × EXTRAPOLATION_S`; snap on large jumps | Fixed per-frame lerp (previous); full client-side prediction now | Hides the 20Hz tick stepping at any frame rate for little code. Prediction/reconciliation is deferred (Planned Features #8) until latency actually matters |
 | Hex rendering | Three `Graphics` layers: static base (drawn once), claims tint (dirty-flag redraw, claimed hexes only), hover outline | One `Graphics` redrawn on every `tilesClaimed`; one game object per tile | `tilesClaimed` fires nearly every tick while moving; redrawing 4,096 hexes with cliff faces each time was the expensive path. Only the small claims layer redraws |
-| Structure hit test | Projectile is inside the structure's hex (`pixelToHex` equality) | Circle or AABB approximation of a hex | Exact for a structure that fills its whole hex, and no extra geometry |
+| Structure hit test — **superseded 2026-09-26 (hexagon containment)** | Projectile is inside the structure's hex (`pixelToHex` equality) | Circle or AABB approximation of a hex | Exact for a structure that fills its whole hex, and no extra geometry |
 | Starting the match | Automatic 3s countdown once every connected player is ready; cancelled if anyone un-readies or a newcomer joins; disconnected players don't block it. No Start button and no host | Host presses Start once everyone is ready; auto countdown plus a host force-start | Chosen by the developer (2026-09-26). Nobody has to be in charge, so the host role and its handover logic went away |
 | Removing the buying phase | Deleted `buying`, `startGame`, `endBuying` and `STARTING_CREDITS`; shopping is during play only; starting credits come from the character | Keep a short buying phase after the lobby | Requested: the lobby's character choice now sets the starting kit, which is what the buying phase was for |
 | Countdown as its own phase | `countdown` phase (lobby screen still shown), owned by `LobbySystem` together with applying kits at its end | Keep `lobby` and use `endsAt > 0` as "counting down" | A self-describing phase string is clearer for the client, logs and tests; `PhaseSystem` now only times `playing` |
@@ -1636,6 +1658,14 @@ Replace the lobby's native `<select>`s (currently restyled with `appearance: non
 | What teammates share | Allies only: no friendly fire (players and structures), teammates' structures walkable, teammates' tiles not taken. Tiles, credits and score per player; results add team totals | Full pooling (tiles owned by the team, credits split evenly, team score); color only, free-for-all | Chosen by the developer (2026-09-26) as the smallest change that makes teams meaningful; pooling stays an open question |
 | Characters | 6 characters in a shared `CHARACTERS` catalog; the kit (gun, ammo, credits, structures, upgrades) replaces the player's stats when the countdown ends; locked while ready | Apply the kit at selection time; free choice after readying | Applying once at start means lobby switching can't be abused and a mid-match joiner just gets the default kit applied on join |
 | Structure inventory | `Player.structureInventory` (one entry per structure); `placeStructure` names a type from it and uses one up; `Structure.type` recorded; all types identical for now | Unlimited building with the character setting only the type | Chosen by the developer (2026-09-26): the starting structures are part of what distinguishes characters |
-| Getting a gun | Unarmed players can't shoot; a Basic gun (40 credits, one per player) in the shop | Only Smugglers can shoot until a later shop pass | Chosen by the developer (2026-09-26), so the other five characters can still fight |
+| Getting a gun | Unarmed players can't shoot; a Basic gun in the shop (40 credits at first, 100 since the catalog rebuild) | Only Smugglers can shoot until a later shop pass | Chosen by the developer (2026-09-26), so the other five characters can still fight |
 | Robot boost | `boost` upgrade multiplies top speed by 1.25 (`BOOST_SPEED_MULTIPLIER`), acceleration unchanged | Higher acceleration too; a timed boost | "Speed boost" was the spec; 1.25 is a first-pass value to tune |
 | Player names | Editable in the lobby, 2–25 characters (code points), any characters; a taken name (ignoring case) gets the first free " (N)"; saved to `localStorage` and sent as a join option | Allow duplicate names; server-side accounts | The developer allowed either; the suffix keeps names readable in the leaderboard and results and fixed the old duplicate "Player N" bug. Saving the typed (unsuffixed) name avoids stacking suffixes over games |
+| Structure footprint | A structure occupies its hex plus the 6 neighbors; all 7 must be on the map, owned by the builder, and free of other footprints | Single hex (previous); allowing teammates' hexes | Requested (2026-09-26) |
+| Structure shape — **superseded the same day (flat-top, 2 × tile radius)** | One hexagon with exactly the 7 hexes' area, corners on grid vertices, turned ~19.1° from the tiles; used for collision, hits and drawing, while the footprint hexes are used for placement and protection | A tile-aligned hexagon covering the 7 hexes (~29% larger, reaching well into the next ring); the jagged 7-hex outline | "A hexagon the size of 7 tiles" was requested; this is the only hexagon with exactly that area whose corners sit on the grid. Cost: 6 of the 12 touching placements overlap by ≤ 10.5 px, accepted rather than refusing placements whose 7 hexes are all yours |
+| Structure colors | Top face by type (farm pale lime, mine dark brown, fort sandstone, power plant pale cyan); sides and border in the owner's team color | Type color only; team color only | Temporary until art (requested). Both pieces of information stay visible |
+| Structure shape (revised) | Flat-top hexagon with 2 × the tile radius: the largest flat-top hexagon inside the 7-hex footprint, corners on the footprint's notches | The ~19.1°-turned equal-area hexagon (previous); a smaller hexagon | Requested: ~75% of the previous size with a flat top. 2/√7 ≈ 76% is exactly the size that still fits, and staying inside the footprint means structures can never overlap |
+| Build mode | No timeout; B toggles, Esc exits (the Build button still works) | The 5 s auto-disarm (previous) | Requested. Lining up a 7-hex spot takes longer than 5 s |
+| Hotkeys | B = build mode, E = shop, L = leaderboard, Esc = leave build mode / close popups | B = shop (previous) | Requested |
+| Shop catalog | Data-driven `SHOP_ITEMS` with categories; each item names what it gives; shared `ownsShopItem` decides "already have it" for both server and menu | A hand-written case per item in `ShopSystem` and the menu (previous) | With ten items, keeping the rules in one table stops the server and the menu drifting apart |
+| Prices and new items | Basic gun 100, Big gun 200 (100 damage), Speed boost 100, Armor 100 (200 max health), structures 100 each, ammo 30, Expander 100 | — | Prices requested; the Big gun's effect (double damage) and the gun rules (no downgrade, can skip the basic gun) are first-pass choices |

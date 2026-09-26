@@ -190,7 +190,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     const signature = roster
                         .map(
                             (p) =>
-                                `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.upgrades.join(',')}|${p.health}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.credits}|${p.claimRadius}|${p.connected}`
+                                `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.upgrades.join(',')}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.credits}|${p.claimRadius}|${p.connected}`
                         )
                         .join(';');
                     if (signature === lastSignature) return;

@@ -35,7 +35,9 @@ export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
             </div>
             {me && (
                 <>
-                    <div>Health: {Math.max(0, Math.round(me.health))}</div>
+                    <div>
+                        Health: {Math.max(0, Math.round(me.health))} / {me.maxHealth}
+                    </div>
                     <div>Gun: {GUN_NAMES[me.gun as GunId] ?? 'none'}</div>
                     <div>Ammo: {me.ammo}</div>
                     <div>Tiles: {me.tilesOwned}</div>
