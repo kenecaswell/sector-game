@@ -11,7 +11,12 @@ export const BASE_CLAIM_RADIUS = HEX_SIZE;
 export const DISCONNECTED_ALPHA = 0.4;
 export const CLAIM_RING_FILL_ALPHA = 0.3;
 export const CLAIM_RING_STROKE_ALPHA = 0.7;
-export const PROJECTILE_RADIUS = 6;
+export const PROJECTILE_RADIUS = 6; // the server's hit radius (same for both guns)
+// Shot looks, by gun (told apart by the projectile's damage). Drawn radius = PROJECTILE_RADIUS x scale.
+export const BASIC_SHOT_SCALE = 0.7; // a small white bolt
+export const BASIC_SHOT_COLORS = { core: 0xffffff, stroke: 0xdfe6ee, glow: 0xffffff };
+export const BIG_SHOT_SCALE = 1.3; // the original yellow bolt, a bit bigger
+export const BIG_SHOT_COLORS = { core: 0xfff2a8, stroke: 0xffb300, glow: 0xffe066 };
 
 // --- Isometric look (render-only; the server never sees any of this) ---
 // The world is simulated top-down. On screen, y is multiplied by ISO_SQUASH to

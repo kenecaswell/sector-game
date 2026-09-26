@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { getStateCallbacks, type GameRoom } from '../../net/GameConnection';
 import type { PlayerState, ProjectileState, StructureState } from '../../types/gameState';
+import { GUN_DAMAGE } from '../../types/shared';
 import {
     BACKGROUND_COLOR,
     BASE_CLAIM_RADIUS,
@@ -26,6 +27,10 @@ import {
     MOVE_RELATIVE_TO_AIM,
     PLAYER_RADIUS,
     PROJECTILE_RADIUS,
+    BASIC_SHOT_COLORS,
+    BASIC_SHOT_SCALE,
+    BIG_SHOT_COLORS,
+    BIG_SHOT_SCALE,
     SMOOTHING_RATE,
     SNAP_DISTANCE,
     STRUCTURE_BORDER_WIDTH,
@@ -816,18 +821,22 @@ export class GameScene extends Phaser.Scene {
         if (this.projectileViews.has(projectile.id)) return;
         const start = project(projectile.x, projectile.y);
 
-        // Placeholder art: a glowing bolt floating at body height over a small ground shadow.
+        // Placeholder art: a glowing bolt floating at body height over a small ground shadow. Big-gun
+        // shots are a larger yellow bolt; basic-gun shots a smaller white one.
+        const big = projectile.damage >= GUN_DAMAGE.big;
+        const radius = PROJECTILE_RADIUS * (big ? BIG_SHOT_SCALE : BASIC_SHOT_SCALE);
+        const colors = big ? BIG_SHOT_COLORS : BASIC_SHOT_COLORS;
         const shadow = this.add.ellipse(
             0,
             0,
-            PROJECTILE_RADIUS * 2.2,
-            PROJECTILE_RADIUS * 2.2 * ISO_SQUASH,
+            radius * 2.2,
+            radius * 2.2 * ISO_SQUASH,
             0x000000,
             0.3
         );
-        const glow = this.add.circle(0, -BODY_LIFT, PROJECTILE_RADIUS * 1.8, 0xffe066, 0.3);
-        const core = this.add.circle(0, -BODY_LIFT, PROJECTILE_RADIUS, 0xfff2a8);
-        core.setStrokeStyle(2, 0xffb300, 1);
+        const glow = this.add.circle(0, -BODY_LIFT, radius * 1.8, colors.glow, 0.3);
+        const core = this.add.circle(0, -BODY_LIFT, radius, colors.core);
+        core.setStrokeStyle(big ? 2 : 1.5, colors.stroke, 1);
 
         const sprite = this.add.container(start.x, start.y, [shadow, glow, core]);
         sprite.setDepth(start.y);
