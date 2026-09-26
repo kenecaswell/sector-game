@@ -24,7 +24,20 @@ node tools/e2e.js
 node tools/bots.js 4 120            # then profile the browser; see ARCHITECTURE.md, Performance pass
 ```
 
-`e2e.js` needs `client/node_modules` installed (it borrows `colyseus.js`) and port 2598 free.
+`e2e.js` needs `client/node_modules` installed (it borrows `colyseus.js`) and port 2598 free, or
+set `E2E_PORT` to use another. Separate ports also let several runs go at once, which is the
+quickest way to shake out a timing-dependent check:
+
+```bash
+for p in 2601 2602 2603 2604; do E2E_PORT=$p node tools/e2e.js > e2e-$p.log 2>&1 & done; wait
+grep -h "✘" e2e-*.log
+```
+
+**Writing checks that don't flake:** Colyseus sends broadcast messages immediately but state
+changes on its next patch (every 50 ms), so a message can arrive before the state it describes.
+Wait for the state itself (`waitFor(() => ...)`) rather than for a message plus a fixed `sleep`.
+This is what made "the dropped player is marked disconnected" fail about once in ten runs until
+2026-09-26.
 
 ## What they don't cover
 

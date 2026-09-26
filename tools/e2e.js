@@ -18,7 +18,8 @@ const { pixelToHex, hexCenter, hexNeighbors, structureFootprint } = dist('hex.js
 const C = dist('constants.js');
 const shared = dist('types/shared.js');
 
-const PORT = 2598;
+// Its own throwaway server. E2E_PORT lets several runs happen at once (e.g. to hunt a flaky check).
+const PORT = Number(process.env.E2E_PORT) || 2598;
 const URL = `ws://localhost:${PORT}`;
 
 // ---------------------------------------------------------------------------------------------
@@ -412,7 +413,15 @@ async function connection() {
         const token = b.reconnectionToken;
         const bId = b.sessionId;
         drop(b);
-        await waitFor(() => a.inbox.length > 0 && c.inbox.length > 0, 3000);
+        // Broadcast messages go out at once, but state changes ride the next patch (every 50 ms),
+        // so the notice can arrive before `connected` flips. Wait for both, not just the notice.
+        await waitFor(
+            () =>
+                a.inbox.length > 0 &&
+                c.inbox.length > 0 &&
+                a.state.players.get(bId)?.connected === false,
+            3000
+        );
         const heard = (room) => room.inbox.find((m) => m.type === 'disconnected');
         check(
             'the dropped player is marked disconnected',
@@ -431,8 +440,13 @@ async function connection() {
         const own = [];
         returned.onMessage('playerReconnected', (m) => own.push(m));
         returned.onMessage('*', () => {});
-        await waitFor(() => a.inbox.some((m) => m.type === 'reconnected'), 3000);
-        await sleep(300);
+        await waitFor(
+            () =>
+                a.inbox.some((m) => m.type === 'reconnected') &&
+                a.state.players.get(bId)?.connected === true,
+            3000
+        );
+        await sleep(300); // time for a (wrong) self-notice to arrive, for the last check below
         check('the player is connected again', a.state.players.get(bId).connected === true);
         check(
             'every other player is told they came back',
