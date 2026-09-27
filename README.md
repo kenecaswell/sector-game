@@ -107,10 +107,10 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
 | Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
-| Build a structure | `B` or the **Build** button (shows your next structure and how many you have left), then click where to put it — the outline is yellow where you can build, red where you can't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
+| Build a structure | `B` or the **Build** button (shows which structure it will place and how many of that type you have; pick the type in the Inventory), then click where to put it — the outline is yellow where you can build, red where you can't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
 | Shop | **Shop** button (below Leaderboard) or `E`; `Esc` closes | **Shop** button |
-| Inventory (your gun, ammo, structures, upgrades; switch the equipped upgrade) | **Inventory** button (below Shop) or `I`; `Esc` closes | **Inventory** button |
+| Inventory (your gun, ammo, structures, upgrades; pick which structure Build places; switch the equipped upgrade) | **Inventory** button (below Shop) or `I`; `Esc` closes | **Inventory** button |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 
 Your score is always shown at the top center. The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
@@ -156,7 +156,7 @@ The shop offers your next level of each upgrade. Levels last the whole match. Yo
 
 Every 10 seconds each player earns 1 credit per hex they own, to spend in the shop. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
-Defeated players respawn at the map center with full health, keeping their tiles and kills.
+Players start on a line near the right-hand edge of the map: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
 
 ## Project layout
 

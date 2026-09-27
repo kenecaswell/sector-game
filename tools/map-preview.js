@@ -76,7 +76,8 @@ function render(seed) {
                     const piece = pieceOf.get(i);
                     color = COLORS[piece ? piece.size : 'small'][piece ? piece.k % 2 : 0];
                 }
-                if (hex.col === map.spawn.col && hex.row === map.spawn.row) color = COLORS.spawn;
+                const spawn = map.spawns.some((h) => h.col === hex.col && h.row === hex.row);
+                if (spawn) color = COLORS.spawn;
             }
             raw.set(color, y * (w * 3 + 1) + 1 + x * 3);
         }

@@ -1,5 +1,5 @@
 // Random terrain for a match: mostly ground, with mountain ranges, lakes and rivers.
-// The rules (sizes, separation, the clear spawn area, nothing walled off) are in
+// The rules (sizes, separation, the clear spawn areas, nothing walled off) are in
 // docs/GAME_DESIGN.md → Terrain; the numbers are in constants.ts.
 
 import {
@@ -13,15 +13,18 @@ import {
     RIVER_WIDTH,
     RIVER_WIDTH_CHANGE_CHANCE,
     SPAWN_CLEAR_RADIUS,
+    SPAWN_EDGE_INSET,
+    SPAWN_ROW_SPACING,
+    SPAWN_SLOTS,
     TERRAIN_COVERAGE,
     TERRAIN_FEATURE_WEIGHTS,
 } from './constants';
 import {
+    hexCenter,
     hexDistance,
     hexIndex,
     hexNeighbors,
     isValidHex,
-    mapPixelSize,
     pixelToHex,
     type HexCoord,
 } from './hex';
@@ -51,7 +54,7 @@ export interface TerrainFeature {
 export interface GeneratedTerrain {
     terrain: Terrain[]; // index = row * cols + col
     features: TerrainFeature[];
-    spawn: HexCoord; // the hex players spawn on (kept clear)
+    spawns: HexCoord[]; // the spawn hexes, one per slot (all kept clear)
 }
 
 /** A small, fast seeded random number generator (mulberry32): the same seed gives the same map. */
@@ -66,15 +69,43 @@ export function seededRandom(seed: number): () => number {
     };
 }
 
-/** The hex at the center of the map, where GameRoom spawns (and respawns) players. */
-export function spawnHex(cols: number, rows: number): HexCoord {
-    const { width, height } = mapPixelSize(cols, rows);
-    return pixelToHex(width / 2, height / 2);
+/**
+ * The hex where the player in spawn slot `slot` starts and respawns: a column near the right-hand
+ * (east) edge. Slot 0 is the middle row; later slots alternate above and below it, each pair
+ * SPAWN_ROW_SPACING rows further out, so more players spread further toward the top and bottom.
+ */
+export function spawnHex(cols: number, rows: number, slot = 0): HexCoord {
+    const steps = Math.ceil(slot / 2) * (slot % 2 === 1 ? -1 : 1);
+    const row = Math.floor(rows / 2) + steps * SPAWN_ROW_SPACING;
+    return {
+        col: Math.max(0, cols - 1 - SPAWN_EDGE_INSET),
+        row: Math.min(rows - 1, Math.max(0, row)),
+    };
+}
+
+/** Every slot's spawn hex (slot order), which the terrain generator keeps clear. */
+export function spawnHexes(cols: number, rows: number): HexCoord[] {
+    return Array.from({ length: SPAWN_SLOTS }, (_, slot) => spawnHex(cols, rows, slot));
+}
+
+/** World-space point where the player in `slot` starts and respawns. */
+export function spawnPoint(state: GameState, slot: number): { x: number; y: number } {
+    const hex = spawnHex(state.mapWidth, state.mapHeight, slot);
+    return hexCenter(hex.col, hex.row);
+}
+
+/** The lowest spawn slot no current player holds (a player keeps theirs through a reconnect). */
+export function freeSpawnSlot(state: GameState): number {
+    const taken = new Set<number>();
+    state.players.forEach((player) => taken.add(player.spawnSlot));
+    let slot = 0;
+    while (taken.has(slot)) slot++;
+    return slot % SPAWN_SLOTS;
 }
 
 interface GridTables {
     neighbors: Int32Array; // hex i's six neighbor indices at [i * 6 + k], -1 = off the map
-    nearSpawn: Uint8Array; // 1 = within SPAWN_CLEAR_RADIUS of the spawn hex
+    nearSpawn: Uint8Array; // 1 = within SPAWN_CLEAR_RADIUS of a spawn hex
     nearby: Int32Array[]; // every hex within FEATURE_GAP steps of hex i (which another feature must stay out of)
 }
 const gridTablesCache = new Map<string, GridTables>();
@@ -83,7 +114,7 @@ const gridTablesCache = new Map<string, GridTables>();
  * Lookup tables the generator's checks use millions of times per map. They depend only on the map
  * size (not on the random layout), so they're built once per size and reused by every room.
  */
-function gridTables(cols: number, rows: number, spawn: HexCoord): GridTables {
+function gridTables(cols: number, rows: number, spawns: HexCoord[]): GridTables {
     const key = `${cols}x${rows}`;
     const cached = gridTablesCache.get(key);
     if (cached) return cached;
@@ -99,7 +130,9 @@ function gridTables(cols: number, rows: number, spawn: HexCoord): GridTables {
             hexNeighbors(col, row).forEach((n, k) => {
                 if (valid(n)) neighbors[i * 6 + k] = at(n);
             });
-            if (hexDistance({ col, row }, spawn) <= SPAWN_CLEAR_RADIUS) nearSpawn[i] = 1;
+            if (spawns.some((spawn) => hexDistance({ col, row }, spawn) <= SPAWN_CLEAR_RADIUS)) {
+                nearSpawn[i] = 1;
+            }
             const close: number[] = [];
             for (let r = row - FEATURE_GAP - 1; r <= row + FEATURE_GAP + 1; r++) {
                 for (let c = col - FEATURE_GAP; c <= col + FEATURE_GAP; c++) {
@@ -124,8 +157,8 @@ function gridTables(cols: number, rows: number, spawn: HexCoord): GridTables {
 /**
  * Generates a layout. Features are added one at a time, alternating kinds by weight, until about
  * TERRAIN_COVERAGE of the map is terrain. Each feature grows only onto hexes that are free, outside
- * the spawn area, and not next to another feature. A feature that would wall off any ground from
- * the spawn is undone, so every generated map is valid without restarting.
+ * the spawn areas, and not next to another feature. A feature that would wall off any ground from
+ * the spawns is undone, so every generated map is valid without restarting.
  */
 export function generateTerrain(
     cols: number,
@@ -135,16 +168,17 @@ export function generateTerrain(
     const size = cols * rows;
     const featureOf = new Int32Array(size).fill(-1); // which feature owns each hex
     const features: TerrainFeature[] = [];
-    const spawn = spawnHex(cols, rows);
+    const spawns = spawnHexes(cols, rows);
+    const spawn = spawns[0]; // every spawn area is ground, so reaching all ground from one is enough
     const target = Math.round(size * TERRAIN_COVERAGE);
 
     const randInt = (min: number, max: number) => min + Math.floor(random() * (max - min + 1));
     const at = (h: HexCoord) => hexIndex(h.col, h.row, cols);
     const valid = (h: HexCoord) => isValidHex(h.col, h.row, cols, rows);
 
-    const { neighbors, nearSpawn, nearby } = gridTables(cols, rows, spawn);
+    const { neighbors, nearSpawn, nearby } = gridTables(cols, rows, spawns);
 
-    /** Can feature `id` grow onto this hex? (Free, outside the spawn area, and no other feature within FEATURE_GAP.) */
+    /** Can feature `id` grow onto this hex? (Free, outside the spawn areas, and no other feature within FEATURE_GAP.) */
     const open = (h: HexCoord, id: number): boolean => {
         if (!valid(h)) return false;
         const i = at(h);
@@ -476,7 +510,7 @@ export function generateTerrain(
         const type = feature.kind === 'mountain' ? TERRAIN.mountain : TERRAIN.water;
         for (const h of feature.hexes) terrain[at(h)] = type;
     }
-    return { terrain, features, spawn };
+    return { terrain, features, spawns };
 }
 
 // --- Terrain in a running match --------------------------------------------------------------

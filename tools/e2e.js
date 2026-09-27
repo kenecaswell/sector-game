@@ -14,7 +14,7 @@ const path = require('path');
 const { root, serverDist, dist, colyseusClient, section, check, finish, sleep } = require('./lib');
 
 const { Client } = colyseusClient();
-const { pixelToHex, hexCenter, hexNeighbors, structureFootprint } = dist('hex.js');
+const { pixelToHex, hexCenter, hexNeighbors, mapPixelSize, structureFootprint } = dist('hex.js');
 const C = dist('constants.js');
 const shared = dist('types/shared.js');
 
@@ -495,7 +495,7 @@ async function connection() {
 }
 
 async function edges() {
-    // A map of plain ground: this walks from the center to the edges, and terrain in the way
+    // A map of plain ground: this walks from the spawn to the edges, and terrain in the way
     // would stop it (terrain movement is unit-tested in server/src/systems/terrainRules.spec.ts).
     section('The map edge (over the wire)');
     await withServer(
@@ -512,16 +512,22 @@ async function edges() {
                 move(a, 0, 0);
                 await sleep(400);
             };
-            await push(-1, 0, (p) => p.x <= C.MAP_EDGE_MARGIN + 0.5);
+            // The spawn line is near the right-hand edge, so push into that corner. (Bottom, not
+            // top: the last column is an odd one, shifted down half a hex, so the top-right corner
+            // of the map rectangle is off the hex grid.)
+            const { width, height } = mapPixelSize(64, 64);
+            const right = width - C.MAP_EDGE_MARGIN;
+            const bottom = height - C.MAP_EDGE_MARGIN;
+            await push(1, 0, (p) => p.x >= right - 0.5);
             check(
-                'pushing hard into the left edge stops at MAP_EDGE_MARGIN',
-                Math.abs(me(a).x - C.MAP_EDGE_MARGIN) < 0.5,
+                'pushing hard into the right edge stops at MAP_EDGE_MARGIN',
+                Math.abs(me(a).x - right) < 0.5,
                 `x=${me(a).x.toFixed(1)}`
             );
-            await push(0, -1 / C.SCREEN_Y_SCALE, (p) => p.y <= C.MAP_EDGE_MARGIN + 0.5);
+            await push(0, 1 / C.SCREEN_Y_SCALE, (p) => p.y >= bottom - 0.5);
             check(
-                '...and into the top edge',
-                Math.abs(me(a).y - C.MAP_EDGE_MARGIN) < 0.5,
+                '...and into the bottom edge',
+                Math.abs(me(a).y - bottom) < 0.5,
                 `y=${me(a).y.toFixed(1)}`
             );
             const hex = pixelToHex(me(a).x, me(a).y);

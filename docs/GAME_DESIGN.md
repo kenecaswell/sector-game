@@ -98,7 +98,7 @@ Implementation: [Game Phases](ARCHITECTURE.md#game-phases), [Room Lifecycle](ARC
 - **Size in play:** crossing the map takes about **15 s left to right** and **11 s top to bottom** at normal speed. (The vertical trip is shorter because the tilted view squashes the map vertically and speed is measured on screen.)
 - **Edges:** you can walk right up to the edge but not off it. The camera always keeps you centered, even at the edge.
 - **Corners:** the map's outline is jagged (it's made of hexes), so at a few edge spots you can stand over no hex at all. Those spots can't be claimed.
-- **Spawning:** everyone starts and respawns at the **center of the map** for now. 📝 See [Open design questions](#open-design-questions-and-plans) for the planned spawn line.
+- **Spawning:** ✅ players start on a **spawn line near the right-hand (east) edge**, as if "going west": one spot per player, in a column 3 hexes in from the edge (`SPAWN_EDGE_INSET`). The first player to join gets the middle spot; each later one goes alternately above and below, 6 rows further out each pair (`SPAWN_ROW_SPACING`), so the more players there are, the further toward the top and bottom they start. You keep your spot for the match (through a reconnect) and **respawn there**; a spot is freed when its player leaves for good, and the next to join takes the lowest free one. 🧪 The spacing and inset are first-pass.
 
 Implementation: [Map — hex grid and coordinate spaces](ARCHITECTURE.md#map--hex-grid-and-coordinate-spaces).
 
@@ -143,7 +143,7 @@ Terrain comes in features, each a contiguous group of hexes (every hex touches a
 
 ### Fairness
 
-- **The spawn area is always open ground.** Everyone starts and respawns at the map center, and the generator keeps that area clear.
+- **The spawn areas are always open ground.** The generator keeps every hex within 3 steps (`SPAWN_CLEAR_RADIUS`) of each spawn spot clear, so anyone can build a structure right where they start.
 - **Every ground hex can be reached on foot.** The generator never walls off ground with mountains or deep water (shallow water counts as walkable), so players without Wings can always get anywhere a structure could be built.
 
 Implementation: [Terrain](ARCHITECTURE.md#terrain).
@@ -153,7 +153,7 @@ Implementation: [Terrain](ARCHITECTURE.md#terrain).
 - **Body:** a circle a little smaller than a hex (`PLAYER_RADIUS`, 20, against a hex radius of 32).
 - **Movement:** ✅ continuous, in any direction, with smooth acceleration, turning and stopping rather than snapping. Top speed (`PLAYER_SPEED`) is the same in every direction **as seen on screen**. A joystick pushed part-way moves you more slowly.
 - **Health:** 🧪 100 (`BASE_MAX_HEALTH`), +100 per Armor level (200 / 300 / 400; `ARMOR_HEALTH_PER_LEVEL`).
-- **Death and respawn:** ✅ at 0 health you respawn instantly at the map center with full health. **You keep your tiles, credits, upgrades and kills.** The player who landed the killing blow gets the kill.
+- **Death and respawn:** ✅ at 0 health you respawn instantly at your spawn spot with full health. **You keep your tiles, credits, upgrades and kills.** The player who landed the killing blow gets the kill.
 - **Dropped connection:** ✅ your player stays on the map, frozen and drawn dimmed, and keeps its tiles and structures for **3 minutes** while the game tries to reconnect you. A frozen player can still be shot. Everyone sees a notice when you drop and when you return. After 3 minutes your spot is released and your tiles go back to unclaimed.
 - **Names:** ✅ 2–25 characters (an emoji counts as one), anything allowed. If someone already has your name (ignoring case), you get the first free "name (1)", "name (2)", …. Your last name is remembered on your device for next time.
 
@@ -222,7 +222,7 @@ Implementation: [Tile Claiming](ARCHITECTURE.md#tile-claiming).
 - **Fire rate:** up to 5 shots per second while you hold the fire control (200 ms apart, `FIRE_INTERVAL_MS`). 📝 This limit is currently enforced only by the game client; the server should own it.
 - **Shots:** travel in a straight line at the same on-screen speed in every direction, and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`), which is roughly a quarter of the map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
 - **Friendly fire:** none. Shots pass through teammates and teammates' structures.
-- **Kills:** the shooter's kill count goes up and the victim respawns at the center (see [Players](#players)). Kills are permanent and count toward score.
+- **Kills:** the shooter's kill count goes up and the victim respawns at their spawn spot (see [Players](#players)). Kills are permanent and count toward score.
 
 Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detection](ARCHITECTURE.md#collision-detection).
 
@@ -232,7 +232,7 @@ Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detecti
 
 - **Getting them:** each structure-starting character begins with one, and the shop sells more (100 credits each). You hold them in a **structure inventory** until you place them.
 - **Footprint:** a structure sits on a center hex and **covers that hex plus its 6 neighbors**.
-- **Placing:** press Build, then pick a spot. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can build there, red if not.
+- **Placing:** press Build, then pick a spot. Build places the structure you picked in the **inventory** (each structure type there has a **Select** button; the picked one shows **Selected**), or, until you pick one or once you've run out of it, the first in your inventory. The Build button names it and how many of that type you have ("Build Fort (2)"). **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can build there, red if not.
 - **Solid:** enemies can't walk through your structure; they slide around it. You and your teammates can walk over it.
 - **Protection:** enemies can't claim any of its 7 hexes.
 - **Health and destruction:** 🧪 100 health. Enemy shots damage it, and at 0 it's destroyed and removed. 📝 There's no visible damage state yet (planned: intact → cracked → heavily damaged).
@@ -278,8 +278,8 @@ Implementation: [Shop](ARCHITECTURE.md#shop), [Economy (Credits)](ARCHITECTURE.m
 - **Levels.** Booster, Expander and Armor go up to level 3, Wings has one level. Each level costs 100 credits, bought one at a time in the shop, and is kept all match (respawns included).
 - **One upgrade slot.** Booster, Expander and Wings are *slot* upgrades: you can own all of them, but **only the equipped one works**. Armor isn't a slot upgrade: it always works once bought.
 - **Equipping.** A slot upgrade you buy with the slot empty equips itself; otherwise it waits in your inventory. Buying the next level of the upgrade you have equipped takes effect at once.
-- **Switching** in the **inventory** (`I`, or the Inventory button under Shop): change the equipped upgrade, or empty the slot, any time during the match, at most **once every 5 seconds** (`UPGRADE_SWITCH_COOLDOWN_MS`), so switching is a decision, not a reflex (no flicking Wings on to hop a river mid-chase and straight back to the Booster). You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
-- **The inventory** also shows your gun, ammo and structures by type, and your Armor level. Each owned slot upgrade has an **Equip** button (**Unequip** on the equipped one, which empties the slot); while the cooldown runs the buttons are disabled with a countdown ("You can switch again in 3s"), and while you're over a mountain or deep water with Wings on, it says why you can't switch.
+- **Switching** in the **inventory** (`I`, or the Inventory button under Shop): change the equipped upgrade any time during the match, at most **once every 5 seconds** (`UPGRADE_SWITCH_COOLDOWN_MS`), so switching is a decision, not a reflex (no flicking Wings on to hop a river mid-chase and straight back to the Booster). You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
+- **The inventory** also shows your gun, ammo and structures by type, and your Armor level. Each owned slot upgrade has an **Equip** button; the equipped one's is a disabled **Equipped** (you switch by equipping another, not by emptying the slot). While the cooldown runs the buttons are disabled with a countdown ("You can switch again in 3s"), and while you're over a mountain or deep water with Wings on, it says why you can't switch.
 - The HUD shows your equipped upgrade with its level ("Upgrade: Booster 2") and your Armor level.
 
 ## Scoring and winning
@@ -348,13 +348,12 @@ Things that need a design decision, not just code. Where one is also tracked in 
 - **Early game:** nothing but ammo is affordable at the start; check whether that feels right.
 
 ### Map and spawning
-- **Starting positions:** players should start in a line on the right side of the map, as if "going west". Needs spawn spots for up to 10 players, and a decision on whether respawns use them too (today: the center).
+- **Starting positions:** ✅ decided 2026-09-26 (spawn line, see [The map](#the-map)). Still open: should teammates start next to each other rather than in join order?
 - **Terrain (Planned Features #7):** decided 2026-09-26: gameplay terrain (ground, mountain, water), no elevation; see [Terrain](#terrain). Still open:
   - Mountain sprites: small and large mountains will map to different sprites; the generator already records which hexes form each one.
   - Should terrain slow you down (wading through water, say) rather than only allow or block you?
   - Should rivers connect to lakes or run off the map edge, so they read as rivers rather than long lakes?
   - Should maps be shareable or replayable (a visible seed)?
-  - Should the planned spawn line on the east side stay clear of terrain too?
 - **Map outline:** the jagged hex edge versus the rectangular walkable area could be fixed at the same time.
 
 ### Art and presentation (Planned Features #7, #10)
@@ -377,7 +376,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 
 | Decision | Chosen | Alternatives considered | Rationale |
 |---|---|---|---|
-| PvP death handling | Respawn at map center, full health, kills/tiles preserved | Elimination, sudden-death end-of-match | This is a territory-claiming game, not a deathmatch — PvP is a tool for defending/contesting tiles, not the win condition, so a defeated player should get back in the fight quickly |
+| PvP death handling | Respawn at your spawn spot (the map center until 2026-09-26), full health, kills/tiles preserved | Elimination, sudden-death end-of-match | This is a territory-claiming game, not a deathmatch — PvP is a tool for defending/contesting tiles, not the win condition, so a defeated player should get back in the fight quickly |
 | Host concept — **superseded 2026-09-26 (ready-up lobby)** | First player to join a room is `hostId`; only they can send `startGame`; reassigned to next connected player on host departure | No host (auto-start at max players or after a lobby timer), server-side matchmaking-assigned host | Simplest to implement for a scaffold; a lobby timer or player-ready-up voting could replace this later without changing the wire protocol much |
 | Ammo — **superseded 2026-09-26 (character kits: only the Smuggler starts with ammo, 15; everyone else buys it)** | Finite (30), decrements per shot, no regen yet | Infinite ammo, regen over time, reload mechanic | Left as a known gap — finite ammo without regen makes for a hard stop mid-match, which is a real gameplay concern to resolve before this ships, not just a technical TODO |
 | Credits payout scope | Every player earns 1 credit per tile they individually own, during `playing` only (formerly `claiming`/`combat`) | Payouts continuing into `results`, or scoped only to the old `combat` phase | Matches the request's "based on number of tiles they control" without over-scoping into phases where tile ownership isn't changing meaningfully or the match is already decided; open questions about team-pooled credits remain in Planned Features #2 |
@@ -423,7 +422,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Random map per match | A new layout is generated when each match is created | One fixed map; a map picked from a set | Requested: every match should play differently |
 | Terrain and shots | Mountains block shots; water doesn't | Neither blocks; both block | Chosen by the developer: ranges become cover, water stays a pure movement barrier |
 | Wings | Upgrade, 100 credits, one per player: walk over mountains and deep water (still can't claim them) | 150 or 200 credits | Price chosen by the developer, in line with the other upgrades |
-| Terrain fairness | The spawn area is always ground, and every ground hex is reachable on foot | No guarantee (retry-free generation) | My addition: a player without Wings must never spawn trapped, and no buildable ground may be walled off |
+| Terrain fairness | The spawn areas are always ground, and every ground hex is reachable on foot | No guarantee (retry-free generation) | My addition: a player without Wings must never spawn trapped, and no buildable ground may be walled off |
 | Terrain look (until sprites) | Mountain: off-white with a thin gray border. Water: dark blue with a dotted border in the normal border color | — | Requested; distinct from each other, from ground and from every team color |
 | Terrain features (revised) — **superseded the same day (mountain pieces, gap, compact lakes, below)** | Mountain ranges 3–32 hexes; lakes 3–32; rivers 2–20 long and 1–4 wide, the width changing by one hex at a time; holes at river bends filled; features never touch | The first sizes (singles allowed, rivers 1–2 wide) | Requested: bigger, more substantial features with no single hexes. Filling holes (my addition) stops wide bending rivers leaving ground pockets inside them |
 | Shallow water | Water one hex across is shallow and walkable: a water hex with at most two water neighbors that don't touch each other (1-wide river stretches, bends included). Everything else is deep | Only lone water is shallow (previous); a river that's 1 wide along its whole length | Requested (2026-09-26): "single" water meant water you can step across. The rule is purely about shape, so both sides compute it the same way (`shared/terrain.ts`) |
@@ -436,4 +435,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Expander steps | Claim 7 / 19 / 37 hexes (1 / 2 / 3 rings; radii 80 / 125 / 180 px) | 7 / 12 / 19 | Chosen by the developer: big, visible jumps |
 | One upgrade slot | Only the equipped slot upgrade (Booster, Expander, Wings) works; switch at most every 5 s; can't take Wings off over solid terrain; a purchase into an empty slot equips itself | Every owned upgrade works (previous); instant switching; switching only on your own territory | Requested (one slot); the 5 s cooldown chosen by the developer to stop reflex swaps in a fight. The Wings rule and auto-equip are my additions: no getting stuck inside a mountain, and a first purchase just works |
 | Armor | Always on (no slot), 3 levels of +100 max health (200 / 300 / 400) | Armor in the slot, with health capped at 100 when switched off | Chosen by the developer |
-| Inventory | A popup like the shop (`I` / Inventory button): gun, ammo, structures, Armor, and owned slot upgrades with Equip / Unequip, a cooldown countdown, and a note when Wings can't come off | Switching from the HUD; a permanent side panel | Requested ("an inventory where they can switch between upgrades and see their owned structures and guns and ammo"). A popup matches the shop and leaderboard and fits phones. The Wings note (checked live on the client with the same `blocksWalking` rule) means a refused switch is never silent |
+| Inventory | A popup like the shop (`I` / Inventory button): gun, ammo, structures, Armor, and owned slot upgrades with Equip (Unequip on the equipped one until 2026-09-26, see *Equipped button* below), a cooldown countdown, and a note when Wings can't come off | Switching from the HUD; a permanent side panel | Requested ("an inventory where they can switch between upgrades and see their owned structures and guns and ammo"). A popup matches the shop and leaderboard and fits phones. The Wings note (checked live on the client with the same `blocksWalking` rule) means a refused switch is never silent |
+| Spawn line | Players start near the east edge in one column, first joiner in the middle, later ones alternating above and below, 6 rows apart; you keep your spot all match and respawn there; every spot's area (3 steps) is kept clear of terrain | Everyone at the map center (previous); spots spread by the current player count; respawning at the center or a random spot | Requested (2026-09-26): start on the far right, first player central, more players further toward the top and bottom. Respawning at your own spot and keeping the areas clear are my choices: you come back somewhere you know, can always build where you start, and a whole line of spots is too many to clear at the old 4-step radius (it's now 3) |
+| Choosing what Build places | Pick a structure type in the inventory (Select / Selected); Build places it while you have one, else the first in your inventory; the Build button names it and counts that type | Build cycles types; a picker next to the Build button | Requested (2026-09-26). The inventory already lists structures by type, and a pick that runs out falls back instead of disabling Build |
+| Equipped button | The equipped upgrade's button is a disabled "Equipped"; there's no way to empty the slot from the inventory | "Unequip", which emptied the slot (previous) | Requested (2026-09-26). The server still accepts an empty-slot request, so this is a client-only change |

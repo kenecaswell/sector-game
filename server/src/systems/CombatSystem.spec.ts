@@ -6,7 +6,8 @@ import {
     SCREEN_Y_SCALE as SQ,
     TICK_RATE,
 } from '../constants';
-import { hexCenter, mapPixelSize } from '../hex';
+import { hexCenter } from '../hex';
+import { spawnPoint } from '../terrain';
 import { DT, addPlayer, addShot, addStructure, shootAt, world } from '../test/world';
 import { GUN_DAMAGE, type PlayerHitEvent } from '../types/shared';
 import { UpgradeSystem } from './UpgradeSystem';
@@ -15,18 +16,18 @@ import { CombatSystem } from './CombatSystem';
 const quiet = () => {};
 
 describe('CombatSystem — hits and kills', () => {
-    it('a basic-gun hit does 50, and two kill: +1 kill, the target respawns at the center', () => {
+    it('a basic-gun hit does 50, and two kill: +1 kill, the target respawns at its spawn', () => {
         const state = world();
         const shooter = addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 'b', 1500, 1500);
+        target.spawnSlot = 3;
         shootAt(state, 'a', target);
         expect(target.health).toBe(100 - GUN_DAMAGE.basic);
-        target.x = 400; // move away from the center so the respawn is visible
         shootAt(state, 'a', target);
-        const center = mapPixelSize(64, 64);
+        const start = spawnPoint(state, 3);
         expect(shooter.kills).toBe(1);
         expect(target.health).toBe(100);
-        expect([target.x, target.y]).toEqual([center.width / 2, center.height / 2]);
+        expect([target.x, target.y]).toEqual([start.x, start.y]);
     });
 
     it('broadcasts every hit with its damage', () => {

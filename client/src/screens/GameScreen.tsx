@@ -14,7 +14,8 @@ import { MobileJoystick } from '../components/MobileJoystick';
 import { DebugStats } from '../components/DebugStats';
 import { FireButton } from '../components/FireButton';
 import { ScoreBadge } from '../components/ScoreBadge';
-import { STRUCTURE_NAMES, isStructureType } from '../types/shared';
+import { STRUCTURE_NAMES, type StructureType } from '../types/shared';
+import { structureToBuild } from '../utils/build';
 import { isTouchDevice } from '../utils/device';
 import { scoreFor } from '../utils/score';
 
@@ -35,6 +36,13 @@ export function GameScreen() {
     const containerRef = useRef<HTMLDivElement>(null);
     const gameRef = useRef<Phaser.Game | null>(null);
     const [buildModeArmed, setBuildModeArmed] = useState(false);
+    // The structure picked in the inventory for Build to place next (see utils/build.ts). A ref too,
+    // for the Phaser callback below, which outlives renders.
+    const [selectedStructure, setSelectedStructure] = useState<StructureType>();
+    const selectedStructureRef = useRef<StructureType>(undefined);
+    useEffect(() => {
+        selectedStructureRef.current = selectedStructure;
+    }, [selectedStructure]);
     // Only one popup is open at a time.
     const [panel, setPanel] = useState<'none' | 'leaderboard' | 'shop' | 'inventory'>('none');
     const [showStats, setShowStats] = useState(false);
@@ -48,9 +56,13 @@ export function GameScreen() {
             onInput: input,
             onShoot: shoot,
             onPlaceStructure: (tileX, tileY) => {
-                // Build the next structure in the inventory (read live: this closure outlives renders).
-                const next = room.state.players.get(sessionId)?.structureInventory[0];
-                if (isStructureType(next)) placeStructure(tileX, tileY, next);
+                // Build the picked structure, or the first in the inventory (read live: this closure
+                // outlives renders).
+                const next = structureToBuild(
+                    room.state.players.get(sessionId)?.structureInventory,
+                    selectedStructureRef.current
+                );
+                if (next) placeStructure(tileX, tileY, next);
                 setBuildModeArmed(false);
             },
         });
@@ -90,8 +102,8 @@ export function GameScreen() {
         gameRef.current?.scene.getScene('GameScene') as GameScene | undefined;
 
     const me = players.find((player) => player.id === sessionId);
-    const nextStructure = me?.structureInventory[0];
-    const canBuild = isStructureType(nextStructure);
+    const nextStructure = structureToBuild(me?.structureInventory, selectedStructure);
+    const canBuild = nextStructure !== undefined;
     const hasGun = !!me?.gun;
     // Build mode only counts while there's something left to build.
     const buildArmed = buildModeArmed && canBuild;
@@ -182,6 +194,8 @@ export function GameScreen() {
                 <Inventory
                     player={me}
                     onEquip={equipUpgrade}
+                    buildNext={nextStructure}
+                    onSelectStructure={setSelectedStructure}
                     overSolidTerrain={overSolidTerrain}
                     onClose={() => setPanel('none')}
                 />
@@ -194,7 +208,7 @@ export function GameScreen() {
                     disabled={!canBuild}
                     title={
                         canBuild
-                            ? 'Build mode (B). Esc to cancel.'
+                            ? 'Build mode (B). Esc to cancel. Pick which structure in the inventory (I).'
                             : 'No structures left. Buy more in the shop (E).'
                     }
                     onClick={(e) => {
@@ -215,9 +229,9 @@ export function GameScreen() {
                     }}
                 >
                     {buildArmed
-                        ? 'Pick a spot — all 7 hexes must be yours'
+                        ? `Pick a spot for the ${STRUCTURE_NAMES[nextStructure]} — all 7 hexes must be yours`
                         : canBuild
-                          ? `Build ${STRUCTURE_NAMES[nextStructure]} (${me?.structureInventory.length})`
+                          ? `Build ${STRUCTURE_NAMES[nextStructure]} (${me?.structureInventory.filter((t) => t === nextStructure).length})`
                           : 'Nothing to build'}
                 </button>
             )}

@@ -39,7 +39,7 @@ grep -h "✘" e2e-*.log
 **Terrain:** every room gets a random map, so a check that walks far (like the map-edge scenario)
 could be stopped by a mountain. Such scenarios run on plain ground: `withServer(scale, fn,
 { TERRAIN_COVERAGE: '0' })` sets the server's `TERRAIN_COVERAGE` environment variable (dev/testing
-only). Checks near the spawn don't need it, since the spawn area is always clear.
+only). Checks near a spawn don't need it, since the spawn areas are always clear.
 
 **Writing checks that don't flake:** Colyseus sends broadcast messages immediately but state
 changes on its next patch (every 50 ms), so a message can arrive before the state it describes.
@@ -61,6 +61,6 @@ This is what made "the dropped player is marked disconnected" fail about once in
 
 `map-preview.js` colors: ground slate; mountains warm white (large mountains) and gray (small),
 alternating shades so each mountain piece stands out; deep water dark blue, shallow water lighter;
-the spawn hex red. Fixed seeds always give the same picture, so render a few seeds, change the
+the spawn hexes red. Fixed seeds always give the same picture, so render a few seeds, change the
 generator (`server/src/terrain.ts`, tunables in `server/src/constants.ts`), rebuild, and render
 the same seeds again to compare.

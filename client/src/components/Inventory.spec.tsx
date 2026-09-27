@@ -3,20 +3,30 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makePlayer } from '../test/factories';
 import type { PlayerState } from '../types/gameState';
+import type { StructureType } from '../types/shared';
 import { Inventory } from './Inventory';
 
-function show(player: Partial<PlayerState>, { overSolidTerrain = false } = {}) {
+function show(
+    player: Partial<PlayerState>,
+    {
+        overSolidTerrain = false,
+        buildNext = undefined,
+    }: { overSolidTerrain?: boolean; buildNext?: StructureType } = {}
+) {
     const onEquip = vi.fn();
+    const onSelectStructure = vi.fn();
     const onClose = vi.fn();
     render(
         <Inventory
             player={makePlayer(player)}
             onEquip={onEquip}
+            buildNext={buildNext}
+            onSelectStructure={onSelectStructure}
             overSolidTerrain={() => overSolidTerrain}
             onClose={onClose}
         />
     );
-    return { onEquip, onClose };
+    return { onEquip, onSelectStructure, onClose };
 }
 const section = (name: string) => screen.getByRole('region', { name });
 const row = (name: string) => screen.getByRole('group', { name });
@@ -30,6 +40,19 @@ describe('Inventory', () => {
         expect(within(section('Weapons')).getByText('42 ammo')).toBeInTheDocument();
         expect(within(row('Farm')).getByText('×2')).toBeInTheDocument();
         expect(within(row('Fort')).getByText('×1')).toBeInTheDocument();
+    });
+
+    it('marks the structure Build places next, and lets you pick another', async () => {
+        const { onSelectStructure } = show(
+            { structureInventory: ['farm', 'fort', 'farm'] },
+            { buildNext: 'fort' }
+        );
+        const fort = within(row('Fort')).getByRole('button');
+        expect(fort).toHaveTextContent('Selected');
+        expect(fort).toBeDisabled();
+        expect(fort).toHaveAttribute('aria-pressed', 'true');
+        await userEvent.click(within(row('Farm')).getByRole('button', { name: 'Select' }));
+        expect(onSelectStructure).toHaveBeenLastCalledWith('farm');
     });
 
     it('says when you have nothing', () => {
@@ -48,15 +71,15 @@ describe('Inventory', () => {
         expect(screen.queryByRole('group', { name: /Expander/ })).not.toBeInTheDocument();
     });
 
-    it('equips an upgrade, and unequipping the equipped one empties the slot', async () => {
+    it("equips an upgrade; the equipped one's button is disabled, not an Unequip", async () => {
         const { onEquip } = show({ boosterLevel: 1, wingsLevel: 1, equippedUpgrade: 'booster' });
         const booster = within(row('Booster 1')).getByRole('button');
-        expect(booster).toHaveTextContent('Unequip');
+        expect(booster).toHaveTextContent('Equipped');
         expect(booster).toHaveAttribute('aria-pressed', 'true');
+        expect(booster).toBeDisabled();
         await userEvent.click(within(row('Wings')).getByRole('button', { name: 'Equip' }));
         expect(onEquip).toHaveBeenLastCalledWith('wings');
-        await userEvent.click(booster);
-        expect(onEquip).toHaveBeenLastCalledWith('');
+        expect(onEquip).toHaveBeenCalledTimes(1);
     });
 
     it('disables switching during the cooldown and counts it down', () => {

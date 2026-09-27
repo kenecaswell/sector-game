@@ -3,7 +3,7 @@ import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
 import { PROJECTILE_LIFETIME_MS } from '../constants';
 import { projectileVelocity } from '../../../shared/projectiles';
-import { isMountainAtPoint } from '../terrain';
+import { isMountainAtPoint, spawnPoint } from '../terrain';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
@@ -11,12 +11,12 @@ import type { PlayerHitEvent } from '../types/shared';
 
 function respawnPlayer(state: GameState, player: Player): void {
     // Territory-claiming game, not a deathmatch — a defeated player respawns
-    // at the map center with full health rather than being eliminated.
-    // Kills and tilesOwned are untouched.
+    // at their own spot on the spawn line with full health rather than being
+    // eliminated. Kills and tilesOwned are untouched.
     player.health = player.maxHealth;
-    const { width, height } = mapPixelSize(state.mapWidth, state.mapHeight);
-    player.x = width / 2;
-    player.y = height / 2;
+    const start = spawnPoint(state, player.spawnSlot);
+    player.x = start.x;
+    player.y = start.y;
     player.vx = 0;
     player.vy = 0;
 }

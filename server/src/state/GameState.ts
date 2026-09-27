@@ -51,6 +51,8 @@ export class Player extends Schema implements PlayerState {
     @type('uint8') wingsLevel: number = 0;
     @type('string') equippedUpgrade: string = ''; // an UpgradeId with `slot: true`, or '' for none
     @type('number') upgradeSwitchReadyAt: number = 0; // server ms: the equipped upgrade can change again
+    // Server only (not synced): which spawn-line slot this player starts and respawns at.
+    spawnSlot: number = 0;
 }
 
 export class Tile extends Schema implements TileState {

@@ -16,6 +16,8 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 |---|---|
 | The protocol, messages, state schema | Networking Layer, Game State Schema |
 | Game rules and balance (phases, lobby, characters, teams, movement, shooting, score, shop, claiming) | `docs/GAME_DESIGN.md` for the rules; Game Mechanics here for how each is implemented |
+| Terrain (generation, drawing, collision, Wings) | Game Mechanics → *Terrain*; `tools/map-preview.js` to see generated maps |
+| Upgrades (levels, the one equipped slot, the inventory) | Game Mechanics → *Shop* (Upgrades bullet); Client — React Shell (Inventory) |
 | The hex map, iso projection, coordinate spaces | Game Mechanics → *Map — hex grid and coordinate spaces* |
 | Rooms, closing, reconnection, notices | Room Lifecycle, Reconnection System |
 | Collisions, structures | Collision Detection, Destructible Structures |
@@ -39,21 +41,24 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 - Node 20.19+/22.13+/24+ is required; the shell default may be too old.
 - `npm run dev` on the server restarts on any file change and **drops every room**.
 - `client/tsconfig.node.json` must stay type-check only (`noEmit`). It used to emit `vite.config.js`/`.d.ts` next to `vite.config.ts`, and Vite loads a `vite.config.js` *first*, so config edits were silently ignored until `tsc -b` regenerated it. Those files are now git-ignored (2026-09-26).
+- Every room gets a **random map**, so an e2e check that walks far can be stopped by a mountain: such scenarios run with `TERRAIN_COVERAGE=0` (see `tools/README.md`). Every spawn area is always clear.
+- In e2e checks, **wait for state, not for a message plus a sleep**: Colyseus sends broadcasts at once but state changes on the next 50 ms patch, which caused a ~1-in-10 flake.
 - Test on private ports (server `PORT=2599`, client `VITE_SERVER_URL=ws://localhost:2599 npx vite --port 5199`) and don't touch 2567/5173 — the developer often has their own dev server running. The browser test pane is throttled and its screenshots lag; techniques for working around that are in the Testing section.
 
 **Working agreements** (also in `CLAUDE.md`): the developer runs all git commands themselves (ask them to commit); 4-space indentation; in the same change, update this doc for technical changes, `docs/GAME_DESIGN.md` for rule or balance changes, and the README for user-facing changes, with a Decisions Log row in the matching doc for deliberate choices.
 
-**Current state.** Playable end to end: ready-up lobby (pick a team color and one of 6 characters) → 3 s countdown → 5 min play → results screen, with hex movement, claiming (and the radius-doubling Expander), shooting (with a gun), structures placed from each character's starting inventory, teammates (no friendly fire), score, credits, a shop (guns, upgrades, structures), a randomly generated map of mountains, lakes and rivers per match (with solid mountains and deep water (Wings fly over them), unclaimable terrain and mountains that stop shots), disconnect/reconnect with notices, and a results screen. See *Current Status & Known Issues* for the verified list and open bugs. **Temporary or placeholder** (see Planned Features #2, #3, #9): the character stats are first-pass values; the four structure types behave identically; there's no way to get more structures than you start with; "coming soon" shop items are mock rows; `STRUCTURE_POINTS` is one flat value; the results screen is basic; team play is allies-only (no pooling, no team win).
+**Current state.** Playable end to end: ready-up lobby (name, team color, one of 6 characters) → 3 s countdown → 5 min play → results screen. In play: hex movement; claiming; shooting (once you have a gun); structures (7-hex footprint) from your character's kit or the shop; teammates (no friendly fire); score and credits; a shop of guns, ammo, upgrades and structures; **upgrade levels** (Booster, Expander and Armor to level 3, Wings) with **one equipped slot upgrade**, switched in the **inventory** (`I`); a **randomly generated map** per match with mountains, lakes and rivers (solid unless you have Wings, unclaimable, mountains stop shots); disconnect/reconnect with notices. See *Current Status & Known Issues* for the verified list and open bugs. **Temporary or placeholder** (see Planned Features #2, #3, #7, #9): all numbers are first-pass and unbalanced; the four structure types behave identically (one flat `STRUCTURE_POINTS`); everything is placeholder art (colored hexes, slabs, circles); the results screen is basic; team play is allies-only (no pooling, no team win).
 
-**Suggested next steps** (a proposal from the planning notes, not a commitment — confirm priorities with the developer):
-1. Give structure types real behavior and values, and sell structures, better guns and armor in the shop (Planned Features #3, #9). Decide an ammo cap and balance the Expander and character kits.
-2. Team follow-ups (Planned Features #2): pooling tiles/credits, a team win condition, team-size balancing. Per-character art (#7).
-3. Spawn positions: a line on the right side of the map, "going west" (`GAME_DESIGN.md` → Open design questions).
-4. Real art and sprites; decide whether terrain is gameplay or decoration (Planned Features #7).
-5. Server-side fire-rate limit; client-side prediction (#8); off-screen player indicators.
-6. ~~Unit tests with Vitest~~ — done for both sides (2026-09-26). Next: a fake-room test harness for `GameRoom` and the client's `GameContext`, which only `tools/e2e.js` and the browser cover today.
-7. Hosting on AWS per `docs/HOSTING.md`.
-8. Unresolved: a ~19 fps report on the developer's machine. Ask for the backtick readout (fps, ms/frame, renderer) — see Known Issues.
+**Suggested next steps** (a proposal, not a commitment — confirm priorities with the developer; the gameplay side of each is in `docs/GAME_DESIGN.md` → Open design questions):
+1. **Structure types with a purpose** (farm, mine, fort, power plant do nothing different yet) and per-type points (Planned Features #3).
+2. **Balance pass:** ammo cap or supply, upgrade and character numbers, early-game pacing (nothing but ammo is affordable at the start), snowballing (#9).
+3. **Art and sprites** (#7): terrain, structures, characters (six facings). Small/large mountain pieces are recorded by the generator but not synced yet — sprites will need them sent to clients. Custom lobby pickers (#10).
+4. **Spawn follow-ups:** the spawn line is in (2026-09-26); still open are teammates starting together, and the off-grid top-right corner (Known Issues → *Map corners*).
+5. **Team follow-ups** (#2): pooling tiles/credits, a team win condition, team-size balancing.
+6. **Server-side fire-rate limit**; client-side prediction (#8); off-screen player indicators.
+7. **Test harness** for `GameRoom` and the client's `GameContext` (a fake room), which only `tools/e2e.js` and the browser cover today.
+8. **Hosting** on AWS per `docs/HOSTING.md`.
+9. Unresolved: a ~19 fps report on the developer's machine. Ask for the backtick readout (fps, ms/frame, renderer) — see Known Issues.
 
 ---
 
@@ -187,16 +192,19 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   │   ├── LobbySystem.ts      # Team/character/ready picks, default team, ready -> countdown -> playing
 │   │   │   ├── CharacterSystem.ts  # Applies a character's starting kit (gun, ammo, credits, structures, upgrade levels)
 │   │   │   ├── UpgradeSystem.ts    # Upgrade levels and the one equipped slot: effects, speed, flying, equip/level up
-│   │   │   ├── MovementSystem.ts   # Eases velocity toward the input direction (accel-limited), drops stale input, slides around enemy structures, boost
+│   │   │   ├── MovementSystem.ts   # Eases velocity toward the input direction (accel-limited), drops stale input, slides around enemy structures and solid terrain, Booster speed
 │   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, batched tilesClaimed broadcast
 │   │   │   ├── CombatSystem.ts     # Projectile movement, hit detection, respawn-on-death
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
 │   │   │   ├── PhaseSystem.ts      # Phase transitions; times playing -> results
 │   │   │   ├── EconomySystem.ts    # Credit payouts (1/tile/10s)
 │   │   │   ├── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
-│   │   │   └── ShopSystem.ts       # Validates and applies purchases (ammo pack, Basic gun, Expander)
+│   │   │   └── ShopSystem.ts       # Validates and applies purchases (guns, ammo, upgrade levels, structures)
+│   │   ├── test/
+│   │   │   └── world.ts            # Spec helpers: world(), addPlayer, addStructure, setTerrain, drive, ...
 │   │   └── types/
 │   │       └── shared.ts           # Re-exports shared/types.ts
+│   │   (every *.ts has a *.spec.ts next to it: Vitest, `npm test`)
 │   ├── tsconfig.json               # Type-checks everything, specs included (npm run typecheck)
 │   ├── tsconfig.build.json         # What npm run build compiles: tsconfig.json minus specs and src/test/
 │   ├── vitest.config.ts            # Server unit tests (npm test); specs sit next to the code
@@ -223,9 +231,12 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   │   ├── device.ts           # isTouchDevice() — picks keyboard vs. virtual-joystick input
 │   │   │   ├── score.ts            # scoreFor(player) — reads the server-computed Player.score
 │   │   │   ├── usePhaseCountdown.ts # Hook: whole seconds left in the current phase
-│   │   │   └── results.ts          # rankScores() (shared ranks for ties) + scoresFromPlayers() fallback
+│   │   │   ├── playerName.ts       # The saved player name (localStorage)
+│   │   │   └── results.ts          # rankScores() (shared ranks for ties), teamTotals(), scoresFromPlayers() fallback
 │   │   ├── components/
-│   │   │   ├── HUD.tsx             # Own player's health/gun/ammo/tiles/credits/structures/upgrades + phase countdown (top left)
+│   │   │   ├── HUD.tsx             # Own player's health/gun/ammo/tiles/credits/structures, equipped upgrade, Armor + phase countdown (top left)
+│   │   │   ├── NoticeStack.tsx     # Short toasts (disconnect/reconnect), top center
+│   │   │   ├── DebugStats.tsx      # FPS / ms-per-frame / renderer readout (` key)
 │   │   │   ├── ScoreBadge.tsx      # Always-visible own score (top center)
 │   │   │   ├── Inventory.tsx       # Inventory popup: gun, ammo, structures, upgrades; switch the equipped one
 │   │   │   ├── BuyMenu.tsx         # Shop popup: the SHOP_ITEMS catalog grouped by category (weapons, upgrades, structures)
@@ -234,8 +245,11 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   │   └── FireButton.tsx      # Hold-to-fire button (touch, during the match only)
 │   │   ├── screens/
 │   │   │   ├── LobbyScreen.tsx     # Player list with team/character/Ready, countdown, your character's kit
-│   │   │   ├── GameScreen.tsx      # Hosts the Phaser canvas + HUD/score/shop/leaderboard/joystick/fire/build overlays
-│   │   │   └── ResultsScreen.tsx   # Final standings + Play again / Main menu (stays up after the room closes)
+│   │   │   ├── GameScreen.tsx      # Hosts the Phaser canvas + HUD/score/shop/inventory/leaderboard/joystick/fire/build overlays
+│   │   │   └── ResultsScreen.tsx   # Final standings (+ team totals) + Play again / Main menu (stays up after the room closes)
+│   │   ├── test/
+│   │   │   ├── setup.ts            # Vitest setup: jest-dom matchers, cleanup after each test
+│   │   │   └── factories.ts        # makePlayer / makeScore test data
 │   │   └── game/
 │   │       ├── PhaserGame.ts       # Phaser.Game config and init
 │   │       ├── constants.ts        # Client render/smoothing/iso constants + re-exports shared/constants.ts
@@ -244,9 +258,10 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │       └── scenes/
 │   │           └── GameScene.ts    # Iso hex terrain, entities, smoothing, mouse-aim/joystick input — see Client — Phaser Game
 │   ├── index.html
-│   ├── vite.config.ts
+│   ├── vite.config.ts              # Vite + the Vitest `test` block (jsdom); lets the dev server read ../shared
 │   ├── tsconfig.json
-│   ├── tsconfig.app.json
+│   ├── tsconfig.app.json           # src + ../shared, type-check only
+│   ├── tsconfig.node.json          # vite.config.ts, type-check only (noEmit — see Gotchas)
 │   ├── eslint.config.js            # ESLint 10 flat config (browser globals + React)
 │   ├── .prettierrc.json
 │   ├── .prettierignore
@@ -264,6 +279,8 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   └── lib.js                      # Shared helpers
 │
 ├── README.md                       # How to install, run, build, lint; controls; troubleshooting
+├── CONTRIBUTION.md                 # How to contribute (issues, style, docs to update)
+├── .claude/launch.json             # Private-port dev server configs (2599 / 5199) for Claude Code's preview tools
 └── CLAUDE.md                       # Working preferences for Claude Code (git is run by the user; code style; where the docs are)
 ```
 
@@ -355,217 +372,24 @@ Client tags each input with an incrementing `seq` number. The server stores each
 
 ### Room Setup (`GameRoom.ts`)
 
-This is the actual, verified-working implementation — not a sketch. Per-player transient state (last input, a projectile-id counter) lives as private fields on the room rather than in the synced schema, since clients don't need to see it.
+The room is thin: it wires messages and the tick to the systems, which hold the rules. **Read `server/src/rooms/GameRoom.ts` itself** (about 290 lines). An earlier version of this section copied the whole file in, and the copy drifted out of date. Here is a map of it instead (checked against the code 2026-09-26):
 
-```typescript
-import { Room, Client } from 'colyseus';
-import { GameState, Player, Tile, Projectile, Structure } from '../state/GameState';
-import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
-import { CollisionSystem } from '../systems/CollisionSystem';
-import { CombatSystem } from '../systems/CombatSystem';
-import { PhaseSystem } from '../systems/PhaseSystem';
-import { EconomySystem } from '../systems/EconomySystem';
-import { ScoreSystem } from '../systems/ScoreSystem';
-import { LobbySystem } from '../systems/LobbySystem';
-import { CharacterSystem } from '../systems/CharacterSystem';
-import type { Broadcast } from '../systems/Broadcast';
-import { hexIndex, isValidHex, mapPixelSize } from '../hex';
-import { TICK_RATE, RECONNECT_WINDOW_SECONDS, CREDIT_PAYOUT_INTERVAL_MS } from '../constants';
-import type {
-  InputMessage,
-  ShootMessage,
-  PlaceStructureMessage,
-  InputAckEvent,
-  SelectTeamMessage,
-  SelectCharacterMessage,
-  SetReadyMessage,
-} from '../types/shared';
-import { isStructureType } from '../types/shared';
-
-export class GameRoom extends Room<GameState> {
-  maxClients = 10;
-
-  // NOT `inputs` — that name is reserved by the base Room class.
-  private playerInputs = new Map<string, PlayerInput>();
-  private matchFinished = false;
-  private closing = false;
-  private nextProjectileId = 0;
-
-  private readonly broadcastEvent: Broadcast = (type, payload) => this.broadcast(type, payload);
-
-  onCreate(): void {
-    const state = new GameState();
-    for (let i = 0; i < state.mapWidth * state.mapHeight; i++) {
-      state.tiles.push(new Tile());
-    }
-    state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
-    this.setState(state);
-
-    this.setSimulationInterval((dt) => this.tick(dt / 1000), 1000 / TICK_RATE);
-
-    this.onMessage<InputMessage>('input', (client, msg) => this.handleInput(client, msg));
-    this.onMessage<ShootMessage>('shoot', (client, msg) => this.handleShoot(client, msg));
-    this.onMessage<PlaceStructureMessage>('placeStructure', (client, msg) =>
-      this.handlePlaceStructure(client, msg)
-    );
-    // Lobby: each validated by LobbySystem (phase, not-ready lock, known ids).
-    this.onMessage<SelectTeamMessage>('selectTeam', (client, msg) =>
-      this.withPlayer(client, (p) => LobbySystem.selectTeam(this.state, p, msg?.teamId))
-    );
-    this.onMessage<SelectCharacterMessage>('selectCharacter', (client, msg) =>
-      this.withPlayer(client, (p) => LobbySystem.selectCharacter(this.state, p, msg?.characterId))
-    );
-    this.onMessage<SetReadyMessage>('setReady', (client, msg) =>
-      this.withPlayer(client, (p) => LobbySystem.setReady(this.state, p, msg?.ready))
-    );
-    // ... and 'purchase' -> ShopSystem (playing only)
-  }
-
-  onJoin(client: Client): void {
-    const player = new Player();
-    player.id = client.sessionId;
-    player.name = `Player ${this.state.players.size + 1}`;
-    // An empty team first, else the smallest; sets teamId and color together.
-    LobbySystem.setTeam(player, LobbySystem.defaultTeam(this.state));
-    // Joining mid-match: no lobby to pick in, so play the default character.
-    if (this.state.phase.phase === 'playing') CharacterSystem.apply(player);
-    const { width, height } = mapPixelSize(this.state.mapWidth, this.state.mapHeight);
-    player.x = width / 2; // everyone spawns at map center for now — see Current Status (open question)
-    player.y = height / 2;
-    this.state.players.set(client.sessionId, player);
-  }
-
-  async onLeave(client: Client, consented: boolean): Promise<void> {
-    const player = this.state.players.get(client.sessionId);
-    if (player) player.connected = false;
-
-    // No reconnect window once the match is over — let everyone go so the room can close.
-    if (consented || this.state.phase.phase === 'results') {
-      this.cleanupPlayer(client.sessionId);
-      return;
-    }
-
-    try {
-      // Freezes the player entity in place — tiles/structures retained —
-      // while this client has a chance to reconnect.
-      await this.allowReconnection(client, RECONNECT_WINDOW_SECONDS);
-      const reconnected = this.state.players.get(client.sessionId);
-      if (reconnected) reconnected.connected = true;
-    } catch {
-      // Reconnection window expired.
-      this.cleanupPlayer(client.sessionId);
-    }
-  }
-
-  onDispose(): void {
-    // No external resources to release yet.
-  }
-
-  private cleanupPlayer(sessionId: string): void {
-    this.state.tiles.forEach((tile) => {
-      if (tile.ownerId === sessionId) tile.ownerId = '';
-    });
-    this.state.players.delete(sessionId);
-    this.playerInputs.delete(sessionId);
-  }
-
-  // Runs a lobby action for this client's player if they're here and connected.
-  private withPlayer(client: Client, action: (player: Player) => void): void {
-    const player = this.state.players.get(client.sessionId);
-    if (player?.connected) action(player);
-  }
-
-  // When the match ends: lock the room (matchmaking stops sending newcomers into it) and close it
-  // once the results period is over. It also closes as soon as the last player leaves.
-  private closeFinishedMatch(): void {
-    if (this.state.phase.phase !== 'results') return;
-    if (!this.matchFinished) {
-      this.matchFinished = true;
-      this.lock();
-      ScoreSystem.update(this.state); // snapshot must reflect the very last tick
-      this.broadcast('gameOver', { scores: ScoreSystem.finalScores(this.state) });
-    }
-    if (!this.closing && Date.now() >= this.state.phase.endsAt) {
-      this.closing = true;
-      void this.disconnect();
-    }
-  }
-
-  private tick(dt: number): void {
-    LobbySystem.update(this.state, this.broadcastEvent); // ready -> countdown -> playing
-    MovementSystem.update(this.state, this.playerInputs, dt);
-    CollisionSystem.update(this.state, this.broadcastEvent);
-    CombatSystem.update(this.state, dt, this.broadcastEvent);
-    PhaseSystem.update(this.state, this.broadcastEvent);
-    this.closeFinishedMatch();
-    EconomySystem.update(this.state);
-    ScoreSystem.update(this.state);
-  }
-
-  private handleInput(client: Client, msg: InputMessage): void {
-    const player = this.state.players.get(client.sessionId);
-    if (!player || !player.connected) return;
-
-    // Sanitize (finite numbers only) and clamp so a buggy/malicious client can't
-    // move faster than PLAYER_SPEED — MovementSystem also caps the vector length at 1.
-    const clampAxis = (value: unknown): number =>
-      typeof value === 'number' && Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
-    const dir = { x: clampAxis(msg.dir?.x), y: clampAxis(msg.dir?.y) };
-    // receivedAt lets MovementSystem drop input from a client that went silent (INPUT_STALE_MS).
-    this.playerInputs.set(client.sessionId, { dir, seq: msg.seq, receivedAt: Date.now() });
-
-    // Facing is cosmetic (other clients draw it), so just sanitize it.
-    if (typeof msg.angle === 'number' && Number.isFinite(msg.angle)) player.angle = msg.angle;
-    client.send('inputAck', { seq: msg.seq } satisfies InputAckEvent);
-  }
-
-  private handleShoot(client: Client, msg: ShootMessage): void {
-    const player = this.state.players.get(client.sessionId);
-    if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
-    if (player.gun === '' || player.ammo <= 0) return; // unarmed players can't shoot
-
-    player.ammo--;
-    const projectile = new Projectile();
-    projectile.id = `${client.sessionId}-${this.nextProjectileId++}`;
-    projectile.ownerId = client.sessionId;
-    projectile.x = player.x;
-    projectile.y = player.y;
-    projectile.angle = msg.angle;
-    projectile.spawnedAt = Date.now();
-    this.state.projectiles.set(projectile.id, projectile);
-  }
-
-  private handlePlaceStructure(client: Client, msg: PlaceStructureMessage): void {
-    const player = this.state.players.get(client.sessionId);
-    if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
-
-    // Structures come out of the player's inventory (their character's starting kit, for now).
-    if (!isStructureType(msg.structureType)) return;
-    const slot = player.structureInventory.indexOf(msg.structureType);
-    if (slot === -1) return;
-
-    // Validate first — an out-of-range column would otherwise wrap onto another row.
-    if (!isValidHex(msg.tileX, msg.tileY, this.state.mapWidth, this.state.mapHeight)) return;
-    const tile = this.state.tiles[hexIndex(msg.tileX, msg.tileY, this.state.mapWidth)];
-    if (!tile || tile.ownerId !== client.sessionId) return; // must own the tile
-
-    let occupied = false;
-    this.state.structures.forEach((s) => {
-      if (s.tileX === msg.tileX && s.tileY === msg.tileY) occupied = true;
-    });
-    if (occupied) return;
-
-    const structure = new Structure();
-    structure.id = `struct-${msg.tileX}-${msg.tileY}`;
-    structure.ownerId = client.sessionId;
-    structure.tileX = msg.tileX;
-    structure.tileY = msg.tileY;
-    structure.type = msg.structureType;
-    player.structureInventory.splice(slot, 1);
-    this.state.structures.set(structure.id, structure);
-  }
-}
-```
+- **Private fields** (not synced, since clients don't need them): `playerInputs` (last input per session; not named `inputs`, see above), `matchFinished`, `closing` and `nextProjectileId`.
+- **`onCreate`** builds a `GameState`. It fills `tiles` from `generateTerrain(mapWidth, mapHeight, seededRandom(random seed))`, a fresh map every match (see *Terrain*). It then sets `nextPayoutAt`, calls `setState`, and starts `setSimulationInterval` at `TICK_RATE` (20 Hz). Message handlers:
+  - `input` goes to `handleInput`. It clamps the direction (x to ±1, y to ±1/`SCREEN_Y_SCALE`), stores it with `receivedAt`, sanitizes `angle`, and replies with `inputAck`.
+  - `shoot` goes to `handleShoot`. The phase must be `playing`, and the player needs a gun and ammo. It spends 1 ammo and stamps the projectile's `damage` from `GUN_DAMAGE`.
+  - `placeStructure` goes to `handlePlaceStructure`. The phase must be `playing`, the type must be in the player's `structureInventory`, and `StructureSystem.canPlace` must allow the spot. It removes that inventory entry.
+  - `selectTeam`, `selectCharacter`, `setReady` and `setName` go to `LobbySystem`. `equipUpgrade` goes to `UpgradeSystem.equip`. All of them use `withPlayer`, which ignores unknown or disconnected players.
+  - `purchase` goes to `ShopSystem.purchase`, during `playing` only.
+- **`onJoin`**:
+  - The name is `LobbySystem.joiningName(options.name)`: the saved name, or "Player N", made unique.
+  - The team is `defaultTeam`.
+  - Someone who joins mid-match gets the default character's kit through `CharacterSystem.apply`.
+  - The player takes the lowest free spawn slot (`freeSpawnSlot`, kept on the non-synced `Player.spawnSlot`, so a reconnect keeps it) and is placed on that slot's hex (`spawnPoint`). See *Spawn line* under Game Mechanics → Terrain.
+- **`onLeave`** sets `connected = false`. If the leave was consented, or the match is in results, it calls `cleanupPlayer` right away. Otherwise it broadcasts `playerDisconnected` and runs `allowReconnection` for `RECONNECT_WINDOW_SECONDS` (180). When the player returns, it broadcasts `playerReconnected` to everyone except them. If the window runs out, it calls `cleanupPlayer`. See [Reconnection System](#reconnection-system).
+- **`cleanupPlayer`** releases the player's tiles and deletes the player and their input. Their structures stay.
+- **`tick(dt)`** runs, in this order: `LobbySystem`, `MovementSystem`, `CollisionSystem`, `CombatSystem`, `PhaseSystem`, `closeFinishedMatch`, `EconomySystem`, `ScoreSystem`.
+- **`closeFinishedMatch`** runs once the phase is `results`. The first time, it calls `lock()`, refreshes scores and broadcasts the `gameOver` snapshot. When results end, it calls `disconnect()`. See [Room Lifecycle](#room-lifecycle).
 
 Systems are plain modules (not Room subclasses) so they're unit-testable without a live Room — see [Testing Multiplayer Locally](#testing-multiplayer-locally). GameRoom passes a `Broadcast` callback (`(type, payload) => this.broadcast(type, payload)`) into each system's `update()` so they can emit discrete events without needing a reference to the Room itself.
 
@@ -573,8 +397,8 @@ Systems are plain modules (not Room subclasses) so they're unit-testable without
 
 ```typescript
 import { createServer } from 'http';
-import express from 'express';
 import cors from 'cors';
+import express from 'express';
 import { Server } from 'colyseus';
 import { Encoder } from '@colyseus/schema';
 import { WebSocketTransport } from '@colyseus/ws-transport';
@@ -583,7 +407,7 @@ import { GameRoom } from './rooms/GameRoom';
 // Default BUFFER_SIZE (8KB) is too small for a full-state sync of a 64x64
 // tile map (4096 Tile schema instances plus players/structures/projectiles) —
 // bump it so `getFullState` doesn't overflow when a client joins.
-Encoder.BUFFER_SIZE = 128 * 1024; // 128 KB
+Encoder.BUFFER_SIZE = 128 * 1024;
 
 const PORT = Number(process.env.PORT) || 2567;
 
@@ -592,19 +416,19 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+    res.json({ status: 'ok' });
 });
 
 const httpServer = createServer(app);
 
 const gameServer = new Server({
-  transport: new WebSocketTransport({ server: httpServer }),
+    transport: new WebSocketTransport({ server: httpServer }),
 });
 
 gameServer.define('GameRoom', GameRoom);
 
 httpServer.listen(PORT, () => {
-  console.log(`Game server listening on :${PORT}`);
+    console.log(`Game server listening on :${PORT}`);
 });
 ```
 
@@ -729,12 +553,13 @@ Known limitation: the map's pixel bounds are a rectangle, but the hex edge is ja
 
 All three steps built 2026-09-26: **generation and drawing**, **the rules** (solid mountains and deep water, unclaimable terrain, mountains blocking shots), and **the Wings upgrade** (a shop upgrade that makes `MovementSystem` skip `pushOutOfTerrain`; claiming and shots are unchanged for winged players). See [GAME_DESIGN.md → Terrain](GAME_DESIGN.md#terrain) for the rules.
 - **Data:** `Tile.terrain` is a `uint8` (`TERRAIN` in `shared/types.ts`: ground 0, mountain 1, water 2), set in `GameRoom.onCreate` and sent once with the initial full state (~4 KB). Every client reads it from state, so there's no generator on the client and no risk of two sides generating different maps.
-- **Generation** (`server/src/terrain.ts`, `generateTerrain(cols, rows, random)`): features are added one at a time — kind picked by `TERRAIN_FEATURE_WEIGHTS` — until `TERRAIN_COVERAGE` (10%) of the map is covered; a feature that would overshoot by more than 1% of the map is skipped (a smaller one follows). **Mountain ranges** (`growRange`, 3–35 hexes) are built from pieces — small (3 mutually adjacent hexes) and large (a hex and its 6 neighbors), large with `MOUNTAIN_LARGE_CHANCE` when it fits — each placed, over every candidate beside the range in every orientation, where it shares the most sides with the range (ties at random); the result records `pieces` for future sprites. **Lakes** (`growLake`, 3–32) grow one hex at a time onto the open hex touching the lake most. A range or lake boxed in below its minimum is dropped. **Rivers** walk a course of 2–20 hexes that bends 60° now and then (`RIVER_TURN_CHANCE`); each course hex is widened by a short row of hexes to one side, 1–4 across (`RIVER_WIDTH`), drifting by one as it goes (`RIVER_WIDTH_CHANGE_CHANCE`); afterwards any free hex with `RIVER_POCKET_FILL` (4) or more neighbors in the river is filled, repeatedly. A feature only grows onto a hex that's free, outside `SPAWN_CLEAR_RADIUS` of the spawn hex, and **with no other feature within `FEATURE_GAP` (3) hexes**. After each feature a flood fill from the spawn checks that every ground hex is still reachable on foot (shallow water counts as walkable); if not, that feature is **undone** and generation carries on, so it never has to restart.
+- **Generation** (`server/src/terrain.ts`, `generateTerrain(cols, rows, random)`): features are added one at a time — kind picked by `TERRAIN_FEATURE_WEIGHTS` — until `TERRAIN_COVERAGE` (10%) of the map is covered; a feature that would overshoot by more than 1% of the map is skipped (a smaller one follows). **Mountain ranges** (`growRange`, 3–35 hexes) are built from pieces — small (3 mutually adjacent hexes) and large (a hex and its 6 neighbors), large with `MOUNTAIN_LARGE_CHANCE` when it fits — each placed, over every candidate beside the range in every orientation, where it shares the most sides with the range (ties at random); the result records `pieces` for future sprites. **Lakes** (`growLake`, 3–32) grow one hex at a time onto the open hex touching the lake most. A range or lake boxed in below its minimum is dropped. **Rivers** walk a course of 2–20 hexes that bends 60° now and then (`RIVER_TURN_CHANCE`); each course hex is widened by a short row of hexes to one side, 1–4 across (`RIVER_WIDTH`), drifting by one as it goes (`RIVER_WIDTH_CHANGE_CHANCE`); afterwards any free hex with `RIVER_POCKET_FILL` (4) or more neighbors in the river is filled, repeatedly. A feature only grows onto a hex that's free, outside `SPAWN_CLEAR_RADIUS` (3) of every spawn hex, and **with no other feature within `FEATURE_GAP` (3) hexes**. After each feature a flood fill from the first spawn hex checks that every ground hex is still reachable on foot (shallow water counts as walkable); if not, that feature is **undone** and generation carries on, so it never has to restart.
+- **Spawn line** (`spawnHex(cols, rows, slot)` in `server/src/terrain.ts`, 2026-09-26): `SPAWN_SLOTS` (10, matching `maxClients`) hexes in one column `SPAWN_EDGE_INSET` (3) in from the east edge; slot 0 is the middle row, then −1, +1, −2, +2… × `SPAWN_ROW_SPACING` (6) rows, clamped to the map. `spawnHexes` lists them all for the generator (the result's `spawns`); `freeSpawnSlot(state)` gives a joiner the lowest slot no current player holds; `spawnPoint(state, slot)` is the hex center, used by `onJoin` and `CombatSystem.respawnPlayer`. The slot is server-only state (`Player.spawnSlot` has no `@type`), since clients just see positions.
 - **Randomness:** `seededRandom(seed)` (mulberry32) makes maps reproducible for tests; `GameRoom` passes a random seed.
 - **Speed:** ~10 ms per map, run once per room. The lookup tables the checks use millions of times (each hex's neighbor indices, spawn-area membership, and every hex within `FEATURE_GAP`) depend only on the map size, so they're built once per size and cached; shallow-water flags are computed once per feature, since a feature never changes after it's placed. (The first version recomputed neighbors in its inner loops and took ~155 ms, long enough to stall every other room's tick loop — Node runs rooms on one thread.)
 - **Shallow water** (`isShallowWater` in `shared/terrain.ts`): a water hex with at most two water neighbors that don't touch each other — water you could step straight across (1-wide river stretches). It's **derived from shape, not stored**: the generator's reachability check, the client's drawing, and step 2's movement all call the same function. Small/large mountain pieces, by contrast, can't be derived from `Tile.terrain`, so they'll need syncing when sprites arrive; for now they exist only in the generator's result.
 - **Drawing** (`GameScene.drawBase`, baked once into the base layer, so it costs nothing per frame): hex tops are colored by terrain (`MOUNTAIN_TOP_COLOR` off-white, `WATER_TOP_COLOR` dark blue for deep water, `SHALLOW_WATER_TOP_COLOR` lighter blue for shallow, ground unchanged). Ground hexes outline only edges shared with ground; a second pass borders terrain hexes — mountains with a thin gray line, water with dots in the normal border color, spaced symmetrically along each edge so a shared water edge drawn from either side lines up.
-- **Verified 2026-09-26:** `server/src/terrain.spec.ts` checks 40 seeded maps for coverage, feature sizes (both ends of each range) and contiguity, river widths, no holes in rivers or lakes, the 3-hex gap, no lone water, where shallow water occurs, the clear spawn area, reachability under the shallow-water rule, mountain pieces (shapes, no overlap, exact partition), compactness of ranges and lakes, repeatability and speed, plus `isShallowWater` itself; `GameState.spec.ts` checks terrain survives the Colyseus round trip; `tools/e2e.js` checks a real room's map is ~10% terrain and identical for every client. The generator's look was tuned with `tools/map-preview.js` renders and in-game passes on private ports.
+- **Verified 2026-09-26:** `server/src/terrain.spec.ts` checks 40 seeded maps for coverage, feature sizes (both ends of each range) and contiguity, river widths, no holes in rivers or lakes, the 3-hex gap, no lone water, where shallow water occurs, the clear spawn areas, reachability under the shallow-water rule, mountain pieces (shapes, no overlap, exact partition), compactness of ranges and lakes, repeatability and speed, plus `isShallowWater` itself; `GameState.spec.ts` checks terrain survives the Colyseus round trip; `tools/e2e.js` checks a real room's map is ~10% terrain and identical for every client. The generator's look was tuned with `tools/map-preview.js` renders and in-game passes on private ports.
 - **Movement** (`MovementSystem.pushOutOfTerrain`, after the structure check): a hex blocks a player on foot if `blocksWalking` (`shared/terrain.ts`) says so — a mountain, or water that isn't shallow. Terrain walls are many hexes, often zigzagging, so rather than refusing moves (the structure approach, fine for one convex shape but it would catch on every zigzag corner), any overlap between the player's circle and a solid hex is **pushed back out** along that hex's edge normal (`hexContact` in `server/src/hex.ts`, the single-hex version of `structureContact`) and the velocity into it is dropped; three passes settle spots where two hexes touch the circle at once. Only the hex under the player and its 6 neighbors can touch a 20 px circle, so that's all it checks. Solidity is looked up live from `Tile.terrain` (a few dozen checks per player per tick), not cached.
 - **Claiming:** `CollisionSystem.claimTiles` skips any hex whose terrain isn't ground, so mountains and water (shallow included) are never claimed; and since a structure needs 7 owned hexes, structures never cover terrain, with no change to placement.
 - **Shots:** `CombatSystem` removes a projectile whose position at the end — or the middle — of a tick's travel is over a mountain. The midpoint matters: shots fired straight down the screen move ~33 world px a tick, and near a hex's left and right points it's much thinner than that, so an end-point check let some shots skip a corner (the spec fails without it). Water doesn't stop shots.
@@ -833,7 +658,7 @@ Movement is continuous, at **any angle**, and eased rather than snapping between
 - `CombatSystem` advances all projectiles each tick, checks collision against players and structures, and removes projectiles on hit, out-of-bounds, or after `PROJECTILE_LIFETIME_MS` (tracked via `Projectile.spawnedAt`, not wall-clock elapsed time inferred from ticks)
 - **Projectile speed is on-screen, like player movement.** A projectile's `speed` (400) is measured with world y scaled by `SCREEN_Y_SCALE`, so a shot fired up or down the screen moves ~667 world px/s vertically and looks exactly as fast as one fired sideways (400 world px/s). `CombatSystem` divides the heading `(cos, sin)` by its on-screen length `hypot(cos, sin × SCREEN_Y_SCALE)`; the client mirrors this in `projectileWorldVelocity` to extrapolate between ticks. Side effects: vertical shots travel farther in world units over their 2s lifetime (about 1,333 vs 800 px), and they cover ~33 world px per tick vs 20 sideways — see the swept hit test under [Collision Detection](#collision-detection).
 - **Damage comes from the shooter's gun** (`GUN_DAMAGE` in `shared/types.ts`). It's stamped on the projectile when fired (`Projectile.damage`), so it applies to players and structures alike. Health is `BASE_MAX_HEALTH` plus `ARMOR_HEALTH_PER_LEVEL` per Armor level; respawns restore `maxHealth`. **The two guns' shots look different** (client, 2026-09-26, told apart by the synced `Projectile.damage`): see `BASIC_SHOT_*` / `BIG_SHOT_*` in `client/src/game/constants.ts`. Only the drawing differs; the hit radius is the same.
-- On a killing blow, the shooter's `kills` increments and the target **respawns** (`respawnPlayer` in `CombatSystem`: full health, repositioned to map center) rather than being eliminated
+- On a killing blow, the shooter's `kills` increments and the target **respawns** (`respawnPlayer` in `CombatSystem`: full health, repositioned to their spawn slot's hex) rather than being eliminated
 - Server broadcasts `playerHit` on every hit (not just kills); client should use this to play a hit effect
 
 ### Score
@@ -994,12 +819,12 @@ Touch support needed no protocol changes, confirming what [Planned Features](#pl
 
 `HUD.tsx`, `ScoreBadge.tsx`, `Leaderboard.tsx` and the buttons render on top of the Phaser canvas (absolutely positioned `<div>`s in `GameScreen`), reading from `GameContext` — the same reactive `players`/`phase`/`phaseEndsAt` state already used by the lobby screen. This avoids re-deriving Colyseus reactivity a second time inside Phaser.
 
-- **HUD** (top left): phase countdown, health ("140 / 200" — current / max), gun ("none" or its name), ammo, tiles, credits, structures left to build (e.g. "Farm" or "none"), and upgrades if any.
+- **HUD** (top left): phase countdown, health ("140 / 200" — current / max), gun ("none" or its name), ammo, tiles, credits, structures left to build (e.g. "Farm" or "none"), the equipped upgrade with its level (e.g. "Booster 2"), and Armor's level if you have any.
 - **Score badge** (top center, always visible): the local player's score. Real scoring doesn't exist yet, so `utils/score.ts`'s `scoreFor()` returns credits; the badge and the leaderboard both go through it, so implementing [Planned Features #3](#planned-features) means changing that one function. Until then the badge and the HUD's Credits line show the same number.
 - **Leaderboard** (popup): hidden by default; a top-right **Leaderboard** button (highlighted while open) or the **`L`** key toggles it, and **`Esc`**, the × button or a click on the dimmed backdrop closes it. It's a centered panel over the canvas (rank, color, name, score, tiles, kills, disconnected flag), ranked by `scoreFor`.
 - **Shop** (popup): a **Shop** button below the Leaderboard button (during the match) or the **`E`** key toggles it (it was `B` until 2026-09-26; `B` is now build mode). Only one popup (shop or leaderboard) is open at a time; `Esc` closes either. It shows your credits, ammo and gun, then the catalog grouped under Weapons, Upgrades and Structures; items you already have (`ownsShopItem`) show "Owned". The "coming soon" list is gone — everything it listed is buyable now.
-- **Inventory** (popup, `components/Inventory.tsx`, 2026-09-26): an **Inventory** button below Shop, or **`I`**, toggles it during the match; `Esc` closes it (only one popup at a time). It lists gun and ammo, structures by type, Armor, and each owned slot upgrade with **Equip** / **Unequip** (which sends `equipUpgrade`, `''` to empty the slot). `usePhaseCountdown(upgradeSwitchReadyAt, 200)` drives the cooldown text and disables the buttons; the same tick re-checks `overSolidTerrain`, a callback from `GameScreen` that reads the player's live position from room state (positions don't re-render React) and applies the shared `blocksWalking`, so the panel can say why Wings can't come off. The server still validates every switch.
-- **Build button** (bottom right, during the match): "Build Farm (1)" — the next structure in your inventory and how many are left — or a disabled "Nothing to build". Arming it makes the next tap place that structure on one of your tiles (the server uses up that inventory entry). **B** toggles build mode, **Esc** leaves it, and there's no timeout. `GameScreen` keeps the scene's build mode in sync with its own state through an effect, so leaving build mode or running out of structures returns taps to shooting.
+- **Inventory** (popup, `components/Inventory.tsx`, 2026-09-26): an **Inventory** button below Shop, or **`I`**, toggles it during the match; `Esc` closes it (only one popup at a time). It lists gun and ammo, structures by type, Armor, and each owned slot upgrade with **Equip** (which sends `equipUpgrade`); the equipped one's button is a disabled **Equipped** — since 2026-09-26 there's no Unequip, though the server still accepts `''`. Each structure type has **Select** / **Selected**, which sets `GameScreen`'s `selectedStructure` (what Build places next). `usePhaseCountdown(upgradeSwitchReadyAt, 200)` drives the cooldown text and disables the buttons; the same tick re-checks `overSolidTerrain`, a callback from `GameScreen` that reads the player's live position from room state (positions don't re-render React) and applies the shared `blocksWalking`, so the panel can say why Wings can't come off. The server still validates every switch.
+- **Build button** (bottom right, during the match): "Build Farm (1)" — the structure it will place and how many of that type you have — or a disabled "Nothing to build". Which structure is `structureToBuild(inventory, selectedStructure)` (`utils/build.ts`): the type picked in the Inventory while you still have one, else the first in the inventory. The Phaser `onPlaceStructure` callback outlives renders, so it reads the pick from a ref (synced in an effect) and the inventory live from room state. Arming it makes the next tap place that structure on one of your tiles (the server uses up that inventory entry). **B** toggles build mode, **Esc** leaves it, and there's no timeout. `GameScreen` keeps the scene's build mode in sync with its own state through an effect, so leaving build mode or running out of structures returns taps to shooting.
 - **Fire button** (touch only, during the match only, and only once you have a gun): a hold-to-fire button in the bottom-right corner; the **Build** button stacks above it on touch, and sits in the corner on desktop.
 - **Viewport fit:** `GameScreen`'s container is `position: fixed; inset: 0`. It used to be `100vw × 100vh` inside the Vite template's `#root` (1126px wide, `min-height: 100svh`, centered text), which made the page scroll and clipped the right-hand overlays, and made the overlay text centered. Panels also set `text-align: left` explicitly.
 
@@ -1204,18 +1029,18 @@ function getStructureFrame(health: number, maxHealth: number): string {
 
 ### Server unit tests (Vitest) — added 2026-09-26
 
-`cd server && npm test` (or `npm run test:watch`) runs **Vitest** on specs next to the code (`src/systems/ShopSystem.ts` → `ShopSystem.spec.ts`): 114 tests in about 2 s. They replaced `tools/check-rules.js` and `tools/check-collisions.js`, covering everything those did plus more.
+`cd server && npm test` (or `npm run test:watch`) runs **Vitest** on specs next to the code (`src/systems/ShopSystem.ts` → `ShopSystem.spec.ts`): 167 tests in about 5 s. They replaced `tools/check-rules.js` and `tools/check-collisions.js`, covering everything those did plus more.
 - **Config:** `server/vitest.config.ts`. Vitest transpiles with `tsconfig.json`'s settings, including the decorator options the Colyseus schema needs; `src/state/GameState.spec.ts` round-trips state through the Colyseus encoder (full sync, then a delta), which **fails if `useDefineForClassFields` is ever flipped** — verified by flipping it.
 - **Builds stay clean:** `tsconfig.json` type-checks everything including specs (`npm run typecheck`, and your editor); `tsconfig.build.json` (used by `npm run build`) excludes `**/*.spec.ts` and `src/test/`, so `dist/` holds only the server.
 - **Helpers:** `src/test/world.ts` — `world()` (a 64 × 64 map; `{ tiles: false }` skips the 4,096 tiles for movement/combat loops that build hundreds of worlds), `addPlayer`/`addPlayerAt`, `addStructure`, `ownFootprint`, `addShot`/`shootAt`, `inputs`/`runMovement`/`drive`, `onScreenSpeed`.
-- **Covered:** hex math and the structure hexagon/`structureContact` (`hex.spec.ts`); the schema (`state/GameState.spec.ts`); `teams.spec.ts`; and every system — movement (speeds, stale input, edges, boost, structures incl. the 792-approach slide sweep), lobby (ready-up, countdown and its cancelling, picks and locks, default teams, names), phases, characters, combat (damage, kills, respawn, big gun vs armor, friendly fire, structure damage, projectile speed, the no-tunneling check), claiming (brute-force radius check, stealing, teammates, footprint protection, batching), score, economy, shop (every item and rule), structure placement and damage.
+- **Covered:** hex math and the structure hexagon/`structureContact` (`hex.spec.ts`); the spawn line and slot assignment (`terrain.spec.ts`); the schema (`state/GameState.spec.ts`); `teams.spec.ts`; and every system — movement (speeds, stale input, edges, boost, structures incl. the 792-approach slide sweep), lobby (ready-up, countdown and its cancelling, picks and locks, default teams, names), phases, characters, combat (damage, kills, respawn at your spawn slot, big gun vs armor, friendly fire, structure damage, projectile speed, the no-tunneling check), claiming (brute-force radius check, stealing, teammates, footprint protection, batching), score, economy, shop (every item and rule), structure placement and damage.
 - **Not covered here:** `GameRoom` (message handlers, joining, reconnection, closing) — that's what `tools/e2e.js` exercises with real clients over a real server. When writing e2e checks, wait for the *state* rather than a message plus a fixed sleep: broadcasts go out immediately but state changes ride the next 50 ms patch (the cause of a ~1-in-10 flake in the disconnect check, fixed 2026-09-26; `E2E_PORT` lets several runs go in parallel to shake such races out — see `tools/README.md`). The pure `shared/` rules (name cleanup, `ownsShopItem`, catalog sanity) are tested once, in the client suite.
 
 ### Client unit tests (Vitest) — added 2026-09-26
 
 `cd client && npm test` (or `npm run test:watch`) runs **Vitest** with **jsdom** (a simulated browser) and **React Testing Library**. Configuration is the `test` block in `client/vite.config.ts`; `src/test/setup.ts` adds the jest-dom matchers and cleans up (unmount, clear `localStorage`) after every test; `src/test/factories.ts` has `makePlayer` / `makeScore` builders.
 - **Spec files sit next to what they test** (`foo.ts` → `foo.spec.ts`, `Foo.tsx` → `Foo.spec.tsx`) and are type-checked and linted with the rest of `src/` (they're never bundled).
-- **Covered (57 tests):** `utils/results` (ranks, ties, fallback ordering, team totals), `utils/playerName` (localStorage, including blocked storage), `utils/usePhaseCountdown` (fake timers), `game/hex` (projection), `types/shared` (name rules, `ownsShopItem`, catalog sanity — the client's view of `shared/`), and components: `HUD`, `BuyMenu` (grouping, affordability, Owned, buying, closing), `LobbyScreen` (name editing: Enter/blur/Esc/invalid; team/character/ready and the ready lock; other players' rows; waiting and countdown text — with `useGameConnection` replaced by a fake via `vi.mock`), `ResultsScreen` (headlines, ties, team table, buttons).
+- **Covered (73 tests):** `utils/build` (which structure Build places), `utils/results` (ranks, ties, fallback ordering, team totals), `utils/playerName` (localStorage, including blocked storage), `utils/usePhaseCountdown` (fake timers), `game/hex` (projection), `types/shared` (name rules, `ownsShopItem`, catalog sanity — the client's view of `shared/`), and components: `HUD`, `BuyMenu` (grouping, affordability, Owned/Max, next upgrade level, buying, closing), `Inventory` (equip, the disabled Equipped button, picking a structure, the cooldown and Wings-over-terrain locks, closing), `LobbyScreen` (name editing: Enter/blur/Esc/invalid; team/character/ready and the ready lock; other players' rows; waiting and countdown text — with `useGameConnection` replaced by a fake via `vi.mock`), `ResultsScreen` (headlines, ties, team table, buttons).
 - **Not covered:** `GameScene` and anything else Phaser draws (needs a real WebGL canvas — still checked by hand in a browser), `GameContext`/`GameConnection` (would need a fake Colyseus room), `GameScreen`'s key handling.
 - Tests query the UI the way a user would (roles and accessible names), which is why each shop row is a `role="group"` named after its item.
 
@@ -1505,12 +1330,13 @@ The server's `tsconfig.json` needs a few settings beyond the client's, driven by
 
 ## Current Status & Known Issues
 
-_As of 2026-09-26 (after the ready-up lobby, characters and teams)._ Server and client both typecheck and lint clean, and the game runs end to end in a browser: join → lobby (team, character, ready) → 3 s countdown → mouse-aimed movement on an isometric hex map → tile claiming → credits → shooting (once armed) → building from your inventory → results.
+_As of 2026-09-26 (after terrain, upgrade levels and the inventory)._ Server and client both typecheck and lint clean, and the game runs end to end in a browser: join → lobby (team, character, ready) → 3 s countdown → mouse-aimed movement on an isometric hex map → tile claiming → credits → shooting (once armed) → building from your inventory → upgrades (buy levels, equip one in the Inventory) → results.
 
 ### Working (browser- or script-verified)
+- **Upgrade levels, the equipped slot and the Inventory** (2026-09-26: `UpgradeSystem.spec.ts`, `ShopSystem.spec.ts`, `Inventory.spec.tsx`, `BuyMenu.spec.tsx`, `e2e.js` (the Robot switching its Booster), browser): Booster/Expander/Armor to level 3 and Wings 1 at 100 credits a level; one slot upgrade works at a time with a 5 s switch cooldown; Wings can't come off over solid terrain; Armor always on (+100 max health a level). In the browser: the shop offers the next level, the Inventory opens with `I` or its button and equips.
 - **Terrain: generation, drawing, rules and Wings** (2026-09-26: `terrainRules.spec.ts` for movement, claiming, shots and Wings; `terrain.spec.ts` over 40 maps, `e2e.js`, browser): a random map per room, ~10% mountains/lakes/rivers within the size, separation, spawn-clear and reachability rules, synced to every client and drawn with its colors and borders. Mountains and deep water are solid (except with Wings), terrain can't be claimed, mountains stop shots. Wings haven't been flown in a browser yet: nobody can afford 100 credits at the start, so they're covered by the unit tests only.
-- **Lobby, characters and teams** (2026-09-26: `tools/check-rules.js`, `tools/e2e.js`, and a two-tab browser pass on private ports): ready-up and the countdown (cancelled by un-readying or a newcomer; not held up by a disconnected player); team/character locked while ready and junk values refused; default teams fill empty colors first; every character's kit applied exactly at match start (and to a mid-match joiner); unarmed players can't shoot; the Basic gun arms you, once; structures come out of the inventory and carry their type; Robot boost speed; no friendly fire on teammates or their structures, teammates' structures walkable, teammates' tiles not taken; standings carry `teamId`. In the browser: the lobby at desktop and 375px width, Smuggler HUD kit, building the Farmer's farm (score +25, Build button disabled after), buying the Basic gun.
-- **Player names** (2026-09-26: `check-rules.js`, `e2e.js`, and the browser): normalization and the 2–25 limit (emoji count as one), unique "(N)" suffixes ignoring case and still within 25, "Player N" fallback, renaming while ready but not mid-match, the join option. In the browser: the invalid hint on a 1-character name, Enter commits, the name saved to localStorage, and a second tab joining as "… (1)" with it; the row at 375px. Safari itself wasn't available to test the select fix.
+- **Lobby, characters and teams** (2026-09-26: the rule checks now in the server specs, `tools/e2e.js`, and a two-tab browser pass on private ports): ready-up and the countdown (cancelled by un-readying or a newcomer; not held up by a disconnected player); team/character locked while ready and junk values refused; default teams fill empty colors first; every character's kit applied exactly at match start (and to a mid-match joiner); unarmed players can't shoot; the Basic gun arms you, once; structures come out of the inventory and carry their type; the Robot's Booster; no friendly fire on teammates or their structures, teammates' structures walkable, teammates' tiles not taken; standings carry `teamId`. In the browser: the lobby at desktop and 375px width, Smuggler HUD kit, building the Farmer's farm (score +25, Build button disabled after), buying the Basic gun.
+- **Player names** (2026-09-26: the server specs, `e2e.js`, and the browser): normalization and the 2–25 limit (emoji count as one), unique "(N)" suffixes ignoring case and still within 25, "Player N" fallback, renaming while ready but not mid-match, the join option. In the browser: the invalid hint on a 1-character name, Enter commits, the name saved to localStorage, and a second tab joining as "… (1)" with it; the row at 375px. Safari itself wasn't available to test the select fix.
 - Join, phase timers, credits payout, HUD, leaderboard (browser).
 - **Disconnect notices, reconnect, screen edge** (headless clients + browser, 2026-09-20): both other players get disconnect and reconnect events (the returning player doesn't); toasts show and fade; a tab reconnects in ~330 ms when it becomes visible (simulated); players stop exactly 20 px inside the map edge and the camera keeps them centered and fully visible there.
 - **Shop: ammo and Expander** (unit + brute-force scripts and the browser, 2026-09-20): purchases validated (affordability, one Expander per player, junk ids rejected); radius claiming matches a brute-force scan; the shop UI buys ammo and the Expander, the tinted ring appears in the player's color, and enemy structures protect their hexes from claiming.
@@ -1523,18 +1349,18 @@ _As of 2026-09-26 (after the ready-up lobby, characters and teams)._ Server and 
 - Reconnection token flow and the projectile/structure/phase server logic (scripts).
 
 ### Implemented but not yet exercised in a real browser
-The results screen's team table, a real match between armed teammates and enemies (friendly fire is script-verified only), the Robot's boost in play, Structure *destruction* by shots, projectile hits on other players, the mobile joystick and `unproject` conversion on a real touch device (only emulated in a pane), the leaderboard with more than one player, reconnect after refresh/drop, real multi-player sessions, the results screen, and the stale-input fix under a genuinely backgrounded tab.
+The results screen's team table, a real match between armed teammates and enemies (friendly fire is script-verified only), upgrades bought and switched in a real match (Wings flown over terrain, Expander 2–3, Armor 2–3), Structure *destruction* by shots, projectile hits on other players, the mobile joystick and `unproject` conversion on a real touch device (only emulated in a pane), the leaderboard with more than one player, reconnect after refresh/drop, real multi-player sessions, the results screen, and the stale-input fix under a genuinely backgrounded tab.
 
 ### Known bugs / rough edges
 
 Design gaps (ammo supply, identical structure types, team balance, early-game pacing, spawn positions, terrain) are tracked in [GAME_DESIGN → Open design questions](GAME_DESIGN.md#open-design-questions-and-plans), not here.
 
 - **The connect screen still uses the Vite template's layout** (`#root`/`App.css`: fixed 1126px column, centered text, leftover hero/counter styles). The lobby, game and results screens are viewport-fixed. Cosmetic.
-- **No server-side fire-rate limit.** The 200ms cooldown lives in the client (`tryShoot`); a modified client can spend all 30 ammo in one tick. Ammo is finite, so it's bounded, but the server should own this (e.g. a per-player last-shot timestamp in `GameRoom.handleShoot`) — a game-rule decision, so not done yet.
+- **No server-side fire-rate limit.** The 200ms cooldown lives in the client (`tryShoot`); a modified client can spend all its ammo in one tick. Ammo is finite, so it's bounded, but the server should own this (e.g. a per-player last-shot timestamp in `GameRoom.handleShoot`) — a game-rule decision, so not done yet.
 - **Results screen is basic.** No winner tie-break beyond shared ranks, no per-player details or match stats, and "Play again" starts a *new* lobby rather than a rematch in the same room. The server also doesn't tell late-leaving players anything special.
 - **No client-side prediction.** Rendering is smoothed and extrapolated, but your own movement still waits for the server round trip (see Movement). Fine on localhost; needs work before real-world latency.
-- **Map corners aren't hex-covered:** movement is clamped to the map rectangle, but the hex edge is jagged, so a player can stand over no hex (claiming ignores it).
-- **Everything is one height:** the reference art has elevation, cliffs, water and mountains; the prototype has a single flat height, so cliff faces show only on the map edge. Structures are plain boxes and players are circles.
+- **Map corners aren't hex-covered:** movement is clamped to the map rectangle, but the hex edge is jagged, so a player can stand over no hex (claiming ignores it). The biggest such spot is the top-right corner: the last column (63) is odd, so it's shifted down half a hex. Players now start near the east edge (2026-09-26), so they're likelier to wander there; `tools/e2e.js` pushes into the bottom-right corner rather than the top-right for this reason.
+- **Placeholder art everywhere:** terrain is flat colored hexes (no elevation, by design since 2026-09-26), structures are plain hexagons and players are circles. Mountain *pieces* (small/large) aren't synced to clients, so mountain sprites would need that first (Planned Features #7).
 - **Shots are hit-tested at one size.** Big-gun bolts are drawn larger than basic ones, but both use the same server hit radius (`PROJECTILE_RADIUS` 6), so a big bolt can visually graze a player without hitting.
 - **Other players' lobby rows wrap loosely at phone width** (team, character and "Not ready" land on separate lines). Cosmetic; to revisit with the custom pickers (Planned Features #10).
 - **A backgrounded tab's dropped connection: partly addressed.** Reported 2026-09-20 (Chrome blue vs Safari red: blue vanished from Safari's view). Fixed since: dropped players are drawn dimmed instead of hidden, everyone gets disconnect/reconnect notices, failed reconnects keep retrying for the whole window, and a tab reconnects immediately when it becomes visible. **Still unconfirmed:** *why* blue's connection dropped in the first place (likely browser throttling/freezing of the hidden tab), and the visible-tab trigger was tested by simulating the visibility change, not with a real backgrounded browser. When testing with two browsers, keep both windows visible. Untested idea: an indicator for players who are off-screen.
@@ -1544,13 +1370,12 @@ Design gaps (ammo supply, identical structure types, team balance, early-game pa
 - **Mobile:** aiming on touch is limited to the movement direction or a tapped point (no second stick); phone-width layout only spot-checked at 375px (see Testing).
 - **No "player left" notice** for a deliberate leave or an expired reconnect window — only disconnect/reconnect are announced.
 - **Contested tile claims** resolve by player join order, not input `seq`.
-- **Some files aren't 4-space yet.** The project standard is 4-space indentation (see Build Tooling), but files written before that was settled are still 2-space, so `format:check` flags them until someone runs `npm run format` in `client/` and `server/`.
 - **Node version is not enforced** (no `.nvmrc` / `engines`) — see Tech Stack.
 - **Dev-server restarts drop every room.** `ts-node-dev --respawn` restarts on any file change (including `tsconfig.json` and a plain `touch`), which wipes in-memory rooms and disconnects clients mid-game. Expected, but surprising when two people share one dev server.
 
 ### Open questions and ideas
 1. **Should the project move off Colyseus?** Raised because of the repeated client/server compatibility problems (see Tech Stack items 1–5). Not decided. Considerations: the published `colyseus.js` client tops out at 0.16.22, so the server is stuck on the 0.16 line with exact pins; the pain so far has been version/config drift rather than fundamental design limits, and everything is now working and verified on the pinned versions. Alternatives (raw `ws` + own delta sync, or another framework) would mean re-implementing rooms, delta-compressed state sync, and reconnection.
-2. **Gameplay questions** (starting positions, whether terrain is gameplay or decoration, and others) are in [GAME_DESIGN → Open design questions](GAME_DESIGN.md#open-design-questions-and-plans).
+2. **Gameplay questions** (starting positions, structure purposes, balance and others) are in [GAME_DESIGN → Open design questions](GAME_DESIGN.md#open-design-questions-and-plans).
 
 ---
 
@@ -1575,17 +1400,17 @@ Still open (pooling, a team win condition, team size and balancing): see [GAME_D
 
 - **Implemented (2026-09-20):** `Player.score` = tiles × 1 + kills × 50 + structures × 25, computed by `ScoreSystem` (see [Score](#score)); credits are excluded. The score badge and leaderboard show it. Match length is a single 5-minute `playing` phase (`MATCH_DURATION_MS`).
 - **Still to do:**
-  - Structure types with their own values: `Structure.type` and `placeStructure.structureType` **exist since 2026-09-26** (farm, mine, fort, power plant — the characters' starting structures; the earlier idea was city hall 1000, school 250, house 100, fort 25). Still needed: a per-type points lookup replacing `STRUCTURE_POINTS`, what each type *does*, and a way to get more (the shop, #9).
+  - Structure types with their own values: `Structure.type` and `placeStructure.structureType` **exist since 2026-09-26** (farm, mine, fort, power plant — the characters' starting structures; the earlier idea was city hall 1000, school 250, house 100, fort 25). Still needed: a per-type points lookup replacing `STRUCTURE_POINTS` and what each type *does*. (More can be bought in the shop since 2026-09-26, 100 credits each; see #9.)
   - The win condition: **displayed** on the results screen (highest score wins, co-winners on a tie; see [Results screen](#results-screen)), but not yet more than that — team-level scoring (sum or average, decide) once teams exist, and a real tie-break, are still open.
   - The point values are first-pass numbers to tune in playtesting; the formula is expected to change as the buy menu lands.
 
-### 4. HUD (credits + score) — ✅ implemented (credits; score pending #3)
+### 4. HUD (credits + score) — ✅ implemented
 
-`client/src/components/HUD.tsx` — a React overlay (not a Phaser `UIScene`; see [Client — Phaser Game](#client--phaser-game) for why) rendered on top of the Phaser canvas by `GameScreen`. Shows the current phase and countdown, and the local player's health, ammo, tiles owned, and credits. A separate always-visible **score badge** (`ScoreBadge.tsx`, top center) shows the player's score, which is credits until #3 exists (`utils/score.ts`).
+`client/src/components/HUD.tsx` — a React overlay (not a Phaser `UIScene`; see [Client — Phaser Game](#client--phaser-game) for why) rendered on top of the Phaser canvas by `GameScreen`. Shows the current phase and countdown, and the local player's health, ammo, tiles owned, and credits. A separate always-visible **score badge** (`ScoreBadge.tsx`, top center) shows the player's score (`utils/score.ts`; see #3). The HUD also shows the gun, structures left, the equipped upgrade and the Armor level.
 
 ### 5. Leaderboard / player-status info panel — ✅ implemented
 
-`client/src/components/Leaderboard.tsx` — a popup over the canvas (toggled by a button or the `L` key) listing every player sorted by `scoreFor` (credits until #3 lands), showing tiles/kills/connection status too. Needs no server changes beyond the fields it already reads — it's driven entirely by `GameContext`'s existing reactive `players` array.
+`client/src/components/Leaderboard.tsx` — a popup over the canvas (toggled by a button or the `L` key) listing every player sorted by `scoreFor` (the score from #3), showing tiles/kills/connection status too. Needs no server changes beyond the fields it already reads — it's driven entirely by `GameContext`'s existing reactive `players` array.
 
 ### 6. Mobile web controls — ✅ implemented
 
@@ -1593,12 +1418,12 @@ Still open (pooling, a team win condition, team size and balancing): see [GAME_D
 - **Fire button:** `FireButton.tsx` (touch + during the match only) holds `GameScene.setFireHeld(true)` while pressed; the scene repeats shots at the fire interval along the current aim. Tapping the map still aims and fires toward the tap, and arms placement when Build is on — the same handlers serve mouse and touch. Verified in a 375×812 touch-emulated pane: it fires (ammo 30 → 29), releases cleanly (no runaway fire), and Build correctly places a structure without also shooting.
 - Not yet done: a second aim stick (touch aim is movement direction or tap), and responsive tuning beyond a 375px spot check (HUD, score badge and Leaderboard button fit on one row without overlapping, though the HUD is close to the badge once the countdown reaches three digits).
 
-### 7. Terrain, elevation, and real art — not implemented
+### 7. Terrain, elevation, and real art — terrain ✅ built (2026-09-26); elevation dropped; art not started
 
-Driven by reference art showing hex tiles with mountains, trees, water and cliff faces. Prototype status: one flat height, primitive shapes, no terrain.
+Driven by reference art showing hex tiles with mountains, trees, water and cliff faces.
 - **Decided 2026-09-26: gameplay terrain, no elevation.** Ground, mountain and water, randomly generated per match; mountains and deep water block movement (unless the player has Wings), mountains block shots, neither can be claimed. The rules are in [GAME_DESIGN.md → Terrain](GAME_DESIGN.md#terrain). **Built (all three steps: generation and drawing, the rules, Wings)**; see [Terrain](#terrain).
-- **Rendering with elevation:** the static base layer must draw tiles back-to-front with each tile's cliff height, so heights vary per tile; tall props (mountains, trees, structures) need depth sorting against players using `setDepth(projectedY)` like entities already do. Keep the top-down world as the source of truth and add height only as a render offset.
-- **Art:** the reference image is AI-generated (watermarked, irregular tile shapes, unclear licensing) — treat it as mood only. Real tiles need a consistent hex footprint (64 × ~55 px top at the current size/squash, plus cliff height) so sprites tile cleanly; sprites replace `GameScene`'s primitives without an architecture change (needs a preload step, since the scene currently loads nothing).
+- **Rendering with elevation** (*dropped 2026-09-26*, kept for reference): the static base layer must draw tiles back-to-front with each tile's cliff height, so heights vary per tile; tall props (mountains, trees, structures) need depth sorting against players using `setDepth(projectedY)` like entities already do. Keep the top-down world as the source of truth and add height only as a render offset.
+- **Art:** the reference image is AI-generated (watermarked, irregular tile shapes, unclear licensing) — treat it as mood only. Real tiles need a consistent hex footprint (64 × ~55 px top at the current size/squash, plus cliff height) so sprites tile cleanly; sprites replace `GameScene`'s primitives without an architecture change (needs a preload step, since the scene currently loads nothing). Mountain sprites also need each mountain's pieces (small = 3 hexes, large = 7), which `generateTerrain` knows but doesn't sync: add them to the state or regenerate from a synced seed.
 - **Six-direction character sprites:** flat-top hexes suggest six facings (0°, 60°, 120°, 180°, 240°, 300°) with one animation each. Pick the animation from the *projected* (on-screen) velocity, not the world one, because the iso squash bends the angles — bucket the screen angle to the nearest of the six hex-neighbor directions as they appear on screen. Movement itself stays free-form vector velocity (already server-authoritative), so this is purely a visual layer and needs no protocol change; idle = stop the animation. (Phaser arcade physics, often shown alongside this technique, isn't involved: the server owns all movement and collision.)
 - **Map shape:** the jagged hex edge vs. rectangular movement bounds (see Known Issues) is worth fixing at the same time, e.g. by clamping to the nearest valid hex.
 
@@ -1606,11 +1431,11 @@ Driven by reference art showing hex tiles with mountains, trees, water and cliff
 
 Simulate the local player with the same acceleration model as `MovementSystem` (share the step function between client and server), replay unacknowledged inputs against each authoritative update (the `seq`/`inputAck` plumbing already exists for this), and correct smoothly. Do this once latency is a real concern; the extrapolation/smoothing already in place hides tick-rate stepping but not round-trip delay.
 
-### 9. Shop and upgrades — ammo, Basic gun and Expander built; the rest planned
+### 9. Shop, upgrades and inventory — ✅ built (2026-09-26); balance still open
 
 **Where it lives:** during play, on the player's own time (a Shop button or `E`; nothing pauses while it's open). A 30-second `buying` phase before play existed from 2026-09-20 until **2026-09-26**, when the ready-up lobby replaced it; starting credits now come from the character (50, or 15 for the Smuggler).
 
-**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures). The **Basic gun** was added 2026-09-26, since only the Smuggler starts armed. (The temporary `endBuying` shortcut went with the buying phase.) **Later on 2026-09-26** the catalog became data-driven and gained the Big gun, Speed boost, Armor and all four structures, the Basic gun went to 100, and the "coming soon" list was removed — see [Shop](#shop).
+**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures). The **Basic gun** was added 2026-09-26, since only the Smuggler starts armed. (The temporary `endBuying` shortcut went with the buying phase.) **Later on 2026-09-26** the catalog became data-driven and gained the Big gun, Speed boost, Armor and all four structures, the Basic gun went to 100, and the "coming soon" list was removed — see [Shop](#shop). **Later still:** upgrades got levels (Booster, Expander and Armor to 3, Wings 1; 100 credits a level), one slot upgrade is equipped at a time (5 s switch cooldown; Armor is always on), and the **Inventory** popup (`I`) shows guns, ammo, structures and upgrades and switches the slot.
 
 **Still to design and build:** the open questions (ammo cap, per-gun fire rate, more items, shopping risk, snowballing) are in [GAME_DESIGN → Shop, weapons and balance](GAME_DESIGN.md#shop-weapons-and-balance-planned-features-9). Technically: a new item is an entry in `SHOP_ITEMS` (a new *kind* of effect also needs a line in `ShopSystem`), and a per-gun fire rate means a server-side fire-rate check in `GameRoom.handleShoot`. The Shop button and popup fit a 375px viewport in principle but haven't been tried on a real device.
 
@@ -1701,3 +1526,5 @@ Technical decisions: how the game is built. Gameplay, balance, controls and pres
 | Terrain collision | Push the player's circle back out of any solid hex it overlaps (edge normal, velocity into it dropped, 3 passes), checking the 7 hexes around the player | Reuse the structure approach (refuse moves that get closer) | Terrain walls are many hexes that zigzag; refusing moves catches on every concave corner, while pushing out slides along them. Structures keep their tested approach |
 | Shots vs mountains | Check the end and the midpoint of each tick's travel | End point only; a full swept segment-vs-hex test | End point only let fast vertical shots skip mountain corners (a spec proves it); the midpoint closes that at a fraction of a full sweep's cost |
 | Upgrade data | One numeric field per upgrade level (`boosterLevel`, …) plus `equippedUpgrade` / `upgradeSwitchReadyAt` on `Player` | A `MapSchema` of levels; keeping the `upgrades` list with repeats | Plain fields sync through the player's normal change events (no extra listeners on the client) and satisfy the shared `PlayerState` `implements` check, which a `MapSchema` doesn't. Adding an upgrade means adding a field, which is rare |
+| Spawn slot storage | A plain, non-synced `spawnSlot` field on the `Player` schema class; slots picked as the lowest one no current player holds | A `Map<sessionId, slot>` in `GameRoom`; a synced `@type` field | `CombatSystem.respawnPlayer` needs the slot and only has `state`, so it lives on the player; clients never need it (they see positions). Computing free slots from the current players means a reconnect keeps its slot and a player who leaves for good frees theirs, with no extra bookkeeping |
+| Build selection | Client-only: `GameScreen` holds the picked type and sends it in `placeStructure` | A synced "selected structure" field on the player | The server already accepted any type in your inventory, so no protocol change was needed |

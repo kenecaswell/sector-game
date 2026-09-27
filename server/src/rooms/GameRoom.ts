@@ -11,8 +11,7 @@ import { LobbySystem } from '../systems/LobbySystem';
 import { CharacterSystem } from '../systems/CharacterSystem';
 import { StructureSystem } from '../systems/StructureSystem';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
-import { mapPixelSize } from '../hex';
-import { generateTerrain, seededRandom } from '../terrain';
+import { freeSpawnSlot, generateTerrain, seededRandom, spawnPoint } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
 import {
     TICK_RATE,
@@ -105,9 +104,11 @@ export class GameRoom extends Room<GameState> {
         // Joining mid-match: there's no lobby to pick in, so play the default character. (Joining
         // during the countdown cancels it, since the newcomer isn't ready yet.)
         if (this.state.phase.phase === 'playing') CharacterSystem.apply(player);
-        const { width, height } = mapPixelSize(this.state.mapWidth, this.state.mapHeight);
-        player.x = width / 2;
-        player.y = height / 2;
+        // Start on the spawn line at the east edge (see terrain.ts → spawnHex).
+        player.spawnSlot = freeSpawnSlot(this.state);
+        const start = spawnPoint(this.state, player.spawnSlot);
+        player.x = start.x;
+        player.y = start.y;
 
         this.state.players.set(client.sessionId, player);
     }

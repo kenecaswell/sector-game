@@ -7,6 +7,7 @@ import {
     UPGRADES,
     UPGRADE_IDS,
     isStructureType,
+    type StructureType,
     upgradeEffect,
     upgradeLabel,
     upgradeLevel,
@@ -31,19 +32,22 @@ const INVENTORY_CSS = `
 .inv-equip:not(:disabled):hover { background: #ffd84a; }
 .inv-equip:not(:disabled):active { transform: scale(0.94); }
 .inv-equip:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.inv-equip--on { background: #2ecc71; color: #fff; }
-.inv-equip--on:not(:disabled):hover { background: #27b463; }
 .inv-equip:disabled {
     background: rgba(255, 255, 255, 0.12);
     color: rgba(255, 255, 255, 0.5);
     cursor: default;
 }
+.inv-equip--on:disabled { background: #2ecc71; color: #fff; }
 `;
 
 interface InventoryProps {
     player: PlayerState | undefined;
-    /** Ask the server to equip a slot upgrade, or '' to empty the slot. */
-    onEquip: (upgradeId: UpgradeId | '') => void;
+    /** Ask the server to equip a slot upgrade (replacing the one in the slot). */
+    onEquip: (upgradeId: UpgradeId) => void;
+    /** The structure Build places next (see utils/build.ts), marked Selected. */
+    buildNext: StructureType | undefined;
+    /** Pick which structure Build places next. */
+    onSelectStructure: (type: StructureType) => void;
     /** True while the player is over a mountain or deep water (Wings can't come off there). */
     overSolidTerrain: () => boolean;
     onClose: () => void;
@@ -51,11 +55,20 @@ interface InventoryProps {
 
 /**
  * Inventory popup over the game canvas (I, or the Inventory button): your gun, ammo, structures
- * and upgrades. Only one slot upgrade (Booster, Expander, Wings) works at a time; this is where you
- * switch it, at most once every UPGRADE_SWITCH_COOLDOWN_MS. Armor always works. The server checks
- * every switch; the buttons just avoid offering ones it would refuse.
+ * and upgrades. This is where you pick which structure Build places next. Only one slot upgrade
+ * (Booster, Expander, Wings) works at a time; this is where you switch it, at most once every
+ * UPGRADE_SWITCH_COOLDOWN_MS. The equipped one's button is disabled (you switch by equipping
+ * another, not by emptying the slot). Armor always works. The server checks every switch; the
+ * buttons just avoid offering ones it would refuse.
  */
-export function Inventory({ player, onEquip, overSolidTerrain, onClose }: InventoryProps) {
+export function Inventory({
+    player,
+    onEquip,
+    buildNext,
+    onSelectStructure,
+    overSolidTerrain,
+    onClose,
+}: InventoryProps) {
     // Ticks a few times a second, which also keeps the Wings-over-terrain check current.
     const secondsLeft = usePhaseCountdown(player?.upgradeSwitchReadyAt ?? 0, 200);
     const coolingDown = secondsLeft !== null && secondsLeft > 0;
@@ -136,7 +149,7 @@ export function Inventory({ player, onEquip, overSolidTerrain, onClose }: Invent
                 </Section>
 
                 <Section title="Structures">
-                    {structureRows(player?.structureInventory ?? [])}
+                    {structureRows(player?.structureInventory ?? [], buildNext, onSelectStructure)}
                 </Section>
 
                 <Section title="Upgrades">
@@ -159,7 +172,7 @@ export function Inventory({ player, onEquip, overSolidTerrain, onClose }: Invent
                         owned.map((id) => {
                             const level = upgradeLevel(player, id);
                             const equipped = player.equippedUpgrade === id;
-                            const disabled = coolingDown || wingsStuck;
+                            const disabled = equipped || coolingDown || wingsStuck;
                             return (
                                 <Row
                                     key={id}
@@ -173,14 +186,10 @@ export function Inventory({ player, onEquip, overSolidTerrain, onClose }: Invent
                                         }
                                         aria-pressed={equipped}
                                         disabled={disabled}
-                                        title={
-                                            equipped
-                                                ? 'Take it off (empty the slot)'
-                                                : 'Use this upgrade'
-                                        }
-                                        onClick={() => onEquip(equipped ? '' : id)}
+                                        title={equipped ? 'In use' : 'Use this upgrade'}
+                                        onClick={() => onEquip(id)}
                                     >
-                                        {equipped ? 'Unequip' : 'Equip'}
+                                        {equipped ? 'Equipped' : 'Equip'}
                                     </button>
                                 </Row>
                             );
@@ -191,18 +200,33 @@ export function Inventory({ player, onEquip, overSolidTerrain, onClose }: Invent
     );
 }
 
-/** "Farm ×2" rows, or a single "None" row. */
-function structureRows(inventory: readonly string[]): ReactNode {
+/** "Farm ×2" rows, each with a button to make it the one Build places next, or a "None" row. */
+function structureRows(
+    inventory: readonly string[],
+    buildNext: StructureType | undefined,
+    onSelect: (type: StructureType) => void
+): ReactNode {
     const counts = new Map<string, number>();
     inventory.forEach((type) => counts.set(type, (counts.get(type) ?? 0) + 1));
     if (counts.size === 0) return <Row name="None" detail="Buy structures in the shop (E)." />;
-    return Array.from(counts, ([type, count]) => (
-        <Row
-            key={type}
-            name={isStructureType(type) ? STRUCTURE_NAMES[type] : type}
-            detail={count > 1 ? `×${count}` : '×1'}
-        />
-    ));
+    return Array.from(counts, ([type, count]) => {
+        if (!isStructureType(type)) return <Row key={type} name={type} detail={`×${count}`} />;
+        const selected = type === buildNext;
+        return (
+            <Row key={type} name={STRUCTURE_NAMES[type]} detail={`×${count}`}>
+                <button
+                    type="button"
+                    className={selected ? 'inv-equip inv-equip--on' : 'inv-equip'}
+                    aria-pressed={selected}
+                    disabled={selected}
+                    title={selected ? 'Build (B) places this next' : 'Build this one next'}
+                    onClick={() => onSelect(type)}
+                >
+                    {selected ? 'Selected' : 'Select'}
+                </button>
+            </Row>
+        );
+    });
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

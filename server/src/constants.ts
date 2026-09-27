@@ -79,5 +79,12 @@ export const RIVER_WIDTH_CHANGE_CHANCE = 0.25; // per step, the width goes up or
 export const RIVER_POCKET_FILL = 4;
 // At least this many ground hexes separate any two features (mountain ranges, lakes, rivers).
 export const FEATURE_GAP = 3;
-// Hexes within this many steps of the spawn hex (the map center) are always ground.
-export const SPAWN_CLEAR_RADIUS = 4;
+// Hexes within this many steps of any spawn hex are always ground.
+export const SPAWN_CLEAR_RADIUS = 3;
+
+// Spawn line (see terrain.ts → spawnHex): one spawn hex per slot, in a column this many hexes in from
+// the right-hand (east) edge. Slot 0 is the middle row; later slots alternate above and below it,
+// SPAWN_ROW_SPACING rows apart. SPAWN_SLOTS matches GameRoom.maxClients.
+export const SPAWN_SLOTS = 10;
+export const SPAWN_EDGE_INSET = 3;
+export const SPAWN_ROW_SPACING = 6;

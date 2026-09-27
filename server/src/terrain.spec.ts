@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     FEATURE_GAP,
+    SPAWN_ROW_SPACING,
+    SPAWN_SLOTS,
     LAKE_SIZE,
     MOUNTAIN_SIZE,
     RIVER_LENGTH,
@@ -10,7 +12,15 @@ import {
     TERRAIN_COVERAGE,
 } from './constants';
 import { hexDistance, hexIndex, hexNeighbors, isValidHex, type HexCoord } from './hex';
-import { generateTerrain, seededRandom, spawnHex, type GeneratedTerrain } from './terrain';
+import {
+    freeSpawnSlot,
+    generateTerrain,
+    seededRandom,
+    spawnHex,
+    spawnHexes,
+    type GeneratedTerrain,
+} from './terrain';
+import { addPlayer, world } from './test/world';
 import { blocksWalking, isShallowWater } from '../../shared/terrain';
 import { TERRAIN, type Terrain } from './types/shared';
 
@@ -147,7 +157,7 @@ describe('generateTerrain', () => {
                     // feature, or inside the spawn area.
                     const blocked =
                         ns.some((n) => owner.has(at(n)) && owner.get(at(n)) !== id) ||
-                        hexDistance(h, map.spawn) <= SPAWN_CLEAR_RADIUS;
+                        map.spawns.some((s) => hexDistance(h, s) <= SPAWN_CLEAR_RADIUS);
                     if (around >= RIVER_POCKET_FILL && !blocked) {
                         throw new Error(`hole at ${h.col},${h.row} in river ${id}`);
                     }
@@ -188,12 +198,12 @@ describe('generateTerrain', () => {
         expect(inLakes).toBeLessThan(inRivers / 50);
     });
 
-    it('keeps the spawn area clear', () => {
+    it('keeps every spawn area clear', () => {
         for (const map of maps) {
-            expect(map.spawn).toEqual(spawnHex(COLS, ROWS));
+            expect(map.spawns).toEqual(spawnHexes(COLS, ROWS));
             for (let i = 0; i < COLS * ROWS; i++) {
                 const h = { col: i % COLS, row: Math.floor(i / COLS) };
-                if (hexDistance(h, map.spawn) <= SPAWN_CLEAR_RADIUS) {
+                if (map.spawns.some((s) => hexDistance(h, s) <= SPAWN_CLEAR_RADIUS)) {
                     expect(map.terrain[i]).toBe(TERRAIN.ground);
                 }
             }
@@ -207,8 +217,8 @@ describe('generateTerrain', () => {
             const walkable = (h: HexCoord) =>
                 map.terrain[at(h)] === TERRAIN.ground ||
                 (map.terrain[at(h)] === TERRAIN.water && isShallowWater(isWater, h.col, h.row));
-            const reached = new Set([at(map.spawn)]);
-            const queue = [map.spawn];
+            const reached = new Set([at(map.spawns[0])]);
+            const queue = [map.spawns[0]];
             while (queue.length > 0) {
                 const h = queue.pop()!;
                 for (const n of hexNeighbors(h.col, h.row)) {
@@ -354,5 +364,36 @@ describe('seededRandom', () => {
         const values = Array.from({ length: 1000 }, () => a());
         expect(values).toEqual(Array.from({ length: 1000 }, () => b()));
         expect(values.every((v) => v >= 0 && v < 1)).toBe(true);
+    });
+});
+
+describe('spawn line', () => {
+    it('is one column near the east edge, slot 0 in the middle, then alternating outward', () => {
+        const hexes = spawnHexes(COLS, ROWS);
+        expect(hexes).toHaveLength(SPAWN_SLOTS);
+        expect(new Set(hexes.map((h) => h.col)).size).toBe(1);
+        expect(hexes[0].col).toBeGreaterThan(COLS - 6);
+        expect(hexes[0].row).toBe(ROWS / 2);
+        const offsets = hexes.map((h) => (h.row - ROWS / 2) / SPAWN_ROW_SPACING);
+        expect(offsets).toEqual([0, -1, 1, -2, 2, -3, 3, -4, 4, -5]);
+        for (const h of hexes) expect(isValidHex(h.col, h.row, COLS, ROWS)).toBe(true);
+    });
+
+    it('stays on a small map', () => {
+        for (let slot = 0; slot < SPAWN_SLOTS; slot++) {
+            const h = spawnHex(4, 4, slot);
+            expect(isValidHex(h.col, h.row, 4, 4)).toBe(true);
+        }
+    });
+
+    it('gives each joining player the lowest free slot, reusing one a player left', () => {
+        const state = world('lobby', { tiles: false });
+        for (const id of ['a', 'b', 'c']) {
+            const slot = freeSpawnSlot(state); // picked before joining, as GameRoom.onJoin does
+            addPlayer(state, id).spawnSlot = slot;
+        }
+        expect(['a', 'b', 'c'].map((id) => state.players.get(id)!.spawnSlot)).toEqual([0, 1, 2]);
+        state.players.delete('b');
+        expect(freeSpawnSlot(state)).toBe(1);
     });
 });
