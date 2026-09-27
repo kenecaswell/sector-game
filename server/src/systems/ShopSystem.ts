@@ -1,5 +1,5 @@
 import type { Player } from '../state/GameState';
-import { SHOP_ITEMS, isShopItemId, ownsShopItem } from '../types/shared';
+import { SHOP_ITEMS, isShopItemId, ownsShopItem, type ShopItemId } from '../types/shared';
 import { UpgradeSystem } from './UpgradeSystem';
 
 /**
@@ -22,6 +22,16 @@ function purchase(player: Player, itemId: unknown): boolean {
     if (player.credits < item.cost || ownsShopItem(player, itemId)) return false;
 
     player.credits -= item.cost;
+    grant(player, itemId);
+    return true;
+}
+
+/**
+ * Gives `player` what the item gives, free and without checks (the caller decides whether they may
+ * have it). Used by `purchase` and by pickups (PickupSystem).
+ */
+function grant(player: Player, itemId: ShopItemId): void {
+    const item = SHOP_ITEMS[itemId];
     if (item.gun) player.gun = item.gun;
     if (item.ammo) player.ammo += item.ammo;
     if (item.structure) player.structureInventory.push(item.structure);
@@ -30,7 +40,6 @@ function purchase(player: Player, itemId: unknown): boolean {
         UpgradeSystem.levelUp(player, item.upgrade);
         player.health += player.maxHealth - before;
     }
-    return true;
 }
 
-export const ShopSystem = { purchase };
+export const ShopSystem = { purchase, grant };

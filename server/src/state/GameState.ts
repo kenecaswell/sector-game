@@ -10,6 +10,7 @@ import {
 import type {
     GamePhaseStateShape,
     GameStateShape,
+    PickupState,
     PlayerState,
     ProjectileState,
     StructureState,
@@ -58,6 +59,8 @@ export class Player extends Schema implements PlayerState {
 export class Tile extends Schema implements TileState {
     @type('string') ownerId: string = ''; // empty string = unclaimed
     @type('uint8') terrain: Terrain = TERRAIN.ground; // set once when the room is created (terrain.ts)
+    // Server only (not synced): someone has claimed this hex this match, so it pays no more credits.
+    claimedBefore: boolean = false;
 }
 
 export class Projectile extends Schema implements ProjectileState {
@@ -81,21 +84,31 @@ export class Structure extends Schema implements StructureState {
     @type('number') maxHealth: number = 100;
 }
 
+export class Pickup extends Schema implements PickupState {
+    @type('string') id: string = '';
+    @type('string') kind: string = 'credits'; // a PickupKind
+    @type('string') itemId: string = ''; // a ShopItemId for kind 'item', else ''
+    @type('number') amount: number = 0; // credits or shots
+    @type('number') tileX: number = 0;
+    @type('number') tileY: number = 0;
+}
+
 export class GamePhaseState extends Schema implements GamePhaseStateShape {
     @type('string') phase: GamePhase = 'lobby'; // lobby | countdown | playing | results
     @type('number') endsAt: number = 0; // server timestamp ms
 }
 
-// GameState checks everything but its four collections: MapSchema/ArraySchema don't match
+// GameState checks everything but its five collections: MapSchema/ArraySchema don't match
 // ReadonlyMap / readonly T[] exactly for the compiler (they do structurally at runtime, which is
 // what the client's cast relies on), and their element classes above are checked individually.
 export class GameState
     extends Schema
-    implements Omit<GameStateShape, 'players' | 'structures' | 'projectiles' | 'tiles'>
+    implements Omit<GameStateShape, 'players' | 'structures' | 'projectiles' | 'pickups' | 'tiles'>
 {
     @type({ map: Player }) players = new MapSchema<Player>();
     @type({ map: Structure }) structures = new MapSchema<Structure>();
     @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();
+    @type({ map: Pickup }) pickups = new MapSchema<Pickup>(); // see pickups.ts; empty if the flag is off
     @type([Tile]) tiles = new ArraySchema<Tile>(); // flat array, index = y*width+x
     @type(GamePhaseState) phase = new GamePhaseState();
     @type('number') mapWidth: number = 64;

@@ -52,7 +52,8 @@ export const TILE_POINTS = 1;
 export const KILL_POINTS = 50;
 export const STRUCTURE_POINTS = 25;
 
-// Credits come only from claiming: this many for each hex you take (unclaimed or an enemy's).
+// Credits from claiming: this many for a hex nobody has claimed before this match. Re-taking a hex
+// (from an enemy, or one released when its owner left) pays nothing. Pickups are the other source.
 export const CREDITS_PER_CLAIM = 1;
 
 // DEV ONLY (temporary): the M key sends 'devCredits', which adds DEV_CREDITS during the match.
@@ -94,3 +95,29 @@ export const SPAWN_CLEAR_RADIUS = 3;
 export const SPAWN_SLOTS = 10;
 export const SPAWN_EDGE_INSET = 3;
 export const SPAWN_ROW_SPACING = 6;
+
+// Pickups: items scattered on the map when the room is created (see pickups.ts, PickupSystem.ts).
+// FEATURE FLAG: PICKUPS_ENABLED turns them on or off. The PICKUPS environment variable overrides it
+// (PICKUPS=0 off, PICKUPS=1 on), like TERRAIN_COVERAGE.
+const PICKUPS_DEFAULT = true;
+export const PICKUPS_ENABLED =
+    process.env.PICKUPS === undefined
+        ? PICKUPS_DEFAULT
+        : !['0', 'false', 'off'].includes(process.env.PICKUPS);
+// One location per cell of a PICKUP_GRID.cols x PICKUP_GRID.rows grid over the map (12), each at
+// its cell's center nudged up to PICKUP_JITTER hexes, then moved to the nearest hex that's ground
+// and outside every spawn area.
+export const PICKUP_GRID = { cols: 4, rows: 3 };
+export const PICKUP_JITTER = 2;
+// What each location gets. Weights are percentages and add up to 100.
+export const PICKUP_CHANCES = {
+    credits: 40, // a pile of PICKUP_CREDITS credits
+    ammo: 25, // a pile of PICKUP_AMMO shots
+    upgrade: 10, // level 1 of a random upgrade (Booster, Expander, Armor, Wings)
+    basicGun: 10,
+    bigGun: 5,
+    structure: 5, // one random structure type
+    nothing: 5,
+};
+export const PICKUP_CREDITS = { min: 10, max: 50 };
+export const PICKUP_AMMO = { min: 10, max: 30 };

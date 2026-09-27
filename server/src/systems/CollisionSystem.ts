@@ -51,7 +51,7 @@ function checkProjectileStructureCollision(
  * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
  * their `claimRadius` (the Expander upgrade doubles it). A hex in an enemy structure's footprint
  * can't be claimed — the structure protects its tile — and a teammate's hex is left alone. Each
- * hex taken pays CREDITS_PER_CLAIM.
+ * hex claimed for the first time this match pays CREDITS_PER_CLAIM.
  */
 function claimTiles(
     state: GameState,
@@ -95,7 +95,11 @@ function claimTiles(
             }
             tile.ownerId = player.id;
             player.tilesOwned++;
-            player.credits += CREDITS_PER_CLAIM;
+            // Only the first claim of a hex this match pays; re-taking it doesn't.
+            if (!tile.claimedBefore) {
+                tile.claimedBefore = true;
+                player.credits += CREDITS_PER_CLAIM;
+            }
             claimed.push({ x: col, y: row, ownerId: player.id });
         }
     }

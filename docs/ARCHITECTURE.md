@@ -182,6 +182,7 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   ├── hex.ts                  # Re-exports shared/hex.ts + structureContact() (structure collisions)
 │   │   ├── teams.ts                # areAllies(): same player or same team
 │   │   ├── terrain.ts              # Random terrain per match: mountains, lakes, rivers (generateTerrain, seededRandom)
+│   │   ├── pickups.ts              # Pickup placement and rolls per match (generatePickups, rollPickup)
 
 │   │   ├── rooms/
 │   │   │   └── GameRoom.ts         # Colyseus room — lifecycle, message handlers, tick loop
@@ -193,13 +194,14 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   │   ├── CharacterSystem.ts  # Applies a character's starting kit (gun, ammo, credits, structures, upgrade levels)
 │   │   │   ├── UpgradeSystem.ts    # Upgrade levels and the one equipped slot: effects, speed, flying, equip/level up
 │   │   │   ├── MovementSystem.ts   # Eases velocity toward the input direction (accel-limited), drops stale input, slides around enemy structures and solid terrain, Booster speed
-│   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, batched tilesClaimed broadcast
+│   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, first-claim credits, batched tilesClaimed broadcast
+│   │   │   ├── PickupSystem.ts     # Taking pickups by walking onto their hex; pickupCollected broadcast
 │   │   │   ├── CombatSystem.ts     # Projectile movement, hit detection, respawn-on-death
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
 │   │   │   ├── PhaseSystem.ts      # Phase transitions; times playing -> results
 │   │   │   ├── EconomySystem.ts    # Dev-only credit grant (claim income is in CollisionSystem)
 │   │   │   ├── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
-│   │   │   └── ShopSystem.ts       # Validates and applies purchases (guns, ammo, upgrade levels, structures)
+│   │   │   └── ShopSystem.ts       # Validates purchases; grant() applies an item (also used by pickups)
 │   │   ├── test/
 │   │   │   └── world.ts            # Spec helpers: world(), addPlayer, addStructure, setTerrain, drive, ...
 │   │   └── types/
@@ -350,6 +352,8 @@ WebSocket via Colyseus protocol. Colyseus handles:
 { type: "tilesClaimed", tiles: Array<{ x, y, ownerId }> }
 { type: "structureDestroyed", structureId: string }
 { type: "phaseChanged",  phase: GamePhase, endsAt: number }
+// A player took a pickup (it's also removed from state.pickups). The client tells only that player.
+{ type: "pickupCollected", playerId: string, kind: "credits" | "ammo" | "item", itemId: ShopItemId | "", amount: number }
 // Sent once when the match ends (phase -> results): final standings, best first.
 { type: "gameOver",      scores: Array<{ playerId, name, color, teamId, score, tilesOwned, kills, structures }> }
 
@@ -379,12 +383,13 @@ Client tags each input with an incrementing `seq` number. The server stores each
 The room is thin: it wires messages and the tick to the systems, which hold the rules. **Read `server/src/rooms/GameRoom.ts` itself** (about 290 lines). An earlier version of this section copied the whole file in, and the copy drifted out of date. Here is a map of it instead (checked against the code 2026-09-26):
 
 - **Private fields** (not synced, since clients don't need them): `playerInputs` (last input per session; not named `inputs`, see above), `matchFinished`, `closing` and `nextProjectileId`.
-- **`onCreate`** builds a `GameState`. It fills `tiles` from `generateTerrain(mapWidth, mapHeight, seededRandom(random seed))`, a fresh map every match (see *Terrain*). It then calls `setState`, and starts `setSimulationInterval` at `TICK_RATE` (20 Hz). Message handlers:
+- **`onCreate`** builds a `GameState`. It fills `tiles` from `generateTerrain(mapWidth, mapHeight, seededRandom(random seed))`, a fresh map every match (see *Terrain*), then, if `PICKUPS_ENABLED`, fills `pickups` from `generatePickups` with the same random stream (see *Pickups*). It then calls `setState`, and starts `setSimulationInterval` at `TICK_RATE` (20 Hz). Message handlers:
   - `input` goes to `handleInput`. It clamps the direction (x to ±1, y to ±1/`SCREEN_Y_SCALE`), stores it with `receivedAt`, sanitizes `angle`, and replies with `inputAck`.
   - `shoot` goes to `handleShoot`. The phase must be `playing`, and the player needs a gun and ammo. It spends 1 ammo and stamps the projectile's `damage` from `GUN_DAMAGE`.
   - `placeStructure` goes to `handlePlaceStructure`. The phase must be `playing`, the type must be in the player's `structureInventory`, and `StructureSystem.canPlace` must allow the spot. It removes that inventory entry.
   - `selectTeam`, `selectCharacter`, `setReady` and `setName` go to `LobbySystem`. `equipUpgrade` goes to `UpgradeSystem.equip`. All of them use `withPlayer`, which ignores unknown or disconnected players.
   - `purchase` goes to `ShopSystem.purchase`, during `playing` only.
+  - `devCredits` (dev only, temporary) goes to `EconomySystem.grantDevCredits`.
 - **`onJoin`**:
   - The name is `LobbySystem.joiningName(options.name)`: the saved name, or "Player N", made unique.
   - The team is `defaultTeam`.
@@ -392,7 +397,7 @@ The room is thin: it wires messages and the tick to the systems, which hold the 
   - The player takes the lowest free spawn slot (`freeSpawnSlot`, kept on the non-synced `Player.spawnSlot`, so a reconnect keeps it) and is placed on that slot's hex (`spawnPoint`). See *Spawn line* under Game Mechanics → Terrain.
 - **`onLeave`** sets `connected = false`. If the leave was consented, or the match is in results, it calls `cleanupPlayer` right away. Otherwise it broadcasts `playerDisconnected` and runs `allowReconnection` for `RECONNECT_WINDOW_SECONDS` (180). When the player returns, it broadcasts `playerReconnected` to everyone except them. If the window runs out, it calls `cleanupPlayer`. See [Reconnection System](#reconnection-system).
 - **`cleanupPlayer`** releases the player's tiles and deletes the player and their input. Their structures stay.
-- **`tick(dt)`** runs, in this order: `LobbySystem`, `MovementSystem`, `CollisionSystem`, `CombatSystem`, `PhaseSystem`, `closeFinishedMatch`, `ScoreSystem`. (`EconomySystem` had a timed payout here until 2026-09-26.)
+- **`tick(dt)`** runs, in this order: `LobbySystem`, `MovementSystem`, `CollisionSystem`, `PickupSystem`, `CombatSystem`, `PhaseSystem`, `closeFinishedMatch`, `ScoreSystem`. (`EconomySystem` had a timed payout here until 2026-09-26.)
 - **`closeFinishedMatch`** runs once the phase is `results`. The first time, it calls `lock()`, refreshes scores and broadcasts the `gameOver` snapshot. When results end, it calls `disconnect()`. See [Room Lifecycle](#room-lifecycle).
 
 Systems are plain modules (not Room subclasses) so they're unit-testable without a live Room — see [Testing Multiplayer Locally](#testing-multiplayer-locally). GameRoom passes a `Broadcast` callback (`(type, payload) => this.broadcast(type, payload)`) into each system's `update()` so they can emit discrete events without needing a reference to the Room itself.
@@ -514,6 +519,7 @@ export class GameState extends Schema {
   @type({ map: Player })      players     = new MapSchema<Player>();
   @type({ map: Structure })   structures  = new MapSchema<Structure>();
   @type({ map: Projectile })  projectiles = new MapSchema<Projectile>();
+  @type({ map: Pickup })      pickups     = new MapSchema<Pickup>(); // id, kind, itemId, amount, tileX, tileY (2026-09-27)
   @type([Tile])               tiles       = new ArraySchema<Tile>(); // flat array, index = y*width+x
   @type(GamePhaseState)       phase       = new GamePhaseState();
   @type('number')             mapWidth: number  = 64;
@@ -695,11 +701,23 @@ Rebuilt 2026-09-26 as a data-driven catalog: each `SHOP_ITEMS` entry has a `cate
 
 > Rules: [Economy and shop](GAME_DESIGN.md#economy-and-shop).
 
-- **Income is per claim** (2026-09-26): `CollisionSystem.claimTiles` adds `CREDITS_PER_CLAIM` (1) to `credits` for every hex it hands to a player (unclaimed or taken from an enemy). The previous owner keeps what they earned. Claiming only runs during `playing`, so income does too. The timed payout (`EconomySystem.update`, `CREDIT_PAYOUT_INTERVAL_MS`, the synced `GameState.nextPayoutAt`) was removed.
+- **Income is per first claim** (2026-09-27; every claim paid from 2026-09-26): `CollisionSystem.claimTiles` adds `CREDITS_PER_CLAIM` (1) to `credits` when it hands a player a hex whose `Tile.claimedBefore` is false, and sets it. `claimedBefore` is a plain, non-synced field on the `Tile` schema class (like `Player.spawnSlot`): it's never cleared, so re-taking an enemy's hex or a hex released by `cleanupPlayer` pays nothing. The previous owner keeps what they earned. Claiming only runs during `playing`, so income does too. The timed payout (`EconomySystem.update`, `CREDIT_PAYOUT_INTERVAL_MS`, the synced `GameState.nextPayoutAt`) was removed.
 - Starting credits are set by `CharacterSystem.apply` from the character's kit (`STARTING_CREDITS` was removed 2026-09-26).
 - No discrete broadcast event for income — `Player.credits` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
 - **Dev only (temporary):** the client's `M` key (only when `import.meta.env.DEV`, i.e. the Vite dev server) sends `devCredits` (no payload, via `sendDevCredits` in `net/GameConnection.ts`); `EconomySystem.grantDevCredits` adds `DEV_CREDITS` (500) during `playing`, unless `DEV_CHEATS_ENABLED` is false (`NODE_ENV=production`). Covered by `EconomySystem.spec.ts` and an e2e check. Remove before release.
+- Credit piles are the other source (see *Pickups*).
 - Spending is the only sink: credits leave when a purchase succeeds (`ShopSystem.purchase`). Nothing else consumes them.
+
+### Pickups
+
+> Rules: [Pickups](GAME_DESIGN.md#pickups). Added 2026-09-27.
+
+- **Feature flag:** `PICKUPS_ENABLED` in `server/src/constants.ts` (default on); the `PICKUPS` environment variable overrides it (`0`/`false`/`off`, or `1`). Off means `onCreate` never fills `state.pickups`, so everything downstream (the system, the client) has nothing to do. The client has no flag of its own: it draws whatever is in `state.pickups`.
+- **Placement** (`server/src/pickups.ts`, `generatePickups(terrain, cols, rows, random)`): one location per cell of a `PICKUP_GRID` (4 × 3) over the hex grid, starting at the cell's center plus up to `PICKUP_JITTER` (2) hexes each way, then a breadth-first search for the nearest hex that's ground, outside every spawn area (`SPAWN_CLEAR_RADIUS` of each `spawnHexes` hex), and not already used. `rollPickup(random)` picks the contents from the `PICKUP_CHANCES` weights (percentages) and `PICKUP_CREDITS` / `PICKUP_AMMO` ranges; `null` is "nothing". It runs after terrain on the same seeded stream, so a seed reproduces both.
+- **State:** `Pickup` schema (`id`, `kind`: `credits` / `ammo` / `item`, `itemId`: a `ShopItemId` for items, `amount`, `tileX`, `tileY`) in `GameState.pickups`, a `MapSchema`; `PickupState` in `shared/state.ts`. An item pickup is just a shop item id (a gun, an upgrade id, a structure type), so it reuses the catalog for names and effects.
+- **Taking** (`PickupSystem.update`, after `CollisionSystem` each tick, `playing` only): a connected player whose `pixelToHex(x, y)` is a pickup's hex takes it if `canCollect` (credits, ammo, structures always; guns by `ownsShopItem`, the shop's no-downgrade rule; upgrades only at level 0). Credits and ammo add `amount`; items go through `ShopSystem.grant`, the half of `purchase` that applies an item (auto-equip into an empty slot, Armor's health). The pickup is deleted from state and `pickupCollected` is broadcast.
+- **Client:** `GameScene.addPickupView` (on `pickups.onAdd`, and for those present at create) builds a container at the projected hex center: a shadow ellipse and a `Graphics` drawn by `drawPickup(pickupLook(kind, itemId))` (`client/src/game/pickups.ts`), scaled by `PICKUP_SCALE`, lifted `PICKUP_LIFT` and bobbing `PICKUP_BOB` px on a yoyo tween. Depth is the ground y, like players. `onRemove` kills the tween and destroys it. `GameContext` turns `pickupCollected` for your own session into a "Picked up …" notice (`pickupLabel` in `shared/types.ts`).
+- **Tests:** `pickups.spec.ts` (chances add to 100 and come out in proportion over 20,000 rolls, amounts in range, every upgrade possible; placement on 30 seeded maps: at most 12, ground only, distinct, outside spawn areas; one per grid cell; moved off terrain; repeatable), `systems/PickupSystem.spec.ts` (each kind, the can-use rules, phase and connection), `GameState.spec.ts` (pickups sync and their removal), client `game/pickups.spec.ts` (`pickupLook`) and `types/shared.spec.ts` (`pickupLabel`), and `tools/e2e.js` (pickups on ground and the same for everyone, walking onto the nearest one takes it, `PICKUPS=0` gives none). Browser, 2026-09-27: ammo and a basic gun seen, bobbing, and taken with the notice; the coin, upgrade and structure shapes haven't been seen in a browser yet.
 
 ---
 
@@ -1031,7 +1049,7 @@ function getStructureFrame(health: number, maxHealth: number): string {
 
 ### Server unit tests (Vitest) — added 2026-09-26
 
-`cd server && npm test` (or `npm run test:watch`) runs **Vitest** on specs next to the code (`src/systems/ShopSystem.ts` → `ShopSystem.spec.ts`): 167 tests in about 5 s. They replaced `tools/check-rules.js` and `tools/check-collisions.js`, covering everything those did plus more.
+`cd server && npm test` (or `npm run test:watch`) runs **Vitest** on specs next to the code (`src/systems/ShopSystem.ts` → `ShopSystem.spec.ts`): 187 tests in about 5 s. They replaced `tools/check-rules.js` and `tools/check-collisions.js`, covering everything those did plus more.
 - **Config:** `server/vitest.config.ts`. Vitest transpiles with `tsconfig.json`'s settings, including the decorator options the Colyseus schema needs; `src/state/GameState.spec.ts` round-trips state through the Colyseus encoder (full sync, then a delta), which **fails if `useDefineForClassFields` is ever flipped** — verified by flipping it.
 - **Builds stay clean:** `tsconfig.json` type-checks everything including specs (`npm run typecheck`, and your editor); `tsconfig.build.json` (used by `npm run build`) excludes `**/*.spec.ts` and `src/test/`, so `dist/` holds only the server.
 - **Helpers:** `src/test/world.ts` — `world()` (a 64 × 64 map; `{ tiles: false }` skips the 4,096 tiles for movement/combat loops that build hundreds of worlds), `addPlayer`/`addPlayerAt`, `addStructure`, `ownFootprint`, `addShot`/`shootAt`, `inputs`/`runMovement`/`drive`, `onScreenSpeed`.
@@ -1042,7 +1060,7 @@ function getStructureFrame(health: number, maxHealth: number): string {
 
 `cd client && npm test` (or `npm run test:watch`) runs **Vitest** with **jsdom** (a simulated browser) and **React Testing Library**. Configuration is the `test` block in `client/vite.config.ts`; `src/test/setup.ts` adds the jest-dom matchers and cleans up (unmount, clear `localStorage`) after every test; `src/test/factories.ts` has `makePlayer` / `makeScore` builders.
 - **Spec files sit next to what they test** (`foo.ts` → `foo.spec.ts`, `Foo.tsx` → `Foo.spec.tsx`) and are type-checked and linted with the rest of `src/` (they're never bundled).
-- **Covered (73 tests):** `utils/build` (which structure Build places), `utils/results` (ranks, ties, fallback ordering, team totals), `utils/playerName` (localStorage, including blocked storage), `utils/usePhaseCountdown` (fake timers), `game/hex` (projection), `types/shared` (name rules, `ownsShopItem`, catalog sanity — the client's view of `shared/`), and components: `HUD`, `BuyMenu` (grouping, affordability, Owned/Max, next upgrade level, buying, closing), `Inventory` (equip, the disabled Equipped button, picking a structure, the cooldown and Wings-over-terrain locks, closing), `LobbyScreen` (name editing: Enter/blur/Esc/invalid; team/character/ready and the ready lock; other players' rows; waiting and countdown text — with `useGameConnection` replaced by a fake via `vi.mock`), `ResultsScreen` (headlines, ties, team table, buttons).
+- **Covered (78 tests):** `game/pickups` (pickup looks), `utils/build` (which structure Build places), `utils/results` (ranks, ties, fallback ordering, team totals), `utils/playerName` (localStorage, including blocked storage), `utils/usePhaseCountdown` (fake timers), `game/hex` (projection), `types/shared` (name rules, `ownsShopItem`, catalog sanity — the client's view of `shared/`), and components: `HUD`, `BuyMenu` (grouping, affordability, Owned/Max, next upgrade level, buying, closing), `Inventory` (equip, the disabled Equipped button, picking a structure, the cooldown and Wings-over-terrain locks, closing), `LobbyScreen` (name editing: Enter/blur/Esc/invalid; team/character/ready and the ready lock; other players' rows; waiting and countdown text — with `useGameConnection` replaced by a fake via `vi.mock`), `ResultsScreen` (headlines, ties, team table, buttons).
 - **Not covered:** `GameScene` and anything else Phaser draws (needs a real WebGL canvas — still checked by hand in a browser), `GameContext`/`GameConnection` (would need a fake Colyseus room), `GameScreen`'s key handling.
 - Tests query the UI the way a user would (roles and accessible names), which is why each shop row is a `role="group"` named after its item.
 
@@ -1534,3 +1552,6 @@ Technical decisions: how the game is built. Gameplay, balance, controls and pres
 | Build selection | Client-only: `GameScreen` holds the picked type and sends it in `placeStructure` | A synced "selected structure" field on the player | The server already accepted any type in your inventory, so no protocol change was needed |
 | Claim income | Paid inside `CollisionSystem.claimTiles`, where the hex changes hands | A separate EconomySystem pass counting each tick's claims | The claim loop is the one place that knows a hex was taken; a second pass would have to re-derive it from the `tilesClaimed` batch |
 | Dev credits gate | Client sends only in Vite dev builds; server refuses when `NODE_ENV=production` (`DEV_CHEATS_ENABLED`) | Client-side check only; an opt-in env var | A client check alone can be bypassed by anyone sending the message; `NODE_ENV=production` is already set by the hosting guide's service, so hosted servers are safe without extra setup, while `npm run dev`, `npm start` and `tools/e2e.js` keep it on |
+| Pickup state | A `MapSchema<Pickup>` whose item pickups carry a `ShopItemId`, applied through `ShopSystem.grant` | One field per pickup kind; drawing items into the terrain | Reuses the shop catalog for names, effects and the can-use rules, so a new shop item works as a pickup for free; a map gives cheap add/remove callbacks for the client |
+| First-claim tracking | A non-synced `claimedBefore` flag on each `Tile` | A `Set` of hex indices in `GameRoom`; a synced field | `claimTiles` already holds the tile; clients never need it |
+| Pickups feature flag | A constant with an environment override (`PICKUPS`), checked once in `onCreate` | A client toggle; a per-room option | Matches `TERRAIN_COVERAGE`/`PHASE_TIME_SCALE`; checking at creation keeps every other code path flag-free (an empty map does nothing) |

@@ -10,6 +10,7 @@ import {
     activeUpgradeLevel,
     normalizePlayerName,
     ownsShopItem,
+    pickupLabel,
     shopItemDescription,
     shopItemTitle,
 } from './shared';
@@ -136,5 +137,16 @@ describe('catalogs', () => {
     it('team colors are all different', () => {
         const colors = Object.values(TEAMS).map((team) => team.color);
         expect(new Set(colors).size).toBe(colors.length);
+    });
+});
+
+describe('pickupLabel', () => {
+    it('names piles by amount and items like the shop (upgrades at level 1)', () => {
+        expect(pickupLabel('credits', '', 30)).toBe('30 credits');
+        expect(pickupLabel('ammo', '', 12)).toBe('12 ammo');
+        expect(pickupLabel('item', 'booster', 0)).toBe('Booster 1');
+        expect(pickupLabel('item', 'wings', 0)).toBe('Wings');
+        expect(pickupLabel('item', 'bigGun', 0)).toBe('Big gun');
+        expect(pickupLabel('item', 'fort', 0)).toBe('Fort');
     });
 });

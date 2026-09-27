@@ -245,11 +245,36 @@ Implementation: [Structures: footprint and shape](ARCHITECTURE.md#structures-foo
 
 ### Credits ✅
 
-- **Income:** 🧪 you earn **5 credits for each hex you claim** (`CREDITS_PER_CLAIM`), whether it was unclaimed or an enemy's, paid the moment you take it. Hexes you already own earn nothing more, and losing a hex doesn't cost you the credits it paid. Claiming only happens during the match, so income does too. (Until 2026-09-26 income was 1 credit per owned hex every 10 seconds.)
+- **Income:** 🧪 you earn **1 credit the first time a hex is claimed** this match (`CREDITS_PER_CLAIM`), paid the moment you take it. **Each hex pays once:** taking an enemy's hex, or one released when its owner left, pays nothing. Losing a hex doesn't cost you the credits it paid. Claiming only happens during the match, so income does too. (History: 1 credit per owned hex every 10 seconds until 2026-09-26; then credits for every claim, re-takes included, until 2026-09-27.)
+- **Pickups** are the other source: piles of credits lying on the map ([Pickups](#pickups)).
 - 🛠️ **Dev only (temporary):** `M` adds 500 credits during the match, in dev builds, so shop items can be tried quickly. The server refuses it when run with `NODE_ENV=production`; remove it before release.
 - **Starting credits** come from your character: 50, or 15 for the Smuggler.
 - **Spending** in the shop is the only thing that uses credits up.
 - **Credits are not part of your score**, so buying things never costs you points.
+
+### Pickups 🧪
+
+✅ Items lying on the map, to be picked up by walking onto their hex. **Behind a feature flag** (`PICKUPS_ENABLED` in `server/src/constants.ts`, or `PICKUPS=0` / `PICKUPS=1` when starting the server), so they can be switched off.
+
+- **Where:** **12 locations** per match, spread evenly: the map is split into a 4 × 3 grid and each cell gets one, near its center (nudged up to 2 hexes at random). A location on a mountain or water, or inside a spawn area, moves to the nearest ground hex outside the spawn areas. A new layout every match, with the terrain.
+- **What** each location gets:
+
+| Item | Chance | Gives |
+|---|---|---|
+| Pile of credits | 40% | 10–50 credits |
+| Pile of ammo | 25% | 10–30 shots |
+| Upgrade | 10% | Level 1 of a random upgrade (Booster, Expander, Armor or Wings) |
+| Basic gun | 10% | The Basic gun |
+| Big gun | 5% | The Big gun |
+| Structure | 5% | One random structure type, added to your inventory |
+| Nothing | 5% | — |
+
+- **Taking one:** stand on its hex during the match. It's gone for everyone once taken, and doesn't come back. You get a notice ("Picked up 30 credits").
+- **Only what you can use:** credits, ammo and structures always; a gun only if it's better than yours (the shop's no-downgrade rule); an upgrade only if you don't have it yet (it's level 1). Anything else stays on the map for someone else.
+- An upgrade from a pickup behaves like a bought one: into an empty slot it's equipped at once; Armor adds its health straight away.
+- **Look** (until art): a gold coin (credits), three brass rounds (ammo), a pistol shape in white or a larger yellow one (Basic / Big gun, like their shots), a diamond in the upgrade's color (Booster orange, Expander teal, Armor steel, Wings sky blue), a tiny slab in the structure type's color. Each floats over its hex with a shadow and bobs gently.
+
+Implementation: [Pickups](ARCHITECTURE.md#pickups).
 
 ### Shop 🧪
 
@@ -319,6 +344,7 @@ Implementation: [Input — desktop and mobile share one message contract](ARCHIT
   - **Mountain:** off-white, with a thin gray border.
   - **Water:** dark blue when deep, a lighter blue when shallow (wadeable), with a dotted border in the normal border color.
 - **Hexes:** claimed hexes are tinted in the owner's color, with a slightly darker border so neighboring hexes of one color stay distinguishable.
+- **Pickups:** small shapes floating over a hex; see [Pickups](#pickups).
 - **Structures:** a raised hexagonal slab. The **top shows the type** (farm pale lime, mine dark brown, fort sandstone, power plant pale cyan, muted so they don't read as team colors) and the **sides and border show the owner's team color**.
 - **Shots:** Basic-gun shots are small white bolts; Big-gun shots are larger yellow bolts.
 - **Expander:** a translucent circle in the owner's color on the ground, showing their claim radius.
@@ -341,13 +367,13 @@ Things that need a design decision, not just code. Where one is also tracked in 
 - The point values (1 / 50 / 25) are first-pass, to tune in playtesting.
 
 ### Shop, weapons and balance (Planned Features #9)
-- **Ammo:** a cap? Regeneration or pickups? Today you can run out for good unless you buy more.
+- **Ammo:** a cap? Regeneration? Ammo piles ([Pickups](#pickups)) are a one-off supply; otherwise you buy more.
 - **Fire rate per gun** (and moving the limit to the server), range, spread.
 - **More items:** stronger armor, and whatever structure types end up doing.
 - **Shopping risk:** maybe only allow buying while standing on your own territory (or near a city hall). Not decided.
 - **Snowballing:** territory income and purchases compound for whoever is ahead. The Expander in particular is strong (up to 9 hexes at a time) for 100 credits. Options: rising prices, a radius cap, or stackable upgrades with rising costs.
-- **Early game:** nothing but ammo is affordable at the start, but at 5 credits a hex a 100-credit item is 20 fresh hexes away; check whether that feels right.
-- **Income from re-taking ground:** each claim pays, so a hex that changes hands keeps paying whoever takes it. Is back-and-forth fighting over a border meant to be that lucrative, or should a hex pay only the first time it's claimed?
+- **Early game:** nothing but ammo is affordable at the start; at 1 credit a fresh hex, a 100-credit item is about 50 new hexes away (starting credits cover the rest), so pickups matter. Check whether that feels right.
+- **Pickups:** should they respawn during a match? Should players see where they are from afar (a minimap or edge markers)? Is a gun pickup too strong early for whoever reaches it first?
 
 ### Map and spawning
 - **Starting positions:** ✅ decided 2026-09-26 (spawn line, see [The map](#the-map)). Still open: should teammates start next to each other rather than in join order?
@@ -443,3 +469,5 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Equipped button | The equipped upgrade's button is a disabled "Equipped"; there's no way to empty the slot from the inventory | "Unequip", which emptied the slot (previous) | Requested (2026-09-26). The server still accepts an empty-slot request, so this is a client-only change |
 | Income from claiming | 5 credits per hex claimed (unclaimed or an enemy's), paid on the claim; no timed income | 1 credit per owned hex every 10 s (previous) | Requested (2026-09-26). Rewards moving and taking ground rather than sitting on it. Credits aren't taken back when a hex is lost (my choice: simplest, and it makes the number on screen only go up from play) |
 | Dev credits key | `M` adds 500 credits during the match, dev builds only, refused by a production server | A lobby option; an environment variable for starting credits | Requested as a temporary development aid, so shop items and upgrades can be tried without long play |
+| Income from claiming (revised) | A hex pays CREDITS_PER_CLAIM only the first time anyone claims it in the match; re-takes and released hexes pay nothing | Every claim pays (previous, 2026-09-26) | Requested (2026-09-27): border fights shouldn't be a credit farm. The value was also lowered from 5 to 1 by the developer |
+| Pickups | 12 locations in a 4 × 3 grid, nudged ±2 hexes and moved off terrain and spawn areas; credits 40% (10–50), ammo 25% (10–30), level-1 upgrade 10%, basic gun 10%, big gun 5%, structure 5%, nothing 5%; one-time; behind the PICKUPS_ENABLED flag | Random scatter; respawning items | Locations, chances and amounts requested (2026-09-27). My choices: the grid-plus-nudge reading of "evenly distributed"; keeping them out of spawn areas so nobody starts on one; taking only items you can use (the shop's rules), so a pickup isn't wasted on someone who can't benefit; walking onto the hex (like claiming) to take one |

@@ -2,7 +2,7 @@ import { Decoder, Encoder } from '@colyseus/schema';
 import { describe, expect, it } from 'vitest';
 import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
 import { DEFAULT_CHARACTER, GUN_DAMAGE, TERRAIN } from '../types/shared';
-import { GameState, Player, Projectile, Structure, Tile } from './GameState';
+import { GameState, Pickup, Player, Projectile, Structure, Tile } from './GameState';
 
 describe('GameState schema', () => {
     // Guards the setup gotcha in ARCHITECTURE.md: without `useDefineForClassFields: false` the field
@@ -46,6 +46,31 @@ describe('GameState schema', () => {
             TERRAIN.water,
         ]);
         expect(new Tile().terrain).toBe(TERRAIN.ground);
+    });
+
+    it('syncs pickups, and their removal; server-only fields (claimedBefore, spawnSlot) stay put', () => {
+        const state = new GameState();
+        const pickup = new Pickup();
+        Object.assign(pickup, { id: 'p1', kind: 'item', itemId: 'bigGun', tileX: 3, tileY: 4 });
+        state.pickups.set('p1', pickup);
+        const tile = new Tile();
+        tile.claimedBefore = true;
+        state.tiles.push(tile);
+        const encoder = new Encoder(state);
+        const client = new GameState();
+        const decoder = new Decoder(client);
+        decoder.decode(encoder.encodeAll());
+        expect(client.pickups.get('p1')).toMatchObject({
+            kind: 'item',
+            itemId: 'bigGun',
+            tileX: 3,
+        });
+        expect(client.tiles[0].claimedBefore).toBe(false); // not synced
+
+        encoder.discardChanges();
+        state.pickups.delete('p1');
+        decoder.decode(encoder.encode());
+        expect(client.pickups.size).toBe(0);
     });
 
     it('starts players unarmed and broke, at full base health, as the default character', () => {

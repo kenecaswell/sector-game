@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import { getStateCallbacks, type GameRoom } from '../../net/GameConnection';
-import type { PlayerState, ProjectileState, StructureState } from '../../types/gameState';
+import type {
+    PickupState,
+    PlayerState,
+    ProjectileState,
+    StructureState,
+} from '../../types/gameState';
+import { drawPickup, pickupLook } from '../pickups';
 import { GUN_DAMAGE, TERRAIN } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
 import { isShallowWater } from '../terrain';
@@ -55,6 +61,10 @@ import {
     TARGET_SLOW_DISTANCE,
     TARGET_STUCK_MS,
     UNIFORM_SCREEN_SPEED,
+    PICKUP_BOB,
+    PICKUP_BOB_MS,
+    PICKUP_LIFT,
+    PICKUP_SCALE,
 } from '../constants';
 import {
     hexCenter,
@@ -147,6 +157,7 @@ export class GameScene extends Phaser.Scene {
     private playerViews = new Map<string, PlayerView>();
     private projectileViews = new Map<string, ProjectileView>();
     private structureSprites = new Map<string, Phaser.GameObjects.Graphics>();
+    private pickupViews = new Map<string, Phaser.GameObjects.Container>();
     // Touch has no hover, so a refused build tap shows its red outline here for a moment.
     private tapPreview: { col: number; row: number; until: number } | null = null;
 
@@ -199,6 +210,7 @@ export class GameScene extends Phaser.Scene {
         this.playerViews.clear();
         this.projectileViews.clear();
         this.structureSprites.clear();
+        this.pickupViews.clear();
         this.tapPreview = null;
         this.joystick = { x: 0, y: 0 };
     }
@@ -240,11 +252,15 @@ export class GameScene extends Phaser.Scene {
         $(this.room.state).structures.onAdd((structure) => this.addStructureSprite(structure));
         $(this.room.state).structures.onRemove((_structure, id) => this.removeStructureSprite(id));
 
+        $(this.room.state).pickups.onAdd((pickup) => this.addPickupView(pickup));
+        $(this.room.state).pickups.onRemove((_pickup, id) => this.removePickupView(id));
+
         // Existing entities at scene-create time (server sends full state on join,
         // and onAdd only fires for changes *after* the callback is registered).
         this.room.state.players.forEach((player) => this.addPlayerView(player));
         this.room.state.projectiles.forEach((projectile) => this.addProjectileView(projectile));
         this.room.state.structures.forEach((structure) => this.addStructureSprite(structure));
+        this.room.state.pickups.forEach((pickup) => this.addPickupView(pickup));
 
         const stopListeningForClaims = this.room.onMessage('tilesClaimed', () => {
             this.claimsDirty = true;
@@ -971,6 +987,40 @@ export class GameScene extends Phaser.Scene {
     private removeStructureSprite(id: string): void {
         this.structureSprites.get(id)?.destroy();
         this.structureSprites.delete(id);
+    }
+
+    /**
+     * A pickup: a small placeholder shape (see game/pickups.ts) floating over its hex with a shadow,
+     * bobbing gently so it reads as something to grab. Never moves, so it's sorted once.
+     */
+    private addPickupView(pickup: PickupState): void {
+        if (this.pickupViews.has(pickup.id)) return;
+        const center = hexCenter(pickup.tileX, pickup.tileY);
+        const ground = project(center.x, center.y);
+        const shadow = this.add.ellipse(0, 0, 32, 32 * ISO_SQUASH, 0x000000, 0.3);
+        const shape = this.add.graphics();
+        drawPickup(shape, pickupLook(pickup.kind, pickup.itemId));
+        shape.setScale(PICKUP_SCALE).setY(-PICKUP_LIFT);
+        this.tweens.add({
+            targets: shape,
+            y: -PICKUP_LIFT - PICKUP_BOB,
+            duration: PICKUP_BOB_MS,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+        });
+        const container = this.add.container(ground.x, ground.y, [shadow, shape]);
+        container.setDepth(ground.y);
+        this.pickupViews.set(pickup.id, container);
+    }
+
+    private removePickupView(id: string): void {
+        const view = this.pickupViews.get(id);
+        if (view) {
+            this.tweens.killTweensOf(view.list);
+            view.destroy();
+        }
+        this.pickupViews.delete(id);
     }
 
     /**

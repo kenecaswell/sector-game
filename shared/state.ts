@@ -66,6 +66,15 @@ export interface StructureState {
     maxHealth: number;
 }
 
+export interface PickupState {
+    id: string;
+    kind: string; // a PickupKind: 'credits' | 'ammo' | 'item'
+    itemId: string; // a ShopItemId for kind 'item' (a gun, a level-1 upgrade or a structure), else ''
+    amount: number; // credits or shots, for 'credits' and 'ammo'
+    tileX: number; // the hex it lies on (col, row)
+    tileY: number;
+}
+
 export interface GamePhaseStateShape {
     phase: GamePhase;
     endsAt: number;
@@ -75,6 +84,7 @@ export interface GameStateShape {
     players: ReadonlyMap<string, PlayerState>;
     structures: ReadonlyMap<string, StructureState>;
     projectiles: ReadonlyMap<string, ProjectileState>;
+    pickups: ReadonlyMap<string, PickupState>; // empty when the PICKUPS_ENABLED flag is off
     tiles: readonly TileState[];
     phase: GamePhaseStateShape;
     mapWidth: number;

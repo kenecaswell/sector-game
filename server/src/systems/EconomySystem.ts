@@ -1,8 +1,9 @@
 import type { GameState, Player } from '../state/GameState';
 import { DEV_CHEATS_ENABLED, DEV_CREDITS } from '../constants';
 
-// Credits are earned by claiming hexes (CREDITS_PER_CLAIM, paid in CollisionSystem.claimTiles) and
-// spent in the shop (ShopSystem). There's no timed payout any more (until 2026-09-26: 1 credit per
+// Credits are earned by claiming hexes nobody has claimed before (CREDITS_PER_CLAIM, paid in
+// CollisionSystem.claimTiles) and from credit pickups (PickupSystem), and spent in the shop
+// (ShopSystem). There's no timed payout any more (until 2026-09-26: 1 credit per
 // owned hex every 10 s).
 
 /**

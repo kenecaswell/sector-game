@@ -27,6 +27,7 @@ import type {
     PlayerReconnectedEvent,
     PhaseChangedEvent,
     ShootMessage,
+    PickupCollectedEvent,
     StructureDestroyedEvent,
     TilesClaimedEvent,
 } from '../types/shared';
@@ -49,6 +50,7 @@ export interface GameEventHandlers {
     onPlayerDisconnected?: (event: PlayerDisconnectedEvent) => void;
     onPlayerReconnected?: (event: PlayerReconnectedEvent) => void;
     onGameOver?: (event: GameOverEvent) => void;
+    onPickupCollected?: (event: PickupCollectedEvent) => void;
 }
 
 // A single Client per tab is all colyseus.js needs — it just holds the HTTP
@@ -75,6 +77,8 @@ function bindMessageHandlers(room: GameRoom, handlers: GameEventHandlers): void 
     if (handlers.onPlayerReconnected)
         room.onMessage<PlayerReconnectedEvent>('playerReconnected', handlers.onPlayerReconnected);
     if (handlers.onGameOver) room.onMessage<GameOverEvent>('gameOver', handlers.onGameOver);
+    if (handlers.onPickupCollected)
+        room.onMessage<PickupCollectedEvent>('pickupCollected', handlers.onPickupCollected);
 }
 
 function saveReconnectionToken(room: GameRoom): void {

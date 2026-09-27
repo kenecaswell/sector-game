@@ -1,5 +1,5 @@
 import { Room, Client } from 'colyseus';
-import { GameState, Player, Tile, Projectile, Structure } from '../state/GameState';
+import { GameState, Player, Tile, Projectile, Structure, Pickup } from '../state/GameState';
 import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
@@ -11,9 +11,11 @@ import { LobbySystem } from '../systems/LobbySystem';
 import { CharacterSystem } from '../systems/CharacterSystem';
 import { StructureSystem } from '../systems/StructureSystem';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
+import { PickupSystem } from '../systems/PickupSystem';
+import { generatePickups } from '../pickups';
 import { freeSpawnSlot, generateTerrain, seededRandom, spawnPoint } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
-import { TICK_RATE, RECONNECT_WINDOW_SECONDS, SCREEN_Y_SCALE } from '../constants';
+import { TICK_RATE, RECONNECT_WINDOW_SECONDS, SCREEN_Y_SCALE, PICKUPS_ENABLED } from '../constants';
 import type {
     InputMessage,
     ShootMessage,
@@ -48,15 +50,25 @@ export class GameRoom extends Room<GameState> {
     onCreate(): void {
         const state = new GameState();
         // A fresh random layout for every match (the seed only matters for reproducing one).
-        const { terrain } = generateTerrain(
-            state.mapWidth,
-            state.mapHeight,
-            seededRandom(Math.floor(Math.random() * 2 ** 32))
-        );
+        const random = seededRandom(Math.floor(Math.random() * 2 ** 32));
+        const { terrain } = generateTerrain(state.mapWidth, state.mapHeight, random);
         for (let i = 0; i < state.mapWidth * state.mapHeight; i++) {
             const tile = new Tile();
             tile.terrain = terrain[i];
             state.tiles.push(tile);
+        }
+        // Items scattered on the map (feature flag PICKUPS_ENABLED; see pickups.ts).
+        if (PICKUPS_ENABLED) {
+            generatePickups(terrain, state.mapWidth, state.mapHeight, random).forEach((spec, i) => {
+                const pickup = new Pickup();
+                pickup.id = `pickup-${i}`;
+                pickup.kind = spec.kind;
+                pickup.itemId = spec.itemId;
+                pickup.amount = spec.amount;
+                pickup.tileX = spec.col;
+                pickup.tileY = spec.row;
+                state.pickups.set(pickup.id, pickup);
+            });
         }
         this.setState(state);
 
@@ -199,6 +211,7 @@ export class GameRoom extends Room<GameState> {
         LobbySystem.update(this.state, this.broadcastEvent);
         MovementSystem.update(this.state, this.playerInputs, dt);
         CollisionSystem.update(this.state, this.broadcastEvent);
+        PickupSystem.update(this.state, this.broadcastEvent);
         CombatSystem.update(this.state, dt, this.broadcastEvent);
         PhaseSystem.update(this.state, this.broadcastEvent);
         this.closeFinishedMatch();

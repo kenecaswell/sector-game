@@ -29,6 +29,7 @@ import type {
     GameOverEvent,
     GamePhase,
     PlayerDisconnectedEvent,
+    PickupCollectedEvent,
     PlayerReconnectedEvent,
     ShopItemId,
     StructureType,
@@ -36,7 +37,7 @@ import type {
     UpgradeId,
 } from '../types/shared';
 import type { PlayerState } from '../types/gameState';
-import { normalizePlayerName } from '../types/shared';
+import { normalizePlayerName, pickupLabel } from '../types/shared';
 import { loadPlayerName, savePlayerName } from '../utils/playerName';
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -152,6 +153,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     pushNotice(
                         'warning',
                         `${event.name} disconnected — their spot is held for ${minutes} min`
+                    );
+                },
+                // Only you are told what you picked up (everyone sees it vanish from the map).
+                onPickupCollected: (event: PickupCollectedEvent) => {
+                    if (event.playerId !== roomRef.current?.sessionId) return;
+                    pushNotice(
+                        'success',
+                        `Picked up ${pickupLabel(event.kind, event.itemId, event.amount)}`
                     );
                 },
                 onPlayerReconnected: (event: PlayerReconnectedEvent) => {
