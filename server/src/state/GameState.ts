@@ -30,13 +30,13 @@ export class Player extends Schema implements PlayerState {
     @type('number') angle: number = 0; // facing/aim direction in radians (world space)
     @type('number') health: number = BASE_MAX_HEALTH;
     @type('number') maxHealth: number = BASE_MAX_HEALTH; // + ARMOR_HEALTH_PER_LEVEL per Armor level
-    // Ammo, credits, gun, structure inventory and upgrades are all set from the chosen character's
+    // Ammo, materials, gun, structure inventory and upgrades are all set from the chosen character's
     // starting kit when the match starts (CharacterSystem); these defaults only matter in the lobby.
     @type('number') ammo: number = 0;
     @type('number') tilesOwned: number = 0;
     @type('number') kills: number = 0;
     @type('number') score: number = 0; // computed by ScoreSystem: tiles + kills x 50 + structures
-    @type('number') credits: number = 0;
+    @type('number') materials: number = 0;
     @type('number') claimRadius: number = BASE_CLAIM_RADIUS; // world px; larger with the Expander equipped
     @type('boolean') connected: boolean = true;
     @type('string') color: string = ''; // always the team's color (TEAMS in types/shared.ts)
@@ -51,7 +51,6 @@ export class Player extends Schema implements PlayerState {
     @type('uint8') armorLevel: number = 0;
     @type('uint8') wingsLevel: number = 0;
     @type('string') equippedUpgrade: string = ''; // an UpgradeId with `slot: true`, or '' for none
-    @type('number') upgradeSwitchReadyAt: number = 0; // server ms: the equipped upgrade can change again
     // Server only (not synced): which spawn-line slot this player starts and respawns at.
     spawnSlot: number = 0;
 }
@@ -59,7 +58,7 @@ export class Player extends Schema implements PlayerState {
 export class Tile extends Schema implements TileState {
     @type('string') ownerId: string = ''; // empty string = unclaimed
     @type('uint8') terrain: Terrain = TERRAIN.ground; // set once when the room is created (terrain.ts)
-    // Server only (not synced): someone has claimed this hex this match, so it pays no more credits.
+    // Server only (not synced): someone has claimed this hex this match, so it pays no more materials.
     claimedBefore: boolean = false;
 }
 
@@ -86,9 +85,9 @@ export class Structure extends Schema implements StructureState {
 
 export class Pickup extends Schema implements PickupState {
     @type('string') id: string = '';
-    @type('string') kind: string = 'credits'; // a PickupKind
+    @type('string') kind: string = 'materials'; // a PickupKind
     @type('string') itemId: string = ''; // a ShopItemId for kind 'item', else ''
-    @type('number') amount: number = 0; // credits or shots
+    @type('number') amount: number = 0; // materials or shots
     @type('number') tileX: number = 0;
     @type('number') tileY: number = 0;
 }

@@ -140,7 +140,7 @@ export interface GameOverEvent {
 
 // --- Teams -------------------------------------------------------------------------------------
 // A team is a color: players who pick the same one are allies (no friendly fire, they can walk
-// through each other's structures and don't take each other's tiles). Tiles, credits and score
+// through each other's structures and don't take each other's tiles). Tiles, materials and score
 // stay per player.
 export type TeamId = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'teal' | 'orange' | 'gray';
 
@@ -170,10 +170,10 @@ export function isTeamId(value: unknown): value is TeamId {
 // --- Characters --------------------------------------------------------------------------------
 // Picked in the lobby; the server applies the starting kit when the match starts. Structure types
 // all behave the same for now.
-export type StructureType = 'farm' | 'mine' | 'fort' | 'power';
+export type StructureType = 'farm' | 'fabricator' | 'fort' | 'power';
 export type GunId = 'basic' | 'big';
 export type UpgradeId = 'booster' | 'expander' | 'armor' | 'wings';
-export type CharacterId = 'farmer' | 'miner' | 'builder' | 'robot' | 'scientist' | 'smuggler';
+export type CharacterId = 'farmer' | 'miner' | 'builder' | 'robot' | 'scientist' | 'explorer';
 
 export interface Character {
     id: CharacterId;
@@ -182,14 +182,14 @@ export interface Character {
     gun: GunId | null; // null = unarmed (can't shoot until they buy a gun)
     ammo: number;
     structures: StructureType[]; // starting structure inventory, one entry per structure
-    credits: number;
+    materials: number;
     upgrades: Partial<Record<UpgradeId, number>>; // starting level of each upgrade it has
     equipped?: UpgradeId; // the slot upgrade it starts with equipped
 }
 
 export const STRUCTURE_NAMES: Record<StructureType, string> = {
     farm: 'Farm',
-    mine: 'Mine',
+    fabricator: 'Fabricator',
     fort: 'Fort',
     power: 'Power plant',
 };
@@ -234,7 +234,6 @@ export function isUpgradeId(value: unknown): value is UpgradeId {
 export const BOOSTER_SPEED_PER_LEVEL = 0.25; // +25% of base top speed per level: 125/150/175%
 export const ARMOR_HEALTH_PER_LEVEL = 100; // +100 max health per level: 200/300/400
 export const EXPANDER_HEXES = [7, 19, 37]; // hexes claimed at once, standing mid-hex, per level
-export const UPGRADE_SWITCH_COOLDOWN_MS = 5_000; // between changes of the equipped upgrade
 
 /** A player's upgrade levels (0 = not owned) and which slot upgrade is equipped ('' = none). */
 export interface UpgradeHolder {
@@ -283,17 +282,17 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         gun: null,
         ammo: 0,
         structures: ['farm'],
-        credits: 50,
+        materials: 50,
         upgrades: {},
     },
     miner: {
         id: 'miner',
         name: 'Miner',
-        description: 'Starts with a mine.',
+        description: 'Starts with a fabricator.',
         gun: null,
         ammo: 0,
-        structures: ['mine'],
-        credits: 50,
+        structures: ['fabricator'],
+        materials: 50,
         upgrades: {},
     },
     builder: {
@@ -303,7 +302,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         gun: null,
         ammo: 0,
         structures: ['fort'],
-        credits: 50,
+        materials: 50,
         upgrades: {},
     },
     robot: {
@@ -313,7 +312,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         gun: null,
         ammo: 0,
         structures: [],
-        credits: 50,
+        materials: 50,
         upgrades: { booster: 1 },
         equipped: 'booster',
     },
@@ -324,17 +323,17 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         gun: null,
         ammo: 0,
         structures: ['power'],
-        credits: 50,
+        materials: 50,
         upgrades: {},
     },
-    smuggler: {
-        id: 'smuggler',
-        name: 'Smuggler',
-        description: 'The only one who starts armed, but with few credits.',
+    explorer: {
+        id: 'explorer',
+        name: 'Explorer',
+        description: 'The only one who starts armed, but with few materials.',
         gun: 'basic',
         ammo: 15,
         structures: [],
-        credits: 15,
+        materials: 15,
         upgrades: {},
     },
 };
@@ -361,7 +360,7 @@ export type ShopItemId =
     | 'expander'
     | 'wings'
     | 'farm'
-    | 'mine'
+    | 'fabricator'
     | 'fort'
     | 'power';
 
@@ -378,7 +377,7 @@ export interface ShopItem {
     category: ShopCategory;
     name: string;
     description: string;
-    cost: number; // credits
+    cost: number; // materials
     // What buying it gives you (exactly one of these):
     gun?: GunId; // replaces your gun
     ammo?: number; // adds shots
@@ -387,10 +386,10 @@ export interface ShopItem {
 }
 
 export const AMMO_PACK_SIZE = 30; // shots per purchase
-export const AMMO_CREDITS_PER_SHOT = 1;
+export const AMMO_MATERIALS_PER_SHOT = 1;
 export const STRUCTURE_COST = 100;
 
-const UPGRADE_COST = 100; // credits per level
+const UPGRADE_COST = 100; // materials per level
 
 // One shop entry per upgrade; it always offers your next level (see shopItemTitle).
 const upgradeItem = (id: UpgradeId): ShopItem => ({
@@ -406,7 +405,7 @@ const structureItem = (id: StructureType): ShopItem => ({
     id,
     category: 'structures',
     name: STRUCTURE_NAMES[id],
-    description: 'One more to build. Needs 7 hexes of your own.',
+    description: 'One more to place. Needs 7 hexes of your own.',
     cost: STRUCTURE_COST,
     structure: id,
 });
@@ -432,8 +431,8 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
         id: 'ammo',
         category: 'weapons',
         name: 'Ammo pack',
-        description: `${AMMO_PACK_SIZE} shots (${AMMO_CREDITS_PER_SHOT} credit per shot)`,
-        cost: AMMO_PACK_SIZE * AMMO_CREDITS_PER_SHOT,
+        description: `${AMMO_PACK_SIZE} shots (${AMMO_MATERIALS_PER_SHOT} material per shot)`,
+        cost: AMMO_PACK_SIZE * AMMO_MATERIALS_PER_SHOT,
         ammo: AMMO_PACK_SIZE,
     },
     booster: upgradeItem('booster'),
@@ -441,7 +440,7 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
     armor: upgradeItem('armor'),
     wings: upgradeItem('wings'),
     farm: structureItem('farm'),
-    mine: structureItem('mine'),
+    fabricator: structureItem('fabricator'),
     fort: structureItem('fort'),
     power: structureItem('power'),
 };
@@ -505,20 +504,20 @@ export type Terrain = (typeof TERRAIN)[keyof typeof TERRAIN];
 // --- Pickups -----------------------------------------------------------------------------------
 // Items lying on the map, placed when the room is created (server/src/pickups.ts) when the
 // PICKUPS_ENABLED feature flag is on. Walk onto one's hex to take it (see PickupSystem). A pile of
-// credits or ammo has an `amount`; an item pickup gives what its shop item gives, for free.
-export type PickupKind = 'credits' | 'ammo' | 'item';
+// materials or ammo has an `amount`; an item pickup gives what its shop item gives, for free.
+export type PickupKind = 'materials' | 'ammo' | 'item';
 
 // Server -> Client: a player took a pickup (it has also gone from `state.pickups`).
 export interface PickupCollectedEvent {
     playerId: string;
     kind: PickupKind;
     itemId: ShopItemId | ''; // for kind 'item'
-    amount: number; // for 'credits' and 'ammo'
+    amount: number; // for 'materials' and 'ammo'
 }
 
-/** What a pickup is, in words: "30 credits", "12 ammo", "Booster 1", "Basic gun", "Farm". */
+/** What a pickup is, in words: "30 materials", "12 ammo", "Booster 1", "Basic gun", "Farm". */
 export function pickupLabel(kind: PickupKind, itemId: string, amount: number): string {
-    if (kind === 'credits') return `${amount} credits`;
+    if (kind === 'materials') return `${amount} materials`;
     if (kind === 'ammo') return `${amount} ammo`;
     if (!isShopItemId(itemId)) return 'an item';
     const item = SHOP_ITEMS[itemId];

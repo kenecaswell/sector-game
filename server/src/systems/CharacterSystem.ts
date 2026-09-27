@@ -4,7 +4,7 @@ import { UpgradeSystem } from './UpgradeSystem';
 
 /**
  * Gives `player` their character's starting kit (CHARACTERS in types/shared.ts): gun, ammo,
- * credits, structure inventory, upgrade levels and the equipped upgrade, replacing whatever they
+ * materials, structure inventory, upgrade levels and the equipped upgrade, replacing whatever they
  * had, and starts them at full health. Called for everyone when the countdown finishes, and for
  * anyone who joins mid-match.
  */
@@ -13,12 +13,11 @@ function apply(player: Player): void {
         CHARACTERS[isCharacterId(player.character) ? player.character : DEFAULT_CHARACTER];
     player.gun = character.gun ?? '';
     player.ammo = character.ammo;
-    player.credits = character.credits;
+    player.materials = character.materials;
     player.structureInventory.clear();
     player.structureInventory.push(...character.structures);
     for (const id of UPGRADE_IDS) player[`${id}Level`] = character.upgrades[id] ?? 0;
     player.equippedUpgrade = character.equipped ?? '';
-    player.upgradeSwitchReadyAt = 0;
     UpgradeSystem.applyUpgradeEffects(player);
     player.health = player.maxHealth;
 }

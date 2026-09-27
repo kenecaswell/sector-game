@@ -218,7 +218,7 @@ sudo systemctl restart sector42
   ```ts
   app.use(cors({ origin: ['https://play.kenecaswell.com', 'http://localhost:5173'] }));
   ```
-- **Dev cheats:** the temporary `M` key (+500 credits, `devCredits` message) is refused because the service sets `NODE_ENV=production`, and production client builds don't send it. Remove it before release anyway (see `DEV_CREDITS` in `server/src/constants.ts`).
+- **Dev cheats:** the temporary `M` key (+500 materials, `devMaterials` message) is refused because the service sets `NODE_ENV=production`, and production client builds don't send it. Remove it before release anyway (see `DEV_MATERIALS` in `server/src/constants.ts`).
 - **Snapshots:** enable Lightsail automatic snapshots (about $0.05/GB-month) or take a manual one after setup, so the box can be rebuilt quickly.
 - **Monitoring:** add a Lightsail metric alarm on CPU. Optionally, a free uptime checker can ping `https://game.kenecaswell.com/health`.
 - **OS updates:** `sudo apt-get update && sudo apt-get upgrade` occasionally, or enable `unattended-upgrades`.

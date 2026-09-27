@@ -82,20 +82,24 @@ describe('Inventory', () => {
         expect(onEquip).toHaveBeenCalledTimes(1);
     });
 
-    it('disables switching during the cooldown and counts it down', () => {
+    it('keeps the Wings check current while open (no cooldown to wait for)', () => {
         vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-09-26T12:00:00Z'));
-        show({
-            boosterLevel: 1,
-            wingsLevel: 1,
-            equippedUpgrade: 'booster',
-            upgradeSwitchReadyAt: Date.now() + 3000,
-        });
-        expect(screen.getByText('You can switch again in 3s.')).toBeInTheDocument();
-        expect(within(row('Wings')).getByRole('button')).toBeDisabled();
-        act(() => vi.advanceTimersByTime(3100));
-        expect(within(row('Wings')).getByRole('button')).toBeEnabled();
-        expect(screen.getByText(/One upgrade works at a time/)).toBeInTheDocument();
+        let overMountain = false;
+        render(
+            <Inventory
+                player={makePlayer({ boosterLevel: 1, wingsLevel: 1, equippedUpgrade: 'wings' })}
+                onEquip={vi.fn()}
+                buildNext={undefined}
+                onSelectStructure={vi.fn()}
+                overSolidTerrain={() => overMountain}
+                onClose={vi.fn()}
+            />
+        );
+        expect(within(row('Booster 1')).getByRole('button')).toBeEnabled();
+        overMountain = true;
+        act(() => vi.advanceTimersByTime(250));
+        expect(within(row('Booster 1')).getByRole('button')).toBeDisabled();
+        expect(screen.getByText(/can't take Wings off over a mountain/)).toBeInTheDocument();
     });
 
     it("won't let you take Wings off over a mountain or deep water", () => {

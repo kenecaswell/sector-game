@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     PICKUP_AMMO,
     PICKUP_CHANCES,
-    PICKUP_CREDITS,
+    PICKUP_MATERIALS,
     PICKUP_GRID,
     SPAWN_CLEAR_RADIUS,
 } from './constants';
@@ -27,10 +27,10 @@ describe('pickup rolls', () => {
         for (let i = 0; i < N; i++) {
             const roll = rollPickup(random);
             let key = 'nothing';
-            if (roll?.kind === 'credits') {
-                key = 'credits';
-                expect(roll.amount).toBeGreaterThanOrEqual(PICKUP_CREDITS.min);
-                expect(roll.amount).toBeLessThanOrEqual(PICKUP_CREDITS.max);
+            if (roll?.kind === 'materials') {
+                key = 'materials';
+                expect(roll.amount).toBeGreaterThanOrEqual(PICKUP_MATERIALS.min);
+                expect(roll.amount).toBeLessThanOrEqual(PICKUP_MATERIALS.max);
             } else if (roll?.kind === 'ammo') {
                 key = 'ammo';
                 expect(roll.amount).toBeGreaterThanOrEqual(PICKUP_AMMO.min);
@@ -88,7 +88,7 @@ describe('pickup placement', () => {
 
     it('spreads them evenly: one near the middle of each grid cell', () => {
         const all = new Array<Terrain>(COLS * ROWS).fill(TERRAIN.ground);
-        // Always "credits", so every location gets one.
+        // Always "materials", so every location gets one.
         const pickups = generatePickups(all, COLS, ROWS, () => 0);
         expect(pickups).toHaveLength(LOCATIONS);
         const cells = new Set(

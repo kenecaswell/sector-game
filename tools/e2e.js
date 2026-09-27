@@ -133,9 +133,9 @@ async function goTo(room, target, ms = 4000) {
     await sleep(250);
 }
 const hexUnder = (room) => pixelToHex(me(room).x, me(room).y);
-// A player's credits minus what they earned claiming (CREDITS_PER_CLAIM a hex; the spawn hex is
-// claimed at once), i.e. what's left of their character's starting credits if they bought nothing.
-const kitCredits = (p) => p.credits - p.tilesOwned * C.CREDITS_PER_CLAIM;
+// A player's materials minus what they earned claiming (MATERIALS_PER_CLAIM a hex; the spawn hex is
+// claimed at once), i.e. what's left of their character's starting materials if they bought nothing.
+const kitMaterials = (p) => p.materials - p.tilesOwned * C.MATERIALS_PER_CLAIM;
 const drop = (room) => room.connection.transport.ws.close(4001); // an unclean close, like a network drop
 
 // ---------------------------------------------------------------------------------------------
@@ -196,13 +196,13 @@ async function lobby() {
         await sleep(300);
 
         b.send('selectTeam', { teamId: me(a).teamId });
-        b.send('selectCharacter', { characterId: 'smuggler' });
+        b.send('selectCharacter', { characterId: 'explorer' });
         await sleep(300);
         check(
             'a player can pick a team (color) and a character',
             me(b).teamId === me(a).teamId &&
                 me(b).color === me(a).color &&
-                me(b).character === 'smuggler'
+                me(b).character === 'explorer'
         );
 
         a.send('purchase', { itemId: 'ammo' });
@@ -255,7 +255,7 @@ async function lifecycle() {
         const client = new Client(URL);
         const a = await join(client);
         const b = await join(client);
-        b.send('selectCharacter', { characterId: 'smuggler' });
+        b.send('selectCharacter', { characterId: 'explorer' });
         await sleep(200);
         await startMatch(a, b);
         check(
@@ -264,16 +264,16 @@ async function lifecycle() {
             a.phases.join('>')
         );
         const farmer = shared.CHARACTERS.farmer;
-        const smuggler = shared.CHARACTERS.smuggler;
+        const explorer = shared.CHARACTERS.explorer;
         check(
             "each player starts the match with their character's kit",
             me(a).gun === '' &&
                 me(a).ammo === farmer.ammo &&
-                kitCredits(me(a)) === farmer.credits &&
+                kitMaterials(me(a)) === farmer.materials &&
                 Array.from(me(a).structureInventory).join() === farmer.structures.join() &&
-                b.state.players.get(b.sessionId).gun === smuggler.gun &&
-                me(b).ammo === smuggler.ammo &&
-                kitCredits(me(b)) === smuggler.credits
+                b.state.players.get(b.sessionId).gun === explorer.gun &&
+                me(b).ammo === explorer.ammo &&
+                kitMaterials(me(b)) === explorer.materials
         );
 
         a.send('shoot', { angle: 0, seq: ++seq });
@@ -413,19 +413,17 @@ async function shop() {
         );
         robot.send('equipUpgrade', { upgradeId: '' });
         await waitFor(() => bot().equippedUpgrade === '', 2000);
-        const readyAt = bot().upgradeSwitchReadyAt;
         robot.send('equipUpgrade', { upgradeId: 'booster' });
+        await waitFor(() => bot().equippedUpgrade === 'booster', 2000);
         robot.send('equipUpgrade', { upgradeId: 'wings' });
         await sleep(300);
         check(
-            'emptying the slot works; switching again during the cooldown, or to an unowned upgrade, is refused',
-            bot().equippedUpgrade === '' &&
-                readyAt - Date.now() > shared.UPGRADE_SWITCH_COOLDOWN_MS - 1500 &&
-                bot().upgradeSwitchReadyAt === readyAt
+            'emptying the slot and switching straight back work (no cooldown); an unowned upgrade is refused',
+            bot().equippedUpgrade === 'booster'
         );
 
-        // A Farmer starts with 50 credits: enough for an ammo pack, not for anything that costs 100.
-        const start = me(a).credits;
+        // A Farmer starts with 50 materials: enough for an ammo pack, not for anything that costs 100.
+        const start = me(a).materials;
         for (const itemId of ['basicGun', 'expander', 'farm']) a.send('purchase', { itemId });
         await sleep(300);
         check(
@@ -433,21 +431,21 @@ async function shop() {
             me(a).gun === '' &&
                 me(a).claimRadius === C.BASE_CLAIM_RADIUS &&
                 me(a).structureInventory.length === 1 &&
-                me(a).credits === start
+                me(a).materials === start
         );
         a.send('purchase', { itemId: 'ammo' });
         await sleep(300);
         check(
             'buying ammo over the wire costs its price and adds the pack',
             me(a).ammo === shared.AMMO_PACK_SIZE &&
-                me(a).credits === start - shared.SHOP_ITEMS.ammo.cost
+                me(a).materials === start - shared.SHOP_ITEMS.ammo.cost
         );
-        const beforeDev = me(a).credits;
-        a.send('devCredits');
+        const beforeDev = me(a).materials;
+        a.send('devMaterials');
         await sleep(300);
         check(
-            'DEV: the devCredits message (the M key) adds DEV_CREDITS',
-            me(a).credits === beforeDev + C.DEV_CREDITS
+            'DEV: the devMaterials message (the M key) adds DEV_MATERIALS',
+            me(a).materials === beforeDev + C.DEV_MATERIALS
         );
 
         const late = await join(new Client(URL));
@@ -455,7 +453,7 @@ async function shop() {
             'someone joining mid-match plays the default character, kit included',
             phaseOf(late) === 'playing' &&
                 me(late).character === shared.DEFAULT_CHARACTER &&
-                kitCredits(me(late)) === shared.CHARACTERS[shared.DEFAULT_CHARACTER].credits
+                kitMaterials(me(late)) === shared.CHARACTERS[shared.DEFAULT_CHARACTER].materials
         );
     });
 }

@@ -6,8 +6,8 @@ import { SHOP_ITEMS, isShopItemId } from '../types/shared';
 import {
     PICKUP_AMMO_COLOR,
     PICKUP_AMMO_TIP_COLOR,
-    PICKUP_COIN_COLOR,
-    PICKUP_COIN_RIM_COLOR,
+    PICKUP_CRATE_COLOR,
+    PICKUP_CRATE_EDGE_COLOR,
     PICKUP_GUN_COLORS,
     PICKUP_OUTLINE_COLOR,
     PICKUP_UPGRADE_COLORS,
@@ -15,7 +15,7 @@ import {
     STRUCTURE_DEFAULT_COLOR,
 } from './constants';
 
-export type PickupShape = 'coin' | 'ammo' | 'gun' | 'upgrade' | 'structure';
+export type PickupShape = 'crate' | 'ammo' | 'gun' | 'upgrade' | 'structure';
 
 export interface PickupLook {
     shape: PickupShape;
@@ -24,12 +24,12 @@ export interface PickupLook {
 }
 
 /**
- * Credits: a gold coin. Ammo: three brass rounds. Guns: a pistol shape, white (basic) or a larger
+ * Materials: a wooden crate. Ammo: three brass rounds. Guns: a pistol shape, white (basic) or a larger
  * yellow (big), matching their shots. Upgrades: a diamond in the upgrade's color. Structures: a tiny
  * slab in the structure type's color, like the real ones.
  */
 export function pickupLook(kind: string, itemId: string): PickupLook {
-    if (kind === 'credits') return { shape: 'coin', color: PICKUP_COIN_COLOR, scale: 1 };
+    if (kind === 'materials') return { shape: 'crate', color: PICKUP_CRATE_COLOR, scale: 1 };
     if (kind === 'ammo') return { shape: 'ammo', color: PICKUP_AMMO_COLOR, scale: 1 };
     const item = isShopItemId(itemId) ? SHOP_ITEMS[itemId] : undefined;
     if (item?.gun) {
@@ -65,14 +65,27 @@ export function drawPickup(g: Phaser.GameObjects.Graphics, look: PickupLook): vo
     };
 
     switch (look.shape) {
-        case 'coin':
-            g.fillStyle(PICKUP_COIN_RIM_COLOR, 1);
-            g.fillCircle(0, 0, 9);
-            g.fillStyle(look.color, 1);
-            g.fillCircle(0, 0, 7.5);
-            g.lineStyle(1.5, PICKUP_COIN_RIM_COLOR, 1);
-            g.strokeCircle(0, 0, 4.5);
+        case 'crate': {
+            // A small box seen from above and in front: a lighter lid over a front face with a brace.
+            const lid = [
+                { x: -9, y: -7 },
+                { x: 9, y: -7 },
+                { x: 7, y: -3 },
+                { x: -7, y: -3 },
+            ];
+            poly(lid, blend(look.color, 0xffffff, 0.25));
+            const front = [
+                { x: -7, y: -3 },
+                { x: 7, y: -3 },
+                { x: 7, y: 8 },
+                { x: -7, y: 8 },
+            ];
+            poly(front, look.color);
+            g.lineStyle(1.5, PICKUP_CRATE_EDGE_COLOR, 1);
+            g.lineBetween(-7, -3, 7, 8);
+            g.lineBetween(-7, 2.5, 7, 2.5);
             break;
+        }
         case 'ammo':
             for (const dx of [-6, 0, 6]) {
                 g.fillStyle(look.color, 1);
@@ -124,4 +137,11 @@ export function drawPickup(g: Phaser.GameObjects.Graphics, look: PickupLook): vo
             break;
         }
     }
+}
+
+/** `a` moved `t` of the way toward `b` (0xRRGGBB colors). */
+function blend(a: number, b: number, t: number): number {
+    const mix = (shift: number) =>
+        Math.round(((a >> shift) & 0xff) * (1 - t) + ((b >> shift) & 0xff) * t) << shift;
+    return mix(16) | mix(8) | mix(0);
 }

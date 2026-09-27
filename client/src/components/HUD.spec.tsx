@@ -13,7 +13,7 @@ describe('HUD', () => {
                     gun: 'big',
                     ammo: 12,
                     tilesOwned: 7,
-                    credits: 55,
+                    materials: 55,
                 })}
                 phase="playing"
                 phaseEndsAt={0}
@@ -23,7 +23,7 @@ describe('HUD', () => {
         expect(screen.getByText('Gun: Big gun')).toBeInTheDocument();
         expect(screen.getByText('Ammo: 12')).toBeInTheDocument();
         expect(screen.getByText('Tiles: 7')).toBeInTheDocument();
-        expect(screen.getByText('Credits: 55')).toBeInTheDocument();
+        expect(screen.getByText('Materials: 55')).toBeInTheDocument();
     });
 
     it('says "none" when unarmed and has nothing to build', () => {

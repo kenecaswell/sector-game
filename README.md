@@ -7,7 +7,7 @@ Server-authoritative: clients send inputs, the server simulates everything and s
 - **Server:** Node.js + TypeScript + [Colyseus](https://colyseus.io/) 0.16
 - **Client:** React 19 + [Phaser](https://phaser.io/) 4 (Vite, TypeScript)
 
-> **Status:** playable prototype. You can join a lobby, pick a team color and a character, ready up, then move around an isometric hex map, claim hexes, earn credits, shoot enemies (once you have a gun), build structures, and see the results. Team pooling, a team win condition, and most shop items are designed but not built. See [Current Status & Known Issues](docs/ARCHITECTURE.md#current-status--known-issues).
+> **Status:** playable prototype. You can join a lobby, pick a team color and a character, ready up, then move around an isometric hex map, claim hexes, gather materials and pickups, fabricate items, shoot enemies (once you have a gun), place structures, and see the results. Team pooling and a team win condition are designed but not built. See [Current Status & Known Issues](docs/ARCHITECTURE.md#current-status--known-issues).
 
 ## Quick start
 
@@ -84,7 +84,7 @@ Before committing, run `npm run build && npm run lint` in whichever folder you c
 
 Health check: `GET http://localhost:2567/health` returns `{"status":"ok"}`.
 
-Gameplay tunables (tick rate, speeds, damage, hex size, credits per claim, pickup chances, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
+Gameplay tunables (tick rate, speeds, damage, hex size, materials per claim, pickup chances, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
 
 ### Testing on a phone or another machine
 
@@ -107,12 +107,12 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
 | Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
-| Build a structure | `B` or the **Build** button (shows which structure it will place and how many of that type you have; pick the type in the Inventory), then click where to put it — the outline is yellow where you can build, red where you can't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
+| Build a structure (place one you have) | `B` or the **Build** button, bottom right (shows which structure it will place and how many of that type you have; pick the type in the Inventory), then click where to put it — the outline is yellow where it fits, red where it doesn't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
-| Shop | **Shop** button (below Leaderboard) or `E`; `Esc` closes | **Shop** button |
-| Inventory (your gun, ammo, structures, upgrades; pick which structure Build places; switch the equipped upgrade) | **Inventory** button (below Shop) or `I`; `Esc` closes | **Inventory** button |
+| Fabricator (make items from materials) | **Fabricator** button (below Leaderboard); `Esc` closes. No hotkey (`E` is kept free) | **Fabricator** button |
+| Inventory (your gun, ammo, structures, upgrades; pick which structure Build places; switch the equipped upgrade) | **Inventory** button (below Fabricator) or `I`; `Esc` closes | **Inventory** button |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
-| **Dev only (temporary):** +500 credits | `M` during the match, in a dev build (`npm run dev`); a server started with `NODE_ENV=production` refuses it | — |
+| **Dev only (temporary):** +500 materials | `M` during the match, in a dev build (`npm run dev`); a server started with `NODE_ENV=production` refuses it | — |
 
 Your score is always shown at the top center. The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
 
@@ -122,23 +122,23 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
    - **Team** — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
    - **Character** — your starting kit (default Farmer):
 
-     | Character | Gun | Ammo | Credits | Structures | Upgrades |
+     | Character | Gun | Ammo | Materials | Structures | Upgrades |
      |---|---|---|---|---|---|
      | Farmer | — | 0 | 50 | Farm | — |
-     | Miner | — | 0 | 50 | Mine | — |
+     | Miner | — | 0 | 50 | Fabricator | — |
      | Builder | — | 0 | 50 | Fort | — |
      | Robot | — | 0 | 50 | — | Booster 1, equipped (+25% top speed) |
      | Scientist | — | 0 | 50 | Power plant | — |
-     | Smuggler | Basic gun | 15 | 15 | — | — |
+     | Explorer | Basic gun | 15 | 15 | — | — |
 
      The four structure types all work the same for now.
    - **Ready** — press it when you're set (press again to cancel). Team and character are locked while you're ready.
 
    When everyone connected is ready, a **3-second countdown** starts. It's cancelled if anyone un-readies or someone new joins.
-2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Smuggler starts with one), build the structures your character started with on hexes you own, and earn credits. The shop stays available from the **Shop** button (or `B`) — the game keeps running while it's open.
+2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Explorer starts with one), place the structures your character started with on hexes you own, and gather materials. The Fabricator stays available from the **Fabricator** button — the game keeps running while it's open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
-**Shop** (during the match; `E`):
+**Fabricator** (during the match; the **Fabricator** button). Items aren't bought, they're fabricated from materials:
 
 | | Item | Cost | What it does |
 |---|---|---|---|
@@ -149,13 +149,13 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 | | Expander 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you) |
 | | Armor 1–3 | 100 a level | 200 / 300 / 400 health; always on |
 | | Wings | 100 | Walk over mountains and deep water |
-| Structures | Farm, Mine, Fort, Power plant | 100 each | One more structure to build |
+| Structures | Farm, Fabricator, Fort, Power plant | 100 each | One more structure to place |
 
-The shop offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Expander and Wings, only the equipped one works (Armor always does); the first one you buy equips itself, and you switch in the **Inventory**, at most every 5 seconds. Hexes with an enemy's structure on them can't be claimed.
+The Fabricator offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Expander and Wings, only the equipped one works (Armor always does); the first one you fabricate equips itself, and you switch in the **Inventory**, instantly and as often as you like. Hexes with an enemy's structure on them can't be claimed.
 
-**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you build on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, mine: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
+**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Materials aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you place it on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, fabricator: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
-The first time anyone claims a hex, the claimer earns 1 credit to spend in the shop (re-taking a hex pays nothing). **Pickups** are scattered on the map: piles of credits (a gold coin) and ammo (brass rounds), guns, level-1 upgrades (a colored diamond) and structures (a tiny slab). Walk onto one to take it; you only take what you can use. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
+The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Pickups** are scattered on the map: piles of materials (a wooden crate) and ammo (brass rounds), guns, level-1 upgrades (a colored diamond) and structures (a tiny slab). Walk onto one to take it; you only take what you can use. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
 Players start on a line near the right-hand edge of the map: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
 
@@ -200,7 +200,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 | `EADDRINUSE` on port 2567 | Another server instance is running. Stop it, or set a different `PORT` |
 | The match doesn't start | Every connected player has to press **Ready**. A newcomer joining (not ready yet) cancels the countdown |
 | Can't change team or character | You're ready — press **✓ Ready** again to un-ready, then change it |
-| Shooting does nothing | You need a gun: buy the Basic gun in the shop (only the Smuggler starts armed), plus ammo |
+| Shooting does nothing | You need a gun: fabricate the Basic gun in the **Fabricator** or find one (only the Explorer starts armed), plus ammo |
 | Results screen says "This room has closed." | Expected: finished rooms close after the results period. Choose **Play again** for a fresh lobby |
 | Server restarts mid-game and everyone is dropped | Expected: `npm run dev` restarts on any file change and rooms live in memory |
 

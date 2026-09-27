@@ -8,7 +8,7 @@
 
 _For a new session or contributor. Last updated 2026-09-26 — run `git log` for anything newer._
 
-**What this is.** Sector 42: a real-time multiplayer territory-claiming game (hexar.io-style) with PvP shooting, destructible structures and a shop, 8–10 players per match on an isometric hex map. The **server is authoritative**: clients send inputs, the server simulates at 20 Hz and syncs state. Server: Node + TypeScript + Colyseus 0.16.5. Client: React 19 + Phaser 4, built with Vite.
+**What this is.** Sector 42: a real-time multiplayer territory-claiming game (hexar.io-style) with PvP shooting, destructible structures and fabrication (a shop, in code), 8–10 players per match on an isometric hex map. The **server is authoritative**: clients send inputs, the server simulates at 20 Hz and syncs state. Server: Node + TypeScript + Colyseus 0.16.5. Client: React 19 + Phaser 4, built with Vite.
 
 **Read in this order.** `README.md` (run, build, lint, controls) → this section → `docs/GAME_DESIGN.md` for what the game's rules are → only the sections of this doc you need (it's long; search by heading) → the **Decisions Log** at the end for *why* things are built the way they are (gameplay decisions are logged in `GAME_DESIGN.md`). Hosting is planned separately in `docs/HOSTING.md`.
 
@@ -17,11 +17,11 @@ _For a new session or contributor. Last updated 2026-09-26 — run `git log` for
 | The protocol, messages, state schema | Networking Layer, Game State Schema |
 | Game rules and balance (phases, lobby, characters, teams, movement, shooting, score, shop, claiming) | `docs/GAME_DESIGN.md` for the rules; Game Mechanics here for how each is implemented |
 | Terrain (generation, drawing, collision, Wings) | Game Mechanics → *Terrain*; `tools/map-preview.js` to see generated maps |
-| Upgrades (levels, the one equipped slot, the inventory) | Game Mechanics → *Shop* (Upgrades bullet); Client — React Shell (Inventory) |
+| Upgrades (levels, the one equipped slot, the inventory) | Game Mechanics → *Shop (the Fabricator menu)* (Upgrades bullet); Client — React Shell (Inventory) |
 | The hex map, iso projection, coordinate spaces | Game Mechanics → *Map — hex grid and coordinate spaces* |
 | Rooms, closing, reconnection, notices | Room Lifecycle, Reconnection System |
 | Collisions, structures | Collision Detection, Destructible Structures |
-| Client screens (lobby, HUD, shop UI, results) | Client — React Shell |
+| Client screens (lobby, HUD, Fabricator menu, results) | Client — React Shell |
 | Rendering, input, smoothing, performance | Client — Phaser Game, Testing → *Performance pass* |
 | Testing and verification | Testing Multiplayer Locally, and `tools/README.md` |
 
@@ -47,14 +47,14 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 
 **Working agreements** (also in `CLAUDE.md`): the developer runs all git commands themselves (ask them to commit); 4-space indentation; in the same change, update this doc for technical changes, `docs/GAME_DESIGN.md` for rule or balance changes, and the README for user-facing changes, with a Decisions Log row in the matching doc for deliberate choices.
 
-**Current state.** Playable end to end: ready-up lobby (name, team color, one of 6 characters) → 3 s countdown → 5 min play → results screen. In play: hex movement; claiming; shooting (once you have a gun); structures (7-hex footprint) from your character's kit or the shop; teammates (no friendly fire); score and credits; a shop of guns, ammo, upgrades and structures; **upgrade levels** (Booster, Expander and Armor to level 3, Wings) with **one equipped slot upgrade**, switched in the **inventory** (`I`); a **randomly generated map** per match with mountains, lakes and rivers (solid unless you have Wings, unclaimable, mountains stop shots); disconnect/reconnect with notices. See *Current Status & Known Issues* for the verified list and open bugs. **Temporary or placeholder** (see Planned Features #2, #3, #7, #9): all numbers are first-pass and unbalanced; the four structure types behave identically (one flat `STRUCTURE_POINTS`); everything is placeholder art (colored hexes, slabs, circles); the results screen is basic; team play is allies-only (no pooling, no team win).
+**Current state.** Playable end to end: ready-up lobby (name, team color, one of 6 characters) → 3 s countdown → 5 min play → results screen. In play: hex movement; claiming; shooting (once you have a gun); structures (7-hex footprint) from your character's kit or the shop; teammates (no friendly fire); score and materials; a shop of guns, ammo, upgrades and structures; **upgrade levels** (Booster, Expander and Armor to level 3, Wings) with **one equipped slot upgrade**, switched in the **inventory** (`I`); a **randomly generated map** per match with mountains, lakes and rivers (solid unless you have Wings, unclaimable, mountains stop shots); disconnect/reconnect with notices. See *Current Status & Known Issues* for the verified list and open bugs. **Temporary or placeholder** (see Planned Features #2, #3, #7, #9): all numbers are first-pass and unbalanced; the four structure types behave identically (one flat `STRUCTURE_POINTS`); everything is placeholder art (colored hexes, slabs, circles); the results screen is basic; team play is allies-only (no pooling, no team win).
 
 **Suggested next steps** (a proposal, not a commitment — confirm priorities with the developer; the gameplay side of each is in `docs/GAME_DESIGN.md` → Open design questions):
-1. **Structure types with a purpose** (farm, mine, fort, power plant do nothing different yet) and per-type points (Planned Features #3).
+1. **Structure types with a purpose** (farm, fabricator, fort, power plant do nothing different yet) and per-type points (Planned Features #3).
 2. **Balance pass:** ammo cap or supply, upgrade and character numbers, early-game pacing (nothing but ammo is affordable at the start), snowballing (#9).
 3. **Art and sprites** (#7): terrain, structures, characters (six facings). Small/large mountain pieces are recorded by the generator but not synced yet — sprites will need them sent to clients. Custom lobby pickers (#10).
 4. **Spawn follow-ups:** the spawn line is in (2026-09-26); still open are teammates starting together, and the off-grid top-right corner (Known Issues → *Map corners*).
-5. **Team follow-ups** (#2): pooling tiles/credits, a team win condition, team-size balancing.
+5. **Team follow-ups** (#2): pooling tiles/materials, a team win condition, team-size balancing.
 6. **Server-side fire-rate limit**; client-side prediction (#8); off-screen player indicators.
 7. **Test harness** for `GameRoom` and the client's `GameContext` (a fake room), which only `tools/e2e.js` and the browser cover today.
 8. **Hosting** on AWS per `docs/HOSTING.md`.
@@ -191,15 +191,15 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   ├── systems/
 │   │   │   ├── Broadcast.ts        # Shared callback type systems use to emit discrete events
 │   │   │   ├── LobbySystem.ts      # Team/character/ready picks, default team, ready -> countdown -> playing
-│   │   │   ├── CharacterSystem.ts  # Applies a character's starting kit (gun, ammo, credits, structures, upgrade levels)
+│   │   │   ├── CharacterSystem.ts  # Applies a character's starting kit (gun, ammo, materials, structures, upgrade levels)
 │   │   │   ├── UpgradeSystem.ts    # Upgrade levels and the one equipped slot: effects, speed, flying, equip/level up
 │   │   │   ├── MovementSystem.ts   # Eases velocity toward the input direction (accel-limited), drops stale input, slides around enemy structures and solid terrain, Booster speed
-│   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, first-claim credits, batched tilesClaimed broadcast
+│   │   │   ├── CollisionSystem.ts  # Tile-claiming collision, first-claim materials, batched tilesClaimed broadcast
 │   │   │   ├── PickupSystem.ts     # Taking pickups by walking onto their hex; pickupCollected broadcast
 │   │   │   ├── CombatSystem.ts     # Projectile movement, hit detection, respawn-on-death
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
 │   │   │   ├── PhaseSystem.ts      # Phase transitions; times playing -> results
-│   │   │   ├── EconomySystem.ts    # Dev-only credit grant (claim income is in CollisionSystem)
+│   │   │   ├── EconomySystem.ts    # Dev-only material grant (claim income is in CollisionSystem)
 │   │   │   ├── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
 │   │   │   └── ShopSystem.ts       # Validates purchases; grant() applies an item (also used by pickups)
 │   │   ├── test/
@@ -236,18 +236,18 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   │   ├── playerName.ts       # The saved player name (localStorage)
 │   │   │   └── results.ts          # rankScores() (shared ranks for ties), teamTotals(), scoresFromPlayers() fallback
 │   │   ├── components/
-│   │   │   ├── HUD.tsx             # Own player's health/gun/ammo/tiles/credits/structures, equipped upgrade, Armor + phase countdown (top left)
+│   │   │   ├── HUD.tsx             # Own player's health/gun/ammo/tiles/materials/structures, equipped upgrade, Armor + phase countdown (top left)
 │   │   │   ├── NoticeStack.tsx     # Short toasts (disconnect/reconnect), top center
 │   │   │   ├── DebugStats.tsx      # FPS / ms-per-frame / renderer readout (` key)
 │   │   │   ├── ScoreBadge.tsx      # Always-visible own score (top center)
 │   │   │   ├── Inventory.tsx       # Inventory popup: gun, ammo, structures, upgrades; switch the equipped one
-│   │   │   ├── BuyMenu.tsx         # Shop popup: the SHOP_ITEMS catalog grouped by category (weapons, upgrades, structures)
+│   │   │   ├── FabricatorMenu.tsx  # Fabricator popup (the shop): the SHOP_ITEMS catalog grouped by category
 │   │   │   ├── Leaderboard.tsx     # Popup listing all players by score; toggled from GameScreen
 │   │   │   ├── MobileJoystick.tsx  # Drag-based virtual joystick (touch input)
 │   │   │   └── FireButton.tsx      # Hold-to-fire button (touch, during the match only)
 │   │   ├── screens/
 │   │   │   ├── LobbyScreen.tsx     # Player list with team/character/Ready, countdown, your character's kit
-│   │   │   ├── GameScreen.tsx      # Hosts the Phaser canvas + HUD/score/shop/inventory/leaderboard/joystick/fire/build overlays
+│   │   │   ├── GameScreen.tsx      # Hosts the Phaser canvas + HUD/score/fabricator/inventory/leaderboard/joystick/fire/build overlays
 │   │   │   └── ResultsScreen.tsx   # Final standings (+ team totals) + Play again / Main menu (stays up after the room closes)
 │   │   ├── test/
 │   │   │   ├── setup.ts            # Vitest setup: jest-dom matchers, cleanup after each test
@@ -328,17 +328,17 @@ WebSocket via Colyseus protocol. Colyseus handles:
 { name?: string }  // the player's saved name (localStorage); falls back to "Player N" if missing/invalid
 
 // Buy an item (allowed during `playing` only). itemId is a ShopItemId: "basicGun", "bigGun", "ammo",
-// "booster", "expander", "armor", "wings", "farm", "mine", "fort" or "power" (see SHOP_ITEMS); an
-// upgrade buys its next level. The server checks credits, phase and ownership (ownsShopItem).
+// "booster", "expander", "armor", "wings", "farm", "fabricator", "fort" or "power" (see SHOP_ITEMS); an
+// upgrade buys its next level. The server checks materials, phase and ownership (ownsShopItem).
 { type: "purchase", itemId: ShopItemId }
 
 // Equip an owned slot upgrade ("booster" | "expander" | "wings"), or "" to empty the slot. Playing
-// phase only; refused during the switch cooldown, and for leaving Wings over solid terrain.
+// phase only; refused for leaving Wings over solid terrain. No cooldown (removed 2026-09-27).
 { type: "equipUpgrade", upgradeId: UpgradeId | "" }
 
-// DEV ONLY (temporary): +DEV_CREDITS (500) during `playing`; the M key in dev builds. Refused by a
+// DEV ONLY (temporary): +DEV_MATERIALS (500) during `playing`; the M key in dev builds. Refused by a
 // server running with NODE_ENV=production.
-{ type: "devCredits" }
+{ type: "devMaterials" }
 
 // Reconnect (sent automatically by Colyseus client)
 { type: "reconnect", reconnectionToken: string }
@@ -353,7 +353,7 @@ WebSocket via Colyseus protocol. Colyseus handles:
 { type: "structureDestroyed", structureId: string }
 { type: "phaseChanged",  phase: GamePhase, endsAt: number }
 // A player took a pickup (it's also removed from state.pickups). The client tells only that player.
-{ type: "pickupCollected", playerId: string, kind: "credits" | "ammo" | "item", itemId: ShopItemId | "", amount: number }
+{ type: "pickupCollected", playerId: string, kind: "materials" | "ammo" | "item", itemId: ShopItemId | "", amount: number }
 // Sent once when the match ends (phase -> results): final standings, best first.
 { type: "gameOver",      scores: Array<{ playerId, name, color, teamId, score, tilesOwned, kills, structures }> }
 
@@ -389,7 +389,7 @@ The room is thin: it wires messages and the tick to the systems, which hold the 
   - `placeStructure` goes to `handlePlaceStructure`. The phase must be `playing`, the type must be in the player's `structureInventory`, and `StructureSystem.canPlace` must allow the spot. It removes that inventory entry.
   - `selectTeam`, `selectCharacter`, `setReady` and `setName` go to `LobbySystem`. `equipUpgrade` goes to `UpgradeSystem.equip`. All of them use `withPlayer`, which ignores unknown or disconnected players.
   - `purchase` goes to `ShopSystem.purchase`, during `playing` only.
-  - `devCredits` (dev only, temporary) goes to `EconomySystem.grantDevCredits`.
+  - `devMaterials` (dev only, temporary) goes to `EconomySystem.grantDevMaterials`.
 - **`onJoin`**:
   - The name is `LobbySystem.joiningName(options.name)`: the saved name, or "Player N", made unique.
   - The team is `defaultTeam`.
@@ -463,11 +463,11 @@ export class Player extends Schema {
   @type('number')  angle: number = 0;            // facing/aim, radians, world space
   @type('number')  health: number = 100;
   @type('number')  maxHealth: number = 100;      // 200 with the Armor upgrade
-  @type('number')  ammo: number = 0;             // ammo/credits/gun/inventory/upgrades: set from the character at match start
+  @type('number')  ammo: number = 0;             // ammo/materials/gun/inventory/upgrades: set from the character at match start
   @type('number')  tilesOwned: number = 0;
   @type('number')  kills: number = 0;
-  @type('number')  score: number = 0;            // computed by ScoreSystem: tiles + kills x 50 + structures (no credits)
-  @type('number')  credits: number = 0;          // + CREDITS_PER_CLAIM per hex claimed (CollisionSystem)
+  @type('number')  score: number = 0;            // computed by ScoreSystem: tiles + kills x 50 + structures (no materials)
+  @type('number')  materials: number = 0;          // + MATERIALS_PER_CLAIM per hex claimed (CollisionSystem)
   @type('number')  claimRadius: number = 32;     // world px (BASE_CLAIM_RADIUS); 80 once the Expander is owned
   @type('boolean') connected: boolean = true;
   @type('string')  color: string = '';           // always the team's color (TEAMS)
@@ -481,7 +481,6 @@ export class Player extends Schema {
   @type('uint8')   armorLevel: number = 0;
   @type('uint8')   wingsLevel: number = 0;
   @type('string')  equippedUpgrade: string = '';   // the one slot upgrade in effect, '' = none
-  @type('number')  upgradeSwitchReadyAt: number = 0; // server ms: when it can next change
 }
 
 export class Tile extends Schema {
@@ -624,9 +623,9 @@ Implemented 2026-09-26. Everything below is validated server-side in `LobbySyste
 - No friendly fire: `CombatSystem` lets shots pass through allies and allies' structures.
 - `MovementSystem` treats allies' structures as walkable, like your own.
 - `CollisionSystem.claimTiles` skips allies' tiles.
-- Tiles, credits and score stay per player. The results screen's team table is computed on the client (`teamTotals` in `utils/results.ts`) from the `teamId` in the `gameOver` standings.
+- Tiles, materials and score stay per player. The results screen's team table is computed on the client (`teamTotals` in `utils/results.ts`) from the `teamId` in the `gameOver` standings.
 
-**Characters.** `CHARACTERS` in `shared/types.ts` is the catalog (the kits are listed in [GAME_DESIGN → Characters](GAME_DESIGN.md#characters)). `CharacterSystem.apply` replaces the player's gun, ammo, credits, structure inventory and upgrades with the kit when the countdown finishes.
+**Characters.** `CHARACTERS` in `shared/types.ts` is the catalog (the kits are listed in [GAME_DESIGN → Characters](GAME_DESIGN.md#characters)). `CharacterSystem.apply` replaces the player's gun, ammo, materials, structure inventory and upgrades with the kit when the countdown finishes.
 
 - **Structure inventory:** `Player.structureInventory` lists the structures you can still place, one entry each. `placeStructure` names a `structureType` from it and uses one up. `Structure.type` records which one was placed. All four types share the same code path for now (same health, same `STRUCTURE_POINTS`) and differ only in `STRUCTURE_COLORS` (see [Structures: footprint and shape](#structures-footprint-and-shape)).
 - **Guns:** `Player.gun` is `''` (unarmed) or a `GunId`: `'basic'` or `'big'` (damage in `GUN_DAMAGE`). For unarmed players the server ignores `shoot`, and the client doesn't send it and hides the mobile fire button.
@@ -681,43 +680,43 @@ Movement is continuous, at **any angle**, and eased rather than snapping between
 - Score is *derived*, not accumulated, so it drops when tiles or structures are lost. `kills` is a counter that never decreases.
 - `STRUCTURE_POINTS` is one flat value for every `Structure.type`; per-type values would replace it with a lookup.
 - Colyseus syncs a field only when its value changes, so recomputing every tick costs nothing on the wire. The client's `scoreFor()` just reads `Player.score`.
-- Verified with scripts (10 tiles + 2 kills + 2 structures + 9999 credits = 160; losing a structure → 135) and end to end with two clients (6 tiles → score 6; building a structure → +25).
+- Verified with scripts (10 tiles + 2 kills + 2 structures + 9999 materials = 160; losing a structure → 135) and end to end with two clients (6 tiles → score 6; building a structure → +25).
 
 ### Shop
 
-> Rules, items and prices: [Economy and shop](GAME_DESIGN.md#economy-and-shop).
+> Rules, items and prices: [Economy and fabrication](GAME_DESIGN.md#economy-and-fabrication). **Players see this as the Fabricator** (since 2026-09-27; its button only, no hotkey): items are fabricated from materials. The code keeps its shop names — `SHOP_ITEMS`, `ShopItemId`, `ownsShopItem`, `ShopSystem`, the `purchase` message — so read "shop" in code as "fabricate".
 
-Buying works through one message, `purchase { itemId }`, handled by `GameRoom.handlePurchase` → `ShopSystem.purchase`. It is allowed in the `playing` phase only (there's no separate shopping phase since 2026-09-26), for connected players. The server re-validates everything (unknown ids, credits, ownership); the client's disabled buttons are just a convenience.
+Buying works through one message, `purchase { itemId }`, handled by `GameRoom.handlePurchase` → `ShopSystem.purchase`. It is allowed in the `playing` phase only (there's no separate shopping phase since 2026-09-26), for connected players. The server re-validates everything (unknown ids, materials, ownership); the client's disabled buttons are just a convenience.
 
 Rebuilt 2026-09-26 as a data-driven catalog: each `SHOP_ITEMS` entry has a `category` (the menu groups by it) and says what it gives — a `gun`, `ammo`, an `upgrade` or a `structure` — and `ShopSystem.purchase` just applies that. `ownsShopItem` (shared, so the server and the menu agree) says when buying would get you nothing: an upgrade you already have, or a gun that isn't better than yours.
 
 - **Adding an item:** a new entry in `SHOP_ITEMS`. A new *kind* of effect also needs a line in `ShopSystem.purchase`.
-- **Upgrades** (levels and the one slot, 2026-09-26; rules in [GAME_DESIGN.md → Upgrades](GAME_DESIGN.md#upgrades)): `UPGRADES` in `shared/types.ts` lists each upgrade's name, `maxLevel` and whether it uses the slot; levels are plain `Player.<id>Level` fields (not a map, so they sync like any field and fit the shared `implements` check), with `equippedUpgrade` and `upgradeSwitchReadyAt`. Shop entries are one per upgrade (`upgradeItem`); `ownsShopItem` is true at the top level, and `shopItemTitle` / `shopItemDescription` show the level on offer. `server/src/systems/UpgradeSystem.ts` owns the effects: `applyUpgradeEffects` sets `maxHealth` (Armor, always on) and `claimRadius` (Expander, when equipped); `speedMultiplier` and `canFly` are read by `MovementSystem`; `levelUp` (from `ShopSystem.purchase`) raises a level and equips a slot upgrade bought into an empty slot; `equip` handles the `equipUpgrade` message — owned slot upgrades or `''` only, not during the cooldown, not a no-op, and not taking Wings off over solid terrain. For Armor, `purchase` also adds the rise in `maxHealth` to current `health`, so a hurt player keeps their damage but gains the headroom. The client sends `equipUpgrade` from the inventory popup (`Inventory.tsx`, below).
-- **Shared catalog:** the item list, prices and what each gives live in `SHOP_ITEMS` (plus `AMMO_PACK_SIZE`, `AMMO_CREDITS_PER_SHOT`, `STRUCTURE_COST`, `GUN_DAMAGE`, `ownsShopItem`) in `shared/types.ts`, the one copy both sides import. Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS`, `EXPANDER_CLAIM_RADII` and `BASE_MAX_HEALTH` are server constants (the per-level numbers shown in the shop are shared); the client only sees the resulting `Player.claimRadius` / `maxHealth` (and uses the shared base radius to decide when to show the circle).
+- **Upgrades** (levels and the one slot, 2026-09-26; rules in [GAME_DESIGN.md → Upgrades](GAME_DESIGN.md#upgrades)): `UPGRADES` in `shared/types.ts` lists each upgrade's name, `maxLevel` and whether it uses the slot; levels are plain `Player.<id>Level` fields (not a map, so they sync like any field and fit the shared `implements` check), with `equippedUpgrade` (`upgradeSwitchReadyAt` held the switching cooldown until 2026-09-27). Shop entries are one per upgrade (`upgradeItem`); `ownsShopItem` is true at the top level, and `shopItemTitle` / `shopItemDescription` show the level on offer. `server/src/systems/UpgradeSystem.ts` owns the effects: `applyUpgradeEffects` sets `maxHealth` (Armor, always on) and `claimRadius` (Expander, when equipped); `speedMultiplier` and `canFly` are read by `MovementSystem`; `levelUp` (from `ShopSystem.purchase`) raises a level and equips a slot upgrade bought into an empty slot; `equip` handles the `equipUpgrade` message — owned slot upgrades or `''` only, instantly (no cooldown since 2026-09-27), not a no-op, and not taking Wings off over solid terrain. For Armor, `purchase` also adds the rise in `maxHealth` to current `health`, so a hurt player keeps their damage but gains the headroom. The client sends `equipUpgrade` from the inventory popup (`Inventory.tsx`, below).
+- **Shared catalog:** the item list, prices and what each gives live in `SHOP_ITEMS` (plus `AMMO_PACK_SIZE`, `AMMO_MATERIALS_PER_SHOT`, `STRUCTURE_COST`, `GUN_DAMAGE`, `ownsShopItem`) in `shared/types.ts`, the one copy both sides import. Server logic and the menu both read prices from it, so they can't disagree. `BASE_CLAIM_RADIUS`, `EXPANDER_CLAIM_RADII` and `BASE_MAX_HEALTH` are server constants (the per-level numbers shown in the shop are shared); the client only sees the resulting `Player.claimRadius` / `maxHealth` (and uses the shared base radius to decide when to show the circle).
 - **The circle** (`GameScene.updateClaimRing`): an ellipse of the claim-radius diameter, squashed by `ISO_SQUASH` like everything on the ground (160×96 scene px for 80 world px), filled with the player's color at `CLAIM_RING_FILL_ALPHA` and outlined at `CLAIM_RING_STROKE_ALPHA`, at depth −0.4 so it sits above the terrain but under every entity. It's created when the radius exceeds the base, resized if the radius changes, and destroyed with the player.
-- Verified: unit script (affordability, ammo math, second Expander rejected, junk ids like `__proto__`/`toString`/`null` rejected with credits untouched); browser (buying ammo took credits 100 → 70 and ammo 30 → 60, and the Expander button disabled at 70; buying the Expander at 100 left "Owned", the ring appeared in the player's color at 128×77, and a short walk claimed a two-hex-wide swath).
+- Verified: unit script (affordability, ammo math, second Expander rejected, junk ids like `__proto__`/`toString`/`null` rejected with materials untouched); browser (buying ammo took materials 100 → 70 and ammo 30 → 60, and the Expander button disabled at 70; buying the Expander at 100 left "Owned", the ring appeared in the player's color at 128×77, and a short walk claimed a two-hex-wide swath).
 
-### Economy (Credits)
+### Economy (Materials)
 
-> Rules: [Economy and shop](GAME_DESIGN.md#economy-and-shop).
+> Rules: [Economy and fabrication](GAME_DESIGN.md#economy-and-fabrication).
 
-- **Income is per first claim** (2026-09-27; every claim paid from 2026-09-26): `CollisionSystem.claimTiles` adds `CREDITS_PER_CLAIM` (1) to `credits` when it hands a player a hex whose `Tile.claimedBefore` is false, and sets it. `claimedBefore` is a plain, non-synced field on the `Tile` schema class (like `Player.spawnSlot`): it's never cleared, so re-taking an enemy's hex or a hex released by `cleanupPlayer` pays nothing. The previous owner keeps what they earned. Claiming only runs during `playing`, so income does too. The timed payout (`EconomySystem.update`, `CREDIT_PAYOUT_INTERVAL_MS`, the synced `GameState.nextPayoutAt`) was removed.
-- Starting credits are set by `CharacterSystem.apply` from the character's kit (`STARTING_CREDITS` was removed 2026-09-26).
-- No discrete broadcast event for income — `Player.credits` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
-- **Dev only (temporary):** the client's `M` key (only when `import.meta.env.DEV`, i.e. the Vite dev server) sends `devCredits` (no payload, via `sendDevCredits` in `net/GameConnection.ts`); `EconomySystem.grantDevCredits` adds `DEV_CREDITS` (500) during `playing`, unless `DEV_CHEATS_ENABLED` is false (`NODE_ENV=production`). Covered by `EconomySystem.spec.ts` and an e2e check. Remove before release.
-- Credit piles are the other source (see *Pickups*).
-- Spending is the only sink: credits leave when a purchase succeeds (`ShopSystem.purchase`). Nothing else consumes them.
+- **Income is per first claim** (2026-09-27; every claim paid from 2026-09-26): `CollisionSystem.claimTiles` adds `MATERIALS_PER_CLAIM` (1) to `materials` when it hands a player a hex whose `Tile.claimedBefore` is false, and sets it. `claimedBefore` is a plain, non-synced field on the `Tile` schema class (like `Player.spawnSlot`): it's never cleared, so re-taking an enemy's hex or a hex released by `cleanupPlayer` pays nothing. The previous owner keeps what they earned. Claiming only runs during `playing`, so income does too. The timed payout (`EconomySystem.update`, `CREDIT_PAYOUT_INTERVAL_MS`, the synced `GameState.nextPayoutAt`) was removed.
+- Starting materials are set by `CharacterSystem.apply` from the character's kit (`STARTING_MATERIALS` was removed 2026-09-26).
+- No discrete broadcast event for income — `Player.materials` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
+- **Dev only (temporary):** the client's `M` key (only when `import.meta.env.DEV`, i.e. the Vite dev server) sends `devMaterials` (no payload, via `sendDevMaterials` in `net/GameConnection.ts`); `EconomySystem.grantDevMaterials` adds `DEV_MATERIALS` (500) during `playing`, unless `DEV_CHEATS_ENABLED` is false (`NODE_ENV=production`). Covered by `EconomySystem.spec.ts` and an e2e check. Remove before release.
+- Material piles are the other source (see *Pickups*).
+- Spending is the only sink: materials leave when a purchase succeeds (`ShopSystem.purchase`). Nothing else consumes them.
 
 ### Pickups
 
 > Rules: [Pickups](GAME_DESIGN.md#pickups). Added 2026-09-27.
 
 - **Feature flag:** `PICKUPS_ENABLED` in `server/src/constants.ts` (default on); the `PICKUPS` environment variable overrides it (`0`/`false`/`off`, or `1`). Off means `onCreate` never fills `state.pickups`, so everything downstream (the system, the client) has nothing to do. The client has no flag of its own: it draws whatever is in `state.pickups`.
-- **Placement** (`server/src/pickups.ts`, `generatePickups(terrain, cols, rows, random)`): one location per cell of a `PICKUP_GRID` (4 × 3) over the hex grid, starting at the cell's center plus up to `PICKUP_JITTER` (2) hexes each way, then a breadth-first search for the nearest hex that's ground, outside every spawn area (`SPAWN_CLEAR_RADIUS` of each `spawnHexes` hex), and not already used. `rollPickup(random)` picks the contents from the `PICKUP_CHANCES` weights (percentages) and `PICKUP_CREDITS` / `PICKUP_AMMO` ranges; `null` is "nothing". It runs after terrain on the same seeded stream, so a seed reproduces both.
-- **State:** `Pickup` schema (`id`, `kind`: `credits` / `ammo` / `item`, `itemId`: a `ShopItemId` for items, `amount`, `tileX`, `tileY`) in `GameState.pickups`, a `MapSchema`; `PickupState` in `shared/state.ts`. An item pickup is just a shop item id (a gun, an upgrade id, a structure type), so it reuses the catalog for names and effects.
-- **Taking** (`PickupSystem.update`, after `CollisionSystem` each tick, `playing` only): a connected player whose `pixelToHex(x, y)` is a pickup's hex takes it if `canCollect` (credits, ammo, structures always; guns by `ownsShopItem`, the shop's no-downgrade rule; upgrades only at level 0). Credits and ammo add `amount`; items go through `ShopSystem.grant`, the half of `purchase` that applies an item (auto-equip into an empty slot, Armor's health). The pickup is deleted from state and `pickupCollected` is broadcast.
+- **Placement** (`server/src/pickups.ts`, `generatePickups(terrain, cols, rows, random)`): one location per cell of a `PICKUP_GRID` (4 × 3) over the hex grid, starting at the cell's center plus up to `PICKUP_JITTER` (2) hexes each way, then a breadth-first search for the nearest hex that's ground, outside every spawn area (`SPAWN_CLEAR_RADIUS` of each `spawnHexes` hex), and not already used. `rollPickup(random)` picks the contents from the `PICKUP_CHANCES` weights (percentages) and `PICKUP_MATERIALS` / `PICKUP_AMMO` ranges; `null` is "nothing". It runs after terrain on the same seeded stream, so a seed reproduces both.
+- **State:** `Pickup` schema (`id`, `kind`: `materials` / `ammo` / `item`, `itemId`: a `ShopItemId` for items, `amount`, `tileX`, `tileY`) in `GameState.pickups`, a `MapSchema`; `PickupState` in `shared/state.ts`. An item pickup is just a shop item id (a gun, an upgrade id, a structure type), so it reuses the catalog for names and effects.
+- **Taking** (`PickupSystem.update`, after `CollisionSystem` each tick, `playing` only): a connected player whose `pixelToHex(x, y)` is a pickup's hex takes it if `canCollect` (materials, ammo, structures always; guns by `ownsShopItem`, the shop's no-downgrade rule; upgrades only at level 0). Materials and ammo add `amount`; items go through `ShopSystem.grant`, the half of `purchase` that applies an item (auto-equip into an empty slot, Armor's health). The pickup is deleted from state and `pickupCollected` is broadcast.
 - **Client:** `GameScene.addPickupView` (on `pickups.onAdd`, and for those present at create) builds a container at the projected hex center: a shadow ellipse and a `Graphics` drawn by `drawPickup(pickupLook(kind, itemId))` (`client/src/game/pickups.ts`), scaled by `PICKUP_SCALE`, lifted `PICKUP_LIFT` and bobbing `PICKUP_BOB` px on a yoyo tween. Depth is the ground y, like players. `onRemove` kills the tween and destroys it. `GameContext` turns `pickupCollected` for your own session into a "Picked up …" notice (`pickupLabel` in `shared/types.ts`).
-- **Tests:** `pickups.spec.ts` (chances add to 100 and come out in proportion over 20,000 rolls, amounts in range, every upgrade possible; placement on 30 seeded maps: at most 12, ground only, distinct, outside spawn areas; one per grid cell; moved off terrain; repeatable), `systems/PickupSystem.spec.ts` (each kind, the can-use rules, phase and connection), `GameState.spec.ts` (pickups sync and their removal), client `game/pickups.spec.ts` (`pickupLook`) and `types/shared.spec.ts` (`pickupLabel`), and `tools/e2e.js` (pickups on ground and the same for everyone, walking onto the nearest one takes it, `PICKUPS=0` gives none). Browser, 2026-09-27: ammo and a basic gun seen, bobbing, and taken with the notice; the coin, upgrade and structure shapes haven't been seen in a browser yet.
+- **Tests:** `pickups.spec.ts` (chances add to 100 and come out in proportion over 20,000 rolls, amounts in range, every upgrade possible; placement on 30 seeded maps: at most 12, ground only, distinct, outside spawn areas; one per grid cell; moved off terrain; repeatable), `systems/PickupSystem.spec.ts` (each kind, the can-use rules, phase and connection), `GameState.spec.ts` (pickups sync and their removal), client `game/pickups.spec.ts` (`pickupLook`) and `types/shared.spec.ts` (`pickupLabel`), and `tools/e2e.js` (pickups on ground and the same for everyone, walking onto the nearest one takes it, `PICKUPS=0` gives none). Browser, 2026-09-27: ammo and a basic gun seen, bobbing, and taken with the notice; the materials crate (a gold coin until 2026-09-27), upgrade and structure shapes haven't been seen in a browser yet.
 
 ---
 
@@ -755,10 +754,10 @@ Built 2026-09-26 (`screens/LobbyScreen.tsx`; rules in [Lobby, characters and tea
 - **Saved name:** `utils/playerName.ts` keeps the last name you set in `localStorage` (`sector42.playerName`; reads and writes are wrapped, so blocked storage just means no memory) and `GameContext` sends it with every fresh join, so it carries over from game to game and across page loads. The name you *typed* is saved, not the suffixed one, so you don't collect "(1) (1)" over time.
 - **Selects are `appearance: none` with a drawn arrow:** Safari ignored the dark styling and drew its own glossy controls (reported 2026-09-26). They're a stopgap — see Planned Features #10.
 - **Status line:** "Set your name, pick a team and a character, then press Ready." → "Waiting for N more players to get ready…" once you're ready → a large "Starting in 3…" during the countdown (`usePhaseCountdown` at a 100 ms tick so the first number isn't stale).
-- **Your character card:** name, one-line description, and the starting kit (gun, ammo, credits, structures, upgrades) from `CHARACTERS`.
+- **Your character card:** name, one-line description, and the starting kit (gun, ammo, materials, structures, upgrades) from `CHARACTERS`.
 - A short note explains what teammates mean. Notices (disconnect/reconnect toasts) show here too.
 - `GameContext` exposes `selectTeam`, `selectCharacter` and `setReady` (replacing `startGame`/`endBuying`), and its roster signature now includes team, character, ready, gun, inventory and upgrades. `structureInventory`/`upgrades` are `ArraySchema`s, whose item changes don't fire the player's `onChange`, so the context also subscribes to their `onAdd`/`onRemove`.
-- Verified in the browser 2026-09-26 on private ports with two tabs: default teams, switching to a teammate's color (count shows "Red (2)"), picking the Smuggler updates the card, both Ready → "Starting in 3…" → the match, with each tab's HUD showing its own kit; the layout at 375px.
+- Verified in the browser 2026-09-26 on private ports with two tabs: default teams, switching to a teammate's color (count shows "Red (2)"), picking the Explorer updates the card, both Ready → "Starting in 3…" → the match, with each tab's HUD showing its own kit; the layout at 375px.
 
 ### Results screen
 
@@ -839,12 +838,12 @@ Touch support needed no protocol changes, confirming what [Planned Features](#pl
 
 `HUD.tsx`, `ScoreBadge.tsx`, `Leaderboard.tsx` and the buttons render on top of the Phaser canvas (absolutely positioned `<div>`s in `GameScreen`), reading from `GameContext` — the same reactive `players`/`phase`/`phaseEndsAt` state already used by the lobby screen. This avoids re-deriving Colyseus reactivity a second time inside Phaser.
 
-- **HUD** (top left): phase countdown, health ("140 / 200" — current / max), gun ("none" or its name), ammo, tiles, credits, structures left to build (e.g. "Farm" or "none"), the equipped upgrade with its level (e.g. "Booster 2"), and Armor's level if you have any.
-- **Score badge** (top center, always visible): the local player's score. Real scoring doesn't exist yet, so `utils/score.ts`'s `scoreFor()` returns credits; the badge and the leaderboard both go through it, so implementing [Planned Features #3](#planned-features) means changing that one function. Until then the badge and the HUD's Credits line show the same number.
+- **HUD** (top left): phase countdown, health ("140 / 200" — current / max), gun ("none" or its name), ammo, tiles, materials, structures left to build (e.g. "Farm" or "none"), the equipped upgrade with its level (e.g. "Booster 2"), and Armor's level if you have any.
+- **Score badge** (top center, always visible): the local player's score. Real scoring doesn't exist yet, so `utils/score.ts`'s `scoreFor()` returns materials; the badge and the leaderboard both go through it, so implementing [Planned Features #3](#planned-features) means changing that one function. Until then the badge and the HUD's Materials line show the same number.
 - **Leaderboard** (popup): hidden by default; a top-right **Leaderboard** button (highlighted while open) or the **`L`** key toggles it, and **`Esc`**, the × button or a click on the dimmed backdrop closes it. It's a centered panel over the canvas (rank, color, name, score, tiles, kills, disconnected flag), ranked by `scoreFor`.
-- **Shop** (popup): a **Shop** button below the Leaderboard button (during the match) or the **`E`** key toggles it (it was `B` until 2026-09-26; `B` is now build mode). Only one popup (shop or leaderboard) is open at a time; `Esc` closes either. It shows your credits, ammo and gun, then the catalog grouped under Weapons, Upgrades and Structures; items you already have (`ownsShopItem`) show "Owned". The "coming soon" list is gone — everything it listed is buyable now.
-- **Inventory** (popup, `components/Inventory.tsx`, 2026-09-26): an **Inventory** button below Shop, or **`I`**, toggles it during the match; `Esc` closes it (only one popup at a time). It lists gun and ammo, structures by type, Armor, and each owned slot upgrade with **Equip** (which sends `equipUpgrade`); the equipped one's button is a disabled **Equipped** — since 2026-09-26 there's no Unequip, though the server still accepts `''`. Each structure type has **Select** / **Selected**, which sets `GameScreen`'s `selectedStructure` (what Build places next). `usePhaseCountdown(upgradeSwitchReadyAt, 200)` drives the cooldown text and disables the buttons; the same tick re-checks `overSolidTerrain`, a callback from `GameScreen` that reads the player's live position from room state (positions don't re-render React) and applies the shared `blocksWalking`, so the panel can say why Wings can't come off. The server still validates every switch.
-- **Build button** (bottom right, during the match): "Build Farm (1)" — the structure it will place and how many of that type you have — or a disabled "Nothing to build". Which structure is `structureToBuild(inventory, selectedStructure)` (`utils/build.ts`): the type picked in the Inventory while you still have one, else the first in the inventory. The Phaser `onPlaceStructure` callback outlives renders, so it reads the pick from a ref (synced in an effect) and the inventory live from room state. Arming it makes the next tap place that structure on one of your tiles (the server uses up that inventory entry). **B** toggles build mode, **Esc** leaves it, and there's no timeout. `GameScreen` keeps the scene's build mode in sync with its own state through an effect, so leaving build mode or running out of structures returns taps to shooting.
+- **Fabricator** (popup, `components/FabricatorMenu.tsx`; the Shop and `BuyMenu.tsx`, on `E`, until 2026-09-27): a **Fabricator** button below the Leaderboard button (during the match) toggles it. There's no hotkey: `E` is unbound, kept free for something later. Only one popup (shop or leaderboard) is open at a time; `Esc` closes either. It shows your materials, ammo and gun, then the catalog grouped under Weapons, Upgrades and Structures; items you already have (`ownsShopItem`) show "Owned". The "coming soon" list is gone — everything it listed is buyable now.
+- **Inventory** (popup, `components/Inventory.tsx`, 2026-09-26): an **Inventory** button below Fabricator, or **`I`**, toggles it during the match; `Esc` closes it (only one popup at a time). It lists gun and ammo, structures by type, Armor, and each owned slot upgrade with **Equip** (which sends `equipUpgrade`); the equipped one's button is a disabled **Equipped** — since 2026-09-26 there's no Unequip, though the server still accepts `''`. Each structure type has **Select** / **Selected**, which sets `GameScreen`'s `selectedStructure` (what Build places next). A 200 ms timer (`WINGS_CHECK_MS`; the switching-cooldown countdown did this until 2026-09-27) re-renders it to re-check `overSolidTerrain`, a callback from `GameScreen` that reads the player's live position from room state (positions don't re-render React) and applies the shared `blocksWalking`, so the panel can say why Wings can't come off. The server still validates every switch.
+- **Build button** (bottom right, during the match; briefly "Fabricate" on `F` on 2026-09-27): "Build Farm (1)" — the structure it will place and how many of that type you have — or a disabled "Nothing to build". Planned to be replaced by clickable structure icons in an on-screen inventory (Planned Features #11). Which structure is `structureToBuild(inventory, selectedStructure)` (`utils/build.ts`): the type picked in the Inventory while you still have one, else the first in the inventory. The Phaser `onPlaceStructure` callback outlives renders, so it reads the pick from a ref (synced in an effect) and the inventory live from room state. Arming it makes the next tap place that structure on one of your tiles (the server uses up that inventory entry). **B** toggles build mode, **Esc** leaves it, and there's no timeout. `GameScreen` keeps the scene's build mode in sync with its own state through an effect, so leaving build mode or running out of structures returns taps to shooting.
 - **Fire button** (touch only, during the match only, and only once you have a gun): a hold-to-fire button in the bottom-right corner; the **Build** button stacks above it on touch, and sits in the corner on desktop.
 - **Viewport fit:** `GameScreen`'s container is `position: fixed; inset: 0`. It used to be `100vw × 100vh` inside the Vite template's `#root` (1126px wide, `min-height: 100svh`, centered text), which made the page scroll and clipped the right-hand overlays, and made the overlay text centered. Panels also set `text-align: left` explicitly.
 
@@ -1098,8 +1097,8 @@ This was a throwaway script (not checked into the client), but the same coverage
 
 Until this date the Phaser view had only been verified by typecheck/lint/headless scripts. Driving the Vite dev server (`vite`, port 5173 by default) against the live server in a browser confirmed:
 - Lobby lists the joined player ("Player 1 (you)"); **Start Game** moves to `claiming` and the phase countdown ticks down.
-- `GameScreen` renders: tile grid, the local player's circle centered on screen, HUD (phase/health/ammo/tiles/credits) top-left, leaderboard top-right.
-- Keyboard movement claims tiles: `tilesOwned` went 1 → 28 during a short run, tiles are drawn in the player's color, and `credits` incremented on the 10s payout (the payout was replaced by per-claim income on 2026-09-26).
+- `GameScreen` renders: tile grid, the local player's circle centered on screen, HUD (phase/health/ammo/tiles/materials) top-left, leaderboard top-right.
+- Keyboard movement claims tiles: `tilesOwned` went 1 → 28 during a short run, tiles are drawn in the player's color, and `materials` incremented on the 10s payout (the payout was replaced by per-claim income on 2026-09-26).
 
 Not yet exercised in a browser: combat phase, shooting, structure placement/destruction, the mobile joystick and Build button, reconnection after a dropped socket or refresh, multiple simultaneous players, the `results`/game-over screen.
 
@@ -1128,7 +1127,7 @@ Prompted by a report of ~19 fps and choppy play with two browsers open on the de
 
 What changed:
 - **Chunked claims layer** (above): re-bake cost is bounded instead of growing with the number of claimed hexes.
-- **React roster updates deduplicated:** `GameContext` published a new `players` array on *every* Colyseus `onChange`, i.e. on every server tick for every moving player (x, y, vx, vy, angle), re-rendering the whole tree ~20–30×/s. It now builds a signature of only the fields the UI shows (id, name, color, health, ammo, tiles, kills, score, credits, connected) and skips the update when unchanged. The `Player` objects are live, so components that do re-render read current values.
+- **React roster updates deduplicated:** `GameContext` published a new `players` array on *every* Colyseus `onChange`, i.e. on every server tick for every moving player (x, y, vx, vy, angle), re-rendering the whole tree ~20–30×/s. It now builds a signature of only the fields the UI shows (id, name, color, health, ammo, tiles, kills, score, materials, connected) and skips the update when unchanged. The `Player` objects are live, so components that do re-render read current values.
 - **Hover outline** redraws only when the hovered hex changes (it was cleared and redrawn every frame).
 - **`powerPreference: 'high-performance'`** in the Phaser render config: on laptops with two GPUs browsers default to the integrated one. Verified it lands in `game.config`.
 - **Performance readout** (backtick): now shows fps, average JS ms per frame, renderer, canvas size and pixel ratio. **If fps is low but ms/frame is small, the bottleneck is the GPU or the rest of the browser, not our code** — that is the number to report back if the slowness persists.
@@ -1350,19 +1349,19 @@ The server's `tsconfig.json` needs a few settings beyond the client's, driven by
 
 ## Current Status & Known Issues
 
-_As of 2026-09-26 (after terrain, upgrade levels and the inventory)._ Server and client both typecheck and lint clean, and the game runs end to end in a browser: join → lobby (team, character, ready) → 3 s countdown → mouse-aimed movement on an isometric hex map → tile claiming → credits → shooting (once armed) → building from your inventory → upgrades (buy levels, equip one in the Inventory) → results.
+_As of 2026-09-26 (after terrain, upgrade levels and the inventory)._ Server and client both typecheck and lint clean, and the game runs end to end in a browser: join → lobby (team, character, ready) → 3 s countdown → mouse-aimed movement on an isometric hex map → tile claiming → materials → shooting (once armed) → building from your inventory → upgrades (buy levels, equip one in the Inventory) → results.
 
 ### Working (browser- or script-verified)
-- **Upgrade levels, the equipped slot and the Inventory** (2026-09-26: `UpgradeSystem.spec.ts`, `ShopSystem.spec.ts`, `Inventory.spec.tsx`, `BuyMenu.spec.tsx`, `e2e.js` (the Robot switching its Booster), browser): Booster/Expander/Armor to level 3 and Wings 1 at 100 credits a level; one slot upgrade works at a time with a 5 s switch cooldown; Wings can't come off over solid terrain; Armor always on (+100 max health a level). In the browser: the shop offers the next level, the Inventory opens with `I` or its button and equips.
-- **Terrain: generation, drawing, rules and Wings** (2026-09-26: `terrainRules.spec.ts` for movement, claiming, shots and Wings; `terrain.spec.ts` over 40 maps, `e2e.js`, browser): a random map per room, ~10% mountains/lakes/rivers within the size, separation, spawn-clear and reachability rules, synced to every client and drawn with its colors and borders. Mountains and deep water are solid (except with Wings), terrain can't be claimed, mountains stop shots. Wings haven't been flown in a browser yet: nobody can afford 100 credits at the start, so they're covered by the unit tests only.
-- **Lobby, characters and teams** (2026-09-26: the rule checks now in the server specs, `tools/e2e.js`, and a two-tab browser pass on private ports): ready-up and the countdown (cancelled by un-readying or a newcomer; not held up by a disconnected player); team/character locked while ready and junk values refused; default teams fill empty colors first; every character's kit applied exactly at match start (and to a mid-match joiner); unarmed players can't shoot; the Basic gun arms you, once; structures come out of the inventory and carry their type; the Robot's Booster; no friendly fire on teammates or their structures, teammates' structures walkable, teammates' tiles not taken; standings carry `teamId`. In the browser: the lobby at desktop and 375px width, Smuggler HUD kit, building the Farmer's farm (score +25, Build button disabled after), buying the Basic gun.
+- **Upgrade levels, the equipped slot and the Inventory** (2026-09-26: `UpgradeSystem.spec.ts`, `ShopSystem.spec.ts`, `Inventory.spec.tsx`, `FabricatorMenu.spec.tsx` (earlier `BuyMenu.spec.tsx`), `e2e.js` (the Robot switching its Booster), browser): Booster/Expander/Armor to level 3 and Wings 1 at 100 materials a level; one slot upgrade works at a time with a 5 s switch cooldown; Wings can't come off over solid terrain; Armor always on (+100 max health a level). In the browser: the shop offers the next level, the Inventory opens with `I` or its button and equips.
+- **Terrain: generation, drawing, rules and Wings** (2026-09-26: `terrainRules.spec.ts` for movement, claiming, shots and Wings; `terrain.spec.ts` over 40 maps, `e2e.js`, browser): a random map per room, ~10% mountains/lakes/rivers within the size, separation, spawn-clear and reachability rules, synced to every client and drawn with its colors and borders. Mountains and deep water are solid (except with Wings), terrain can't be claimed, mountains stop shots. Wings haven't been flown in a browser yet: nobody can afford 100 materials at the start, so they're covered by the unit tests only.
+- **Lobby, characters and teams** (2026-09-26: the rule checks now in the server specs, `tools/e2e.js`, and a two-tab browser pass on private ports): ready-up and the countdown (cancelled by un-readying or a newcomer; not held up by a disconnected player); team/character locked while ready and junk values refused; default teams fill empty colors first; every character's kit applied exactly at match start (and to a mid-match joiner); unarmed players can't shoot; the Basic gun arms you, once; structures come out of the inventory and carry their type; the Robot's Booster; no friendly fire on teammates or their structures, teammates' structures walkable, teammates' tiles not taken; standings carry `teamId`. In the browser: the lobby at desktop and 375px width, Explorer HUD kit, building the Farmer's farm (score +25, Build button disabled after), buying the Basic gun.
 - **Player names** (2026-09-26: the server specs, `e2e.js`, and the browser): normalization and the 2–25 limit (emoji count as one), unique "(N)" suffixes ignoring case and still within 25, "Player N" fallback, renaming while ready but not mid-match, the join option. In the browser: the invalid hint on a 1-character name, Enter commits, the name saved to localStorage, and a second tab joining as "… (1)" with it; the row at 375px. Safari itself wasn't available to test the select fix.
-- Join, phase timers, credits payout, HUD, leaderboard (browser).
+- Join, phase timers, materials payout, HUD, leaderboard (browser).
 - **Disconnect notices, reconnect, screen edge** (headless clients + browser, 2026-09-20): both other players get disconnect and reconnect events (the returning player doesn't); toasts show and fade; a tab reconnects in ~330 ms when it becomes visible (simulated); players stop exactly 20 px inside the map edge and the camera keeps them centered and fully visible there.
 - **Shop: ammo and Expander** (unit + brute-force scripts and the browser, 2026-09-20): purchases validated (affordability, one Expander per player, junk ids rejected); radius claiming matches a brute-force scan; the shop UI buys ammo and the Expander, the tinted ring appears in the player's color, and enemy structures protect their hexes from claiming.
 - **Results screen, right-click move** (server scripts + browser, 2026-09-20): the server broadcasts a correctly ordered `gameOver` snapshot to everyone; the results screen shows it, counts down, persists after the room closes, and *Play again* joins a fresh lobby; right-click walks to a spot and stops without overshoot, and arrow keys/WASD cancel it.
 - **Shop popup and room closing** (scripts with scaled phase times, plus the browser, 2026-09-20; the `buying` phase this was verified with was removed 2026-09-26): the shop toggles with the Shop button / `B` (`Esc` closes; only one popup at a time); at the end the finished room is locked, closes on its 60s timer (or at once when the last player leaves), and the client returns to the connect screen without a reconnect loop.
-- **Merged `playing` phase, new score, 50 damage, solid structures** (scripts + a two-client end-to-end run on 2026-09-20): shooting works the instant the match starts; score = tiles (+25 per structure, +50 per kill) with credits excluded; a structure blocks other players, who slide around it (744-approach sweep: 0 overlaps, 0 frozen), while its owner passes through; two hits kill. The merged-phase UI has had only a short browser look (see Testing).
+- **Merged `playing` phase, new score, 50 damage, solid structures** (scripts + a two-client end-to-end run on 2026-09-20): shooting works the instant the match starts; score = tiles (+25 per structure, +50 per kill) with materials excluded; a structure blocks other players, who slide around it (744-approach sweep: 0 overlaps, 0 frozen), while its owner passes through; two hits kill. The merged-phase UI has had only a short browser look (see Testing).
 - **Combat controls and UI** (third browser pass): Space/click firing with the fire interval, the projectile placeholder art in flight, hold-to-fire on the mobile FIRE button (release verified), building on a hex on touch, the always-visible score badge, the leaderboard popup (button, `L`, `Esc`), separate borders on claimed hexes, and no page scrollbars.
 - **Hex map + isometric rendering**: terrain draws correctly; the hover outline lands exactly on the hex under the mouse (picking matches the drawn grid); under the first (mouse-relative) control scheme, `W` carried the player diagonally toward the cursor and claimed a line of hexes — the default is now on-screen WASD, which has been typechecked but **not yet re-run in a browser**; a click in combat fires a shot (ammo 30 → 29) (browser).
 - Hex math round-trips exactly for all 4,096 tiles; velocity ramp/turn/decel numbers; off-map positions don't claim; stale input is dropped after 750ms (scripts).
@@ -1403,32 +1402,32 @@ Design gaps (ammo supply, identical structure types, team balance, early-game pa
 
 Captured 2026-09-20 as design ideas; the Phaser game view work session that followed (also 2026-09-20) implemented several of them along the way. Status is marked per item below — see the Decisions Log for what changed and why. The gameplay side of these items (what to build and why) is in [GAME_DESIGN → Open design questions](GAME_DESIGN.md#open-design-questions-and-plans); this section keeps the implementation notes.
 
-### 1. Credits (economy) — ✅ implemented
+### 1. Materials (economy) — ✅ implemented
 
-> **Superseded 2026-09-26:** income is now `CREDITS_PER_CLAIM` per hex claimed; the timed payout and `nextPayoutAt` below are gone. See Game Mechanics → *Economy (Credits)*.
+> **Superseded 2026-09-26:** income is now `MATERIALS_PER_CLAIM` per hex claimed; the timed payout and `nextPayoutAt` below are gone. See Game Mechanics → *Economy (Materials)*.
 
-- `Player.credits: number` (synced schema field) and `GameState.nextPayoutAt: number` (server timestamp of the next payout, same pattern as `GamePhaseState.endsAt`).
-- `server/src/systems/EconomySystem.ts`: every `CREDIT_PAYOUT_INTERVAL_MS` (10s, in `constants.ts`), every player with `tilesOwned > 0` gets `credits += tilesOwned`. Runs only during `playing` — payouts stop once `results` begins, per the open question raised when this was planned.
+- `Player.materials: number` (synced schema field) and `GameState.nextPayoutAt: number` (server timestamp of the next payout, same pattern as `GamePhaseState.endsAt`).
+- `server/src/systems/EconomySystem.ts`: every `CREDIT_PAYOUT_INTERVAL_MS` (10s, in `constants.ts`), every player with `tilesOwned > 0` gets `materials += tilesOwned`. Runs only during `playing` — payouts stop once `results` begins, per the open question raised when this was planned.
 - Wired into `GameRoom.tick()` alongside the other systems; `nextPayoutAt` is initialized in `onCreate()`.
-- Verified live: a throwaway script joined, claimed tiles, waited 11s, and confirmed `credits` incremented by exactly `tilesOwned` after one payout cycle.
+- Verified live: a throwaway script joined, claimed tiles, waited 11s, and confirmed `materials` incremented by exactly `tilesOwned` after one payout cycle.
 
 ### 2. Teams — first version ✅ implemented (2026-09-26)
 
-Built as described in [Lobby, characters and teams](#lobby-characters-and-teams): teams are the 8 colors in the shared `TEAMS` catalog, chosen in the lobby (`selectTeam`), stored as `Player.teamId` (no separate `GameState.teams` map — a team has no state of its own yet). Teammates are allies: no friendly fire on players or structures, teammates' structures are walkable, and teammates don't take each other's tiles. **Tiles, credits and score stay per player** (tile-ownership option (a) from the original plan, without pooling); the results screen sums scores per team.
+Built as described in [Lobby, characters and teams](#lobby-characters-and-teams): teams are the 8 colors in the shared `TEAMS` catalog, chosen in the lobby (`selectTeam`), stored as `Player.teamId` (no separate `GameState.teams` map — a team has no state of its own yet). Teammates are allies: no friendly fire on players or structures, teammates' structures are walkable, and teammates don't take each other's tiles. **Tiles, materials and score stay per player** (tile-ownership option (a) from the original plan, without pooling); the results screen sums scores per team.
 
-Still open (pooling, a team win condition, team size and balancing): see [GAME_DESIGN → Teams](GAME_DESIGN.md#teams-planned-features-2). Technically, pooled tiles would mean `Tile.ownerId` = team id, and pooled credits would split each payout between teammates (with a remainder rule); either changes `CollisionSystem`, `EconomySystem` and `ScoreSystem`.
+Still open (pooling, a team win condition, team size and balancing): see [GAME_DESIGN → Teams](GAME_DESIGN.md#teams-planned-features-2). Technically, pooled tiles would mean `Tile.ownerId` = team id, and pooled materials would split each payout between teammates (with a remainder rule); either changes `CollisionSystem`, `EconomySystem` and `ScoreSystem`.
 
 ### 3. Scoring and win condition — scoring ✅ implemented (first version); win condition not yet
 
-- **Implemented (2026-09-20):** `Player.score` = tiles × 1 + kills × 50 + structures × 25, computed by `ScoreSystem` (see [Score](#score)); credits are excluded. The score badge and leaderboard show it. Match length is a single 5-minute `playing` phase (`MATCH_DURATION_MS`).
+- **Implemented (2026-09-20):** `Player.score` = tiles × 1 + kills × 50 + structures × 25, computed by `ScoreSystem` (see [Score](#score)); materials are excluded. The score badge and leaderboard show it. Match length is a single 5-minute `playing` phase (`MATCH_DURATION_MS`).
 - **Still to do:**
-  - Structure types with their own values: `Structure.type` and `placeStructure.structureType` **exist since 2026-09-26** (farm, mine, fort, power plant — the characters' starting structures; the earlier idea was city hall 1000, school 250, house 100, fort 25). Still needed: a per-type points lookup replacing `STRUCTURE_POINTS` and what each type *does*. (More can be bought in the shop since 2026-09-26, 100 credits each; see #9.)
+  - Structure types with their own values: `Structure.type` and `placeStructure.structureType` **exist since 2026-09-26** (farm, mine, fort, power plant — the characters' starting structures; the earlier idea was city hall 1000, school 250, house 100, fort 25). Still needed: a per-type points lookup replacing `STRUCTURE_POINTS` and what each type *does*. (More can be bought in the shop since 2026-09-26, 100 materials each; see #9.)
   - The win condition: **displayed** on the results screen (highest score wins, co-winners on a tie; see [Results screen](#results-screen)), but not yet more than that — team-level scoring (sum or average, decide) once teams exist, and a real tie-break, are still open.
   - The point values are first-pass numbers to tune in playtesting; the formula is expected to change as the buy menu lands.
 
-### 4. HUD (credits + score) — ✅ implemented
+### 4. HUD (materials + score) — ✅ implemented
 
-`client/src/components/HUD.tsx` — a React overlay (not a Phaser `UIScene`; see [Client — Phaser Game](#client--phaser-game) for why) rendered on top of the Phaser canvas by `GameScreen`. Shows the current phase and countdown, and the local player's health, ammo, tiles owned, and credits. A separate always-visible **score badge** (`ScoreBadge.tsx`, top center) shows the player's score (`utils/score.ts`; see #3). The HUD also shows the gun, structures left, the equipped upgrade and the Armor level.
+`client/src/components/HUD.tsx` — a React overlay (not a Phaser `UIScene`; see [Client — Phaser Game](#client--phaser-game) for why) rendered on top of the Phaser canvas by `GameScreen`. Shows the current phase and countdown, and the local player's health, ammo, tiles owned, and materials. A separate always-visible **score badge** (`ScoreBadge.tsx`, top center) shows the player's score (`utils/score.ts`; see #3). The HUD also shows the gun, structures left, the equipped upgrade and the Armor level.
 
 ### 5. Leaderboard / player-status info panel — ✅ implemented
 
@@ -1455,9 +1454,9 @@ Simulate the local player with the same acceleration model as `MovementSystem` (
 
 ### 9. Shop, upgrades and inventory — ✅ built (2026-09-26); balance still open
 
-**Where it lives:** during play, on the player's own time (a Shop button or `E`; nothing pauses while it's open). A 30-second `buying` phase before play existed from 2026-09-20 until **2026-09-26**, when the ready-up lobby replaced it; starting credits now come from the character (50, or 15 for the Smuggler).
+**Where it lives:** during play, on the player's own time (a Shop button or `E`; nothing pauses while it's open). A 30-second `buying` phase before play existed from 2026-09-20 until **2026-09-26**, when the ready-up lobby replaced it; starting materials now come from the character (50, or 15 for the Explorer).
 
-**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 credits for 30 shots) and **Expander** (100 credits; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures). The **Basic gun** was added 2026-09-26, since only the Smuggler starts armed. (The temporary `endBuying` shortcut went with the buying phase.) **Later on 2026-09-26** the catalog became data-driven and gained the Big gun, Speed boost, Armor and all four structures, the Basic gun went to 100, and the "coming soon" list was removed — see [Shop](#shop). **Later still:** upgrades got levels (Booster, Expander and Armor to 3, Wings 1; 100 credits a level), one slot upgrade is equipped at a time (5 s switch cooldown; Armor is always on), and the **Inventory** popup (`I`) shows guns, ammo, structures and upgrades and switches the slot.
+**Built (2026-09-20):** the menu (`BuyMenu.tsx`) lists real items with prices and Buy buttons — **Ammo pack** (30 materials for 30 shots) and **Expander** (100 materials; claim radius ×2, one per player, with a tinted circle) — see [Shop](#shop). Buttons disable when you can't afford an item or already own it. Below them a "coming soon" list shows the ideas that aren't buyable yet (better gun, armor, structures). The **Basic gun** was added 2026-09-26, since only the Explorer starts armed. (The temporary `endBuying` shortcut went with the buying phase.) **Later on 2026-09-26** the catalog became data-driven and gained the Big gun, Speed boost, Armor and all four structures, the Basic gun went to 100, and the "coming soon" list was removed — see [Shop](#shop). **Later still:** upgrades got levels (Booster, Expander and Armor to 3, Wings 1; 100 materials a level), one slot upgrade is equipped at a time (5 s switch cooldown; Armor is always on), and the **Inventory** popup (`I`) shows guns, ammo, structures and upgrades and switches the slot.
 
 **Still to design and build:** the open questions (ammo cap, per-gun fire rate, more items, shopping risk, snowballing) are in [GAME_DESIGN → Shop, weapons and balance](GAME_DESIGN.md#shop-weapons-and-balance-planned-features-9). Technically: a new item is an entry in `SHOP_ITEMS` (a new *kind* of effect also needs a line in `ShopSystem`), and a per-gun fire rate means a server-side fire-rate check in `GameRoom.handleShoot`. The Shop button and popup fit a 375px viewport in principle but haven't been tried on a real device.
 
@@ -1467,6 +1466,13 @@ Replace the lobby's native `<select>`s (currently restyled with `appearance: non
 - **Team picker:** a row/grid of **color swatches**, sized for touch on mobile (at least ~44px targets), showing which colors have players and which is yours.
 - **Character picker:** a custom component — likely cards with the character's art (once there is art, #7) and kit, rather than a text list.
 - Tidy other players' rows at phone width at the same time (see Known Issues).
+
+### 11. Inventory on the HUD — planned, deferred (requested 2026-09-27)
+
+Rules in [GAME_DESIGN → Inventory on the HUD](GAME_DESIGN.md#inventory-on-the-hud-planned-deferred). A React overlay on the right of `GameScreen` (like `HUD`), reading `me` from context:
+- **Structures:** one icon per type in `structureInventory` with its count; a click sets `selectedStructure` and arms build mode (the same path the Build button and the Inventory's Select use today), so the Build button can then be removed.
+- **Upgrades:** one icon per owned upgrade; a click sends `equipUpgrade` (`sendEquipUpgrade`), disabled by the same Wings-over-terrain check the Inventory uses. The server's switching cooldown was removed ahead of this (2026-09-27), so a click always switches at once.
+- Icons can start as the pickup shapes (`game/pickups.ts` → `pickupLook`) drawn to a small canvas or SVG, until there's art.
 
 ---
 
@@ -1514,7 +1520,7 @@ Technical decisions: how the game is built. Gameplay, balance, controls and pres
 | Movement model | Acceleration-limited velocity (`PLAYER_ACCEL`), world-space input vector (magnitude = speed) + facing angle | Instantly setting velocity from the input (previous behavior); stepping tile to tile | Smooth start/stop/turn at any angle and analog joystick speed, with a server change only in `MovementSystem`. `vx`/`vy`/`angle` are synced so clients can extrapolate and draw facing |
 | Speed metric | Uniform on screen: server measures speed/acceleration with world y scaled by `SCREEN_Y_SCALE` (= client `ISO_SQUASH`); client `UNIFORM_SCREEN_SPEED` sends the unnormalized `unproject`ed direction | Uniform in world space (previous behavior: up/down looked ~40% slower) | Requested after playtesting: with the tilted view, equal world speed reads as slower vertical movement. Costs a little "purity" (server knows the tilt) and makes vertical world distance/hexes cross faster. Reversible with `SCREEN_Y_SCALE = 1` + `UNIFORM_SCREEN_SPEED = false`. Projectiles use the same rule (see PvP Shooting) |
 | Swept projectile-vs-player test | Test the segment each projectile travelled this tick against the player's circle | End-point-only distance check (previous) | Making vertical shots screen-uniform raised their step to ~33 world px/tick vs a 22 px hit radius; grazing shots then skipped players (56–75% hit rate at the hitbox edge). Sweeping fixes it for every direction (100% in a Monte Carlo test) at the cost of a few multiplications per projectile-player pair |
-| Score display | `scoreFor(player)` in `utils/score.ts` returns credits for now; used by the badge and leaderboard | Show credits directly everywhere; design and build the scoring formula now | Real scoring has open questions (Planned Features #3), but the UI needs *a* score now. Routing through one function makes the eventual formula a one-line swap without touching components |
+| Score display | `scoreFor(player)` in `utils/score.ts` returns materials for now; used by the badge and leaderboard | Show materials directly everywhere; design and build the scoring formula now | Real scoring has open questions (Planned Features #3), but the UI needs *a* score now. Routing through one function makes the eventual formula a one-line swap without touching components |
 | Claimed-hex borders | Re-stroke each claimed hex with a darkened version of its own fill | Draw claims beneath the base outline; leave as one flat color | The claim fill covers the base outline, merging adjacent same-color hexes into a blob. Darkening the fill (not a fixed color) keeps borders visible on every player color |
 | Game screen container | `position: fixed; inset: 0` | `100vw × 100vh` inside the template `#root` (previous) | The template `#root` (1126px, min-height) plus 100vw/100vh produced scrollbars and clipped right-side overlays; fixed positioning takes the game out of that flow entirely |
 | Terrain rendering | Bake the base and claims layers into `RenderTexture`s (re-bake claims only when dirty) | Leave them as `Graphics` objects (previous) | Measured in the browser: with the base layer as `Graphics`, a frame cost ~53 ms of JS (hiding it dropped that to <1 ms), i.e. <20 fps; baked, it's ~0.75 ms/frame. Costs one ~3088×2157 texture (~26 MB) and needs a GPU max texture size ≥ that (fine on desktop; worth chunking for older mobile GPUs) |
@@ -1551,7 +1557,12 @@ Technical decisions: how the game is built. Gameplay, balance, controls and pres
 | Spawn slot storage | A plain, non-synced `spawnSlot` field on the `Player` schema class; slots picked as the lowest one no current player holds | A `Map<sessionId, slot>` in `GameRoom`; a synced `@type` field | `CombatSystem.respawnPlayer` needs the slot and only has `state`, so it lives on the player; clients never need it (they see positions). Computing free slots from the current players means a reconnect keeps its slot and a player who leaves for good frees theirs, with no extra bookkeeping |
 | Build selection | Client-only: `GameScreen` holds the picked type and sends it in `placeStructure` | A synced "selected structure" field on the player | The server already accepted any type in your inventory, so no protocol change was needed |
 | Claim income | Paid inside `CollisionSystem.claimTiles`, where the hex changes hands | A separate EconomySystem pass counting each tick's claims | The claim loop is the one place that knows a hex was taken; a second pass would have to re-derive it from the `tilesClaimed` batch |
-| Dev credits gate | Client sends only in Vite dev builds; server refuses when `NODE_ENV=production` (`DEV_CHEATS_ENABLED`) | Client-side check only; an opt-in env var | A client check alone can be bypassed by anyone sending the message; `NODE_ENV=production` is already set by the hosting guide's service, so hosted servers are safe without extra setup, while `npm run dev`, `npm start` and `tools/e2e.js` keep it on |
+| Dev materials gate | Client sends only in Vite dev builds; server refuses when `NODE_ENV=production` (`DEV_CHEATS_ENABLED`) | Client-side check only; an opt-in env var | A client check alone can be bypassed by anyone sending the message; `NODE_ENV=production` is already set by the hosting guide's service, so hosted servers are safe without extra setup, while `npm run dev`, `npm start` and `tools/e2e.js` keep it on |
 | Pickup state | A `MapSchema<Pickup>` whose item pickups carry a `ShopItemId`, applied through `ShopSystem.grant` | One field per pickup kind; drawing items into the terrain | Reuses the shop catalog for names, effects and the can-use rules, so a new shop item works as a pickup for free; a map gives cheap add/remove callbacks for the client |
 | First-claim tracking | A non-synced `claimedBefore` flag on each `Tile` | A `Set` of hex indices in `GameRoom`; a synced field | `claimTiles` already holds the tile; clients never need it |
 | Pickups feature flag | A constant with an environment override (`PICKUPS`), checked once in `onCreate` | A client toggle; a per-room option | Matches `TERRAIN_COVERAGE`/`PHASE_TIME_SCALE`; checking at creation keeps every other code path flag-free (an empty map does nothing) |
+| Credits → materials rename | Full rename, identifiers included: `Player.materials`, `MATERIALS_PER_CLAIM`, `DEV_MATERIALS`, `PICKUP_MATERIALS`, pickup kind `'materials'`, the `devMaterials` message | UI text only | One word for one concept in code and game. Client and server deploy together, so renaming a synced field and a message is safe; older doc text was reworded (the removed `CREDIT_PAYOUT_INTERVAL_MS` keeps its real name) |
+| Fabricate rename | Player-facing text, hotkey (`F` places, `E` opens the menu), the menu component (`BuyMenu` → `FabricateMenu`) and the structure id (`mine` → `fabricator`) changed; the catalog and protocol keep their shop names (`SHOP_ITEMS`, `ShopSystem`, `purchase`), and placing stays "build mode" in code | A full rename of every shop/build identifier, like the materials rename | Keeps the change reviewable: the shop names are ~20 identifiers across the protocol, both sides and the tests, with no player-visible effect. Documented under Game Mechanics → Shop; a follow-up can rename them if wanted |
+| Fabricator menu, Build on `B` (revised) | The menu component is `FabricatorMenu` (panel id `fabricator`), with no hotkey; placing is Build on `B` again | `FabricateMenu` on `E`, placing on `F` (previous, same day) | Follows the requested wording; `E` left unbound on purpose |
+| Removing the switching cooldown | Deleted outright: `UPGRADE_SWITCH_COOLDOWN_MS`, the synced `Player.upgradeSwitchReadyAt`, the Inventory countdown; the Inventory now re-renders every 200 ms with its own timer to keep the Wings check current (the countdown hook used to do that) | Setting the constant to 0 | Less state and no dead code; client and server deploy together, so dropping a synced field is safe |
+| Explorer rename | `CharacterId` `smuggler` → `explorer` everywhere (catalog, specs, e2e) | Display name only | Same reasoning as `mine` → `fabricator`: one name per thing; ids aren't stored anywhere that outlives a match |

@@ -8,7 +8,7 @@ describe('structureToBuild', () => {
 
     it('falls back to the first in the inventory when none is picked or the pick ran out', () => {
         expect(structureToBuild(['farm', 'fort'], undefined)).toBe('farm');
-        expect(structureToBuild(['mine', 'farm'], 'fort')).toBe('mine');
+        expect(structureToBuild(['fabricator', 'farm'], 'fort')).toBe('fabricator');
     });
 
     it('is undefined when there is nothing to build', () => {

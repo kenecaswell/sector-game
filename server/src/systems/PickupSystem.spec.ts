@@ -21,16 +21,16 @@ function run(state: GameState): PickupCollectedEvent[] {
 }
 
 describe('PickupSystem', () => {
-    it('credits and ammo: walking onto the hex takes the pile, once, and tells everyone', () => {
+    it('materials and ammo: walking onto the hex takes the pile, once, and tells everyone', () => {
         const state = world('playing', { tiles: false });
-        addPickup(state, 10, 10, { kind: 'credits', amount: 30 });
+        addPickup(state, 10, 10, { kind: 'materials', amount: 30 });
         addPickup(state, 12, 10, { kind: 'ammo', amount: 20 });
         const p = addPlayerAt(state, 'a', 10, 10);
-        expect(run(state)).toEqual([{ playerId: 'a', kind: 'credits', itemId: '', amount: 30 }]);
-        expect(p.credits).toBe(30);
+        expect(run(state)).toEqual([{ playerId: 'a', kind: 'materials', itemId: '', amount: 30 }]);
+        expect(p.materials).toBe(30);
         expect(state.pickups.size).toBe(1);
         expect(run(state)).toEqual([]);
-        expect(p.credits).toBe(30);
+        expect(p.materials).toBe(30);
 
         const q = addPlayerAt(state, 'b', 12, 10);
         run(state);
@@ -40,7 +40,7 @@ describe('PickupSystem', () => {
 
     it('does nothing next to the hex, outside the playing phase, or for a disconnected player', () => {
         const state = world('countdown', { tiles: false });
-        addPickup(state, 10, 10, { kind: 'credits', amount: 30 });
+        addPickup(state, 10, 10, { kind: 'materials', amount: 30 });
         const p = addPlayerAt(state, 'a', 11, 10);
         const q = addPlayerAt(state, 'b', 10, 10);
         run(state);
@@ -48,7 +48,7 @@ describe('PickupSystem', () => {
         q.connected = false;
         run(state);
         expect(state.pickups.size).toBe(1);
-        expect(p.credits + q.credits).toBe(0);
+        expect(p.materials + q.materials).toBe(0);
     });
 
     it('guns follow the shop rule: basic only when unarmed, big unless you have it', () => {

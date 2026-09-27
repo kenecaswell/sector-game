@@ -392,7 +392,7 @@ function CharacterCard({ character }: { character: Character }) {
     const stats: Array<[string, string]> = [
         ['Gun', character.gun ? GUN_NAMES[character.gun] : 'None'],
         ['Ammo', String(character.ammo)],
-        ['Credits', String(character.credits)],
+        ['Materials', String(character.materials)],
         ['Structures', list(character.structures.map((type) => STRUCTURE_NAMES[type]))],
         [
             'Upgrades',

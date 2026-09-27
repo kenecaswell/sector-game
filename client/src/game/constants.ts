@@ -98,7 +98,7 @@ export const CLAIM_BORDER_WIDTH = 2;
 // type reads from the top and the team from the edge. Chosen muted/pale so the team edge stands out.
 export const STRUCTURE_COLORS: Record<string, number> = {
     farm: 0xc5d86d, // pale lime: a field
-    mine: 0x6d4c41, // dark brown: earth
+    fabricator: 0x6d4c41, // dark brown (the color it had as the mine)
     fort: 0xb0a18a, // sandstone
     power: 0x80deea, // pale cyan: electric
 };
@@ -115,8 +115,8 @@ export const PICKUP_LIFT = 10;
 export const PICKUP_SCALE = 1.6; // drawPickup's shapes (~26 px) scaled to ~42 px: a hex top is ~64 px wide
 export const PICKUP_BOB = 3;
 export const PICKUP_BOB_MS = 900;
-export const PICKUP_COIN_COLOR = 0xf5c518; // gold
-export const PICKUP_COIN_RIM_COLOR = 0xa87c00;
+export const PICKUP_CRATE_COLOR = 0xc08a4a; // a wooden crate of materials
+export const PICKUP_CRATE_EDGE_COLOR = 0x6e4a22; // its planks' edges and cross brace
 export const PICKUP_AMMO_COLOR = 0xc9a227; // brass casings
 export const PICKUP_AMMO_TIP_COLOR = 0x8d8d8d; // lead tips
 export const PICKUP_GUN_COLORS: Record<string, number> = {

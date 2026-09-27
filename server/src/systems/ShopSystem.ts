@@ -5,7 +5,7 @@ import { UpgradeSystem } from './UpgradeSystem';
 /**
  * Buys `itemId` for `player` if it exists, they can afford it, and it would get them something
  * (`ownsShopItem`: not an upgrade already at its top level, not a gun that isn't better than theirs). Deducts the
- * credits and applies what the item gives (see SHOP_ITEMS):
+ * materials and applies what the item gives (see SHOP_ITEMS):
  *  - gun:       replaces the player's gun (basic -> big is an upgrade; never a downgrade).
  *  - ammo:      + that many shots (no cap yet). Buyable without a gun.
  *  - upgrade:   up a level (permanently; survives respawns). A slot upgrade bought with the slot
@@ -19,9 +19,9 @@ function purchase(player: Player, itemId: unknown): boolean {
     if (!isShopItemId(itemId)) return false;
 
     const item = SHOP_ITEMS[itemId];
-    if (player.credits < item.cost || ownsShopItem(player, itemId)) return false;
+    if (player.materials < item.cost || ownsShopItem(player, itemId)) return false;
 
-    player.credits -= item.cost;
+    player.materials -= item.cost;
     grant(player, itemId);
     return true;
 }

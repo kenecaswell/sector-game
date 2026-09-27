@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pickupLook } from './pickups';
 import {
-    PICKUP_COIN_COLOR,
+    PICKUP_CRATE_COLOR,
     PICKUP_GUN_COLORS,
     PICKUP_UPGRADE_COLORS,
     STRUCTURE_COLORS,
@@ -9,10 +9,10 @@ import {
 import { UPGRADE_IDS } from '../types/shared';
 
 describe('pickupLook', () => {
-    it('credits are a gold coin and ammo is rounds', () => {
-        expect(pickupLook('credits', '')).toMatchObject({
-            shape: 'coin',
-            color: PICKUP_COIN_COLOR,
+    it('materials are a wooden crate and ammo is rounds', () => {
+        expect(pickupLook('materials', '')).toMatchObject({
+            shape: 'crate',
+            color: PICKUP_CRATE_COLOR,
         });
         expect(pickupLook('ammo', '').shape).toBe('ammo');
     });
@@ -36,9 +36,9 @@ describe('pickupLook', () => {
     });
 
     it('structures are a tiny slab in the type color', () => {
-        expect(pickupLook('item', 'mine')).toMatchObject({
+        expect(pickupLook('item', 'fabricator')).toMatchObject({
             shape: 'structure',
-            color: STRUCTURE_COLORS.mine,
+            color: STRUCTURE_COLORS.fabricator,
         });
     });
 });
