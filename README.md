@@ -84,7 +84,7 @@ Before committing, run `npm run build && npm run lint` in whichever folder you c
 
 Health check: `GET http://localhost:2567/health` returns `{"status":"ok"}`.
 
-Gameplay tunables (tick rate, speeds, damage, hex size, credit payout, …) live in [`server/src/constants.ts`](server/src/constants.ts). The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
+Gameplay tunables (tick rate, speeds, damage, hex size, credits per claim, …) live in [`server/src/constants.ts`](server/src/constants.ts). The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
 
 ### Testing on a phone or another machine
 
@@ -112,6 +112,7 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Shop | **Shop** button (below Leaderboard) or `E`; `Esc` closes | **Shop** button |
 | Inventory (your gun, ammo, structures, upgrades; pick which structure Build places; switch the equipped upgrade) | **Inventory** button (below Shop) or `I`; `Esc` closes | **Inventory** button |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
+| **Dev only (temporary):** +500 credits | `M` during the match, in a dev build (`npm run dev`); a server started with `NODE_ENV=production` refuses it | — |
 
 Your score is always shown at the top center. The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
 
@@ -154,7 +155,7 @@ The shop offers your next level of each upgrade. Levels last the whole match. Yo
 
 **Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you build on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, mine: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
-Every 10 seconds each player earns 1 credit per hex they own, to spend in the shop. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
+Each hex you claim (unclaimed or an enemy's) earns you 1 credit to spend in the shop. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
 Players start on a line near the right-hand edge of the map: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
 

@@ -100,5 +100,4 @@ export class GameState
     @type(GamePhaseState) phase = new GamePhaseState();
     @type('number') mapWidth: number = 64;
     @type('number') mapHeight: number = 64;
-    @type('number') nextPayoutAt: number = 0; // server timestamp ms, next credit payout
 }

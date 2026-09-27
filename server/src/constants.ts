@@ -52,7 +52,13 @@ export const TILE_POINTS = 1;
 export const KILL_POINTS = 50;
 export const STRUCTURE_POINTS = 25;
 
-export const CREDIT_PAYOUT_INTERVAL_MS = 10_000; // 1 credit per owned tile, every 10s
+// Credits come only from claiming: this many for each hex you take (unclaimed or an enemy's).
+export const CREDITS_PER_CLAIM = 1;
+
+// DEV ONLY (temporary): the M key sends 'devCredits', which adds DEV_CREDITS during the match.
+// Refused when NODE_ENV is 'production'. Remove before hosting (see docs/HOSTING.md).
+export const DEV_CREDITS = 500;
+export const DEV_CHEATS_ENABLED = process.env.NODE_ENV !== 'production';
 
 // Terrain generation (see terrain.ts and docs/GAME_DESIGN.md → Terrain). A new layout is made for
 // every match. Features keep at least one ground hex between them, so these sizes are exact.

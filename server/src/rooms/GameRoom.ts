@@ -13,12 +13,7 @@ import { StructureSystem } from '../systems/StructureSystem';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { freeSpawnSlot, generateTerrain, seededRandom, spawnPoint } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
-import {
-    TICK_RATE,
-    RECONNECT_WINDOW_SECONDS,
-    CREDIT_PAYOUT_INTERVAL_MS,
-    SCREEN_Y_SCALE,
-} from '../constants';
+import { TICK_RATE, RECONNECT_WINDOW_SECONDS, SCREEN_Y_SCALE } from '../constants';
 import type {
     InputMessage,
     ShootMessage,
@@ -63,7 +58,6 @@ export class GameRoom extends Room<GameState> {
             tile.terrain = terrain[i];
             state.tiles.push(tile);
         }
-        state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
         this.setState(state);
 
         this.setSimulationInterval((dt) => this.tick(dt / 1000), 1000 / TICK_RATE);
@@ -89,6 +83,10 @@ export class GameRoom extends Room<GameState> {
         );
         this.onMessage<EquipUpgradeMessage>('equipUpgrade', (client, msg) =>
             this.withPlayer(client, (p) => UpgradeSystem.equip(this.state, p, msg?.upgradeId))
+        );
+        // DEV ONLY (temporary): the M key. EconomySystem refuses it with NODE_ENV=production.
+        this.onMessage('devCredits', (client) =>
+            this.withPlayer(client, (p) => EconomySystem.grantDevCredits(this.state, p))
         );
         this.onMessage<PurchaseMessage>('purchase', (client, msg) =>
             this.handlePurchase(client, msg)
@@ -204,7 +202,6 @@ export class GameRoom extends Room<GameState> {
         CombatSystem.update(this.state, dt, this.broadcastEvent);
         PhaseSystem.update(this.state, this.broadcastEvent);
         this.closeFinishedMatch();
-        EconomySystem.update(this.state);
         ScoreSystem.update(this.state);
     }
 

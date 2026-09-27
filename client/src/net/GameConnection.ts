@@ -188,6 +188,11 @@ export function sendEquipUpgrade(
     room.send<EquipUpgradeMessage>('equipUpgrade', { upgradeId });
 }
 
+/** DEV ONLY (temporary): ask the server for DEV_CREDITS (500). The M key, in dev builds only. */
+export function sendDevCredits(room: GameRoom): void {
+    room.send('devCredits');
+}
+
 export function sendSetName(room: GameRoom, name: string): void {
     room.send<SetNameMessage>('setName', { name });
 }

@@ -133,6 +133,9 @@ async function goTo(room, target, ms = 4000) {
     await sleep(250);
 }
 const hexUnder = (room) => pixelToHex(me(room).x, me(room).y);
+// A player's credits minus what they earned claiming (CREDITS_PER_CLAIM a hex; the spawn hex is
+// claimed at once), i.e. what's left of their character's starting credits if they bought nothing.
+const kitCredits = (p) => p.credits - p.tilesOwned * C.CREDITS_PER_CLAIM;
 const drop = (room) => room.connection.transport.ws.close(4001); // an unclean close, like a network drop
 
 // ---------------------------------------------------------------------------------------------
@@ -254,11 +257,11 @@ async function lifecycle() {
             "each player starts the match with their character's kit",
             me(a).gun === '' &&
                 me(a).ammo === farmer.ammo &&
-                me(a).credits === farmer.credits &&
+                kitCredits(me(a)) === farmer.credits &&
                 Array.from(me(a).structureInventory).join() === farmer.structures.join() &&
                 b.state.players.get(b.sessionId).gun === smuggler.gun &&
                 me(b).ammo === smuggler.ammo &&
-                me(b).credits === smuggler.credits
+                kitCredits(me(b)) === smuggler.credits
         );
 
         a.send('shoot', { angle: 0, seq: ++seq });
@@ -427,13 +430,20 @@ async function shop() {
             me(a).ammo === shared.AMMO_PACK_SIZE &&
                 me(a).credits === start - shared.SHOP_ITEMS.ammo.cost
         );
+        const beforeDev = me(a).credits;
+        a.send('devCredits');
+        await sleep(300);
+        check(
+            'DEV: the devCredits message (the M key) adds DEV_CREDITS',
+            me(a).credits === beforeDev + C.DEV_CREDITS
+        );
 
         const late = await join(new Client(URL));
         check(
             'someone joining mid-match plays the default character, kit included',
             phaseOf(late) === 'playing' &&
                 me(late).character === shared.DEFAULT_CHARACTER &&
-                me(late).credits === shared.CHARACTERS[shared.DEFAULT_CHARACTER].credits
+                kitCredits(me(late)) === shared.CHARACTERS[shared.DEFAULT_CHARACTER].credits
         );
     });
 }

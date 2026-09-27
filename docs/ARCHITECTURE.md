@@ -197,7 +197,7 @@ Each side keeps its usual import paths: `server/src/types/shared.ts`, `server/sr
 │   │   │   ├── CombatSystem.ts     # Projectile movement, hit detection, respawn-on-death
 │   │   │   ├── StructureSystem.ts  # Structure damage/destruction
 │   │   │   ├── PhaseSystem.ts      # Phase transitions; times playing -> results
-│   │   │   ├── EconomySystem.ts    # Credit payouts (1/tile/10s)
+│   │   │   ├── EconomySystem.ts    # Dev-only credit grant (claim income is in CollisionSystem)
 │   │   │   ├── ScoreSystem.ts      # Recomputes each player's score: tiles + kills x 50 + structures
 │   │   │   └── ShopSystem.ts       # Validates and applies purchases (guns, ammo, upgrade levels, structures)
 │   │   ├── test/
@@ -334,6 +334,10 @@ WebSocket via Colyseus protocol. Colyseus handles:
 // phase only; refused during the switch cooldown, and for leaving Wings over solid terrain.
 { type: "equipUpgrade", upgradeId: UpgradeId | "" }
 
+// DEV ONLY (temporary): +DEV_CREDITS (500) during `playing`; the M key in dev builds. Refused by a
+// server running with NODE_ENV=production.
+{ type: "devCredits" }
+
 // Reconnect (sent automatically by Colyseus client)
 { type: "reconnect", reconnectionToken: string }
 ```
@@ -375,7 +379,7 @@ Client tags each input with an incrementing `seq` number. The server stores each
 The room is thin: it wires messages and the tick to the systems, which hold the rules. **Read `server/src/rooms/GameRoom.ts` itself** (about 290 lines). An earlier version of this section copied the whole file in, and the copy drifted out of date. Here is a map of it instead (checked against the code 2026-09-26):
 
 - **Private fields** (not synced, since clients don't need them): `playerInputs` (last input per session; not named `inputs`, see above), `matchFinished`, `closing` and `nextProjectileId`.
-- **`onCreate`** builds a `GameState`. It fills `tiles` from `generateTerrain(mapWidth, mapHeight, seededRandom(random seed))`, a fresh map every match (see *Terrain*). It then sets `nextPayoutAt`, calls `setState`, and starts `setSimulationInterval` at `TICK_RATE` (20 Hz). Message handlers:
+- **`onCreate`** builds a `GameState`. It fills `tiles` from `generateTerrain(mapWidth, mapHeight, seededRandom(random seed))`, a fresh map every match (see *Terrain*). It then calls `setState`, and starts `setSimulationInterval` at `TICK_RATE` (20 Hz). Message handlers:
   - `input` goes to `handleInput`. It clamps the direction (x to ±1, y to ±1/`SCREEN_Y_SCALE`), stores it with `receivedAt`, sanitizes `angle`, and replies with `inputAck`.
   - `shoot` goes to `handleShoot`. The phase must be `playing`, and the player needs a gun and ammo. It spends 1 ammo and stamps the projectile's `damage` from `GUN_DAMAGE`.
   - `placeStructure` goes to `handlePlaceStructure`. The phase must be `playing`, the type must be in the player's `structureInventory`, and `StructureSystem.canPlace` must allow the spot. It removes that inventory entry.
@@ -388,7 +392,7 @@ The room is thin: it wires messages and the tick to the systems, which hold the 
   - The player takes the lowest free spawn slot (`freeSpawnSlot`, kept on the non-synced `Player.spawnSlot`, so a reconnect keeps it) and is placed on that slot's hex (`spawnPoint`). See *Spawn line* under Game Mechanics → Terrain.
 - **`onLeave`** sets `connected = false`. If the leave was consented, or the match is in results, it calls `cleanupPlayer` right away. Otherwise it broadcasts `playerDisconnected` and runs `allowReconnection` for `RECONNECT_WINDOW_SECONDS` (180). When the player returns, it broadcasts `playerReconnected` to everyone except them. If the window runs out, it calls `cleanupPlayer`. See [Reconnection System](#reconnection-system).
 - **`cleanupPlayer`** releases the player's tiles and deletes the player and their input. Their structures stay.
-- **`tick(dt)`** runs, in this order: `LobbySystem`, `MovementSystem`, `CollisionSystem`, `CombatSystem`, `PhaseSystem`, `closeFinishedMatch`, `EconomySystem`, `ScoreSystem`.
+- **`tick(dt)`** runs, in this order: `LobbySystem`, `MovementSystem`, `CollisionSystem`, `CombatSystem`, `PhaseSystem`, `closeFinishedMatch`, `ScoreSystem`. (`EconomySystem` had a timed payout here until 2026-09-26.)
 - **`closeFinishedMatch`** runs once the phase is `results`. The first time, it calls `lock()`, refreshes scores and broadcasts the `gameOver` snapshot. When results end, it calls `disconnect()`. See [Room Lifecycle](#room-lifecycle).
 
 Systems are plain modules (not Room subclasses) so they're unit-testable without a live Room — see [Testing Multiplayer Locally](#testing-multiplayer-locally). GameRoom passes a `Broadcast` callback (`(type, payload) => this.broadcast(type, payload)`) into each system's `update()` so they can emit discrete events without needing a reference to the Room itself.
@@ -458,7 +462,7 @@ export class Player extends Schema {
   @type('number')  tilesOwned: number = 0;
   @type('number')  kills: number = 0;
   @type('number')  score: number = 0;            // computed by ScoreSystem: tiles + kills x 50 + structures (no credits)
-  @type('number')  credits: number = 0;          // see EconomySystem
+  @type('number')  credits: number = 0;          // + CREDITS_PER_CLAIM per hex claimed (CollisionSystem)
   @type('number')  claimRadius: number = 32;     // world px (BASE_CLAIM_RADIUS); 80 once the Expander is owned
   @type('boolean') connected: boolean = true;
   @type('string')  color: string = '';           // always the team's color (TEAMS)
@@ -514,7 +518,6 @@ export class GameState extends Schema {
   @type(GamePhaseState)       phase       = new GamePhaseState();
   @type('number')             mapWidth: number  = 64;
   @type('number')             mapHeight: number = 64;
-  @type('number')             nextPayoutAt: number = 0; // server timestamp ms, next EconomySystem payout
 }
 ```
 
@@ -692,11 +695,10 @@ Rebuilt 2026-09-26 as a data-driven catalog: each `SHOP_ITEMS` entry has a `cate
 
 > Rules: [Economy and shop](GAME_DESIGN.md#economy-and-shop).
 
-- `EconomySystem` pays every player with `tilesOwned > 0` `credits += tilesOwned`, once every `CREDIT_PAYOUT_INTERVAL_MS` (10s)
-- It runs only during `playing` — no payouts in `lobby` (no tiles are ownable yet) or `results` (match is already decided)
+- **Income is per claim** (2026-09-26): `CollisionSystem.claimTiles` adds `CREDITS_PER_CLAIM` (1) to `credits` for every hex it hands to a player (unclaimed or taken from an enemy). The previous owner keeps what they earned. Claiming only runs during `playing`, so income does too. The timed payout (`EconomySystem.update`, `CREDIT_PAYOUT_INTERVAL_MS`, the synced `GameState.nextPayoutAt`) was removed.
 - Starting credits are set by `CharacterSystem.apply` from the character's kit (`STARTING_CREDITS` was removed 2026-09-26).
-- Uses a wall-clock `GameState.nextPayoutAt` timestamp rather than counting ticks, so it stays correct if `TICK_RATE` ever changes — same pattern as `GamePhaseState.endsAt`
-- No discrete broadcast event for a payout — `Player.credits` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
+- No discrete broadcast event for income — `Player.credits` is a plain synced field, so clients see it update via the normal state delta, the same way `x`/`y`/`health` do
+- **Dev only (temporary):** the client's `M` key (only when `import.meta.env.DEV`, i.e. the Vite dev server) sends `devCredits` (no payload, via `sendDevCredits` in `net/GameConnection.ts`); `EconomySystem.grantDevCredits` adds `DEV_CREDITS` (500) during `playing`, unless `DEV_CHEATS_ENABLED` is false (`NODE_ENV=production`). Covered by `EconomySystem.spec.ts` and an e2e check. Remove before release.
 - Spending is the only sink: credits leave when a purchase succeeds (`ShopSystem.purchase`). Nothing else consumes them.
 
 ---
@@ -1079,7 +1081,7 @@ This was a throwaway script (not checked into the client), but the same coverage
 Until this date the Phaser view had only been verified by typecheck/lint/headless scripts. Driving the Vite dev server (`vite`, port 5173 by default) against the live server in a browser confirmed:
 - Lobby lists the joined player ("Player 1 (you)"); **Start Game** moves to `claiming` and the phase countdown ticks down.
 - `GameScreen` renders: tile grid, the local player's circle centered on screen, HUD (phase/health/ammo/tiles/credits) top-left, leaderboard top-right.
-- Keyboard movement claims tiles: `tilesOwned` went 1 → 28 during a short run, tiles are drawn in the player's color, and `credits` incremented on the 10s payout.
+- Keyboard movement claims tiles: `tilesOwned` went 1 → 28 during a short run, tiles are drawn in the player's color, and `credits` incremented on the 10s payout (the payout was replaced by per-claim income on 2026-09-26).
 
 Not yet exercised in a browser: combat phase, shooting, structure placement/destruction, the mobile joystick and Build button, reconnection after a dropped socket or refresh, multiple simultaneous players, the `results`/game-over screen.
 
@@ -1385,6 +1387,8 @@ Captured 2026-09-20 as design ideas; the Phaser game view work session that foll
 
 ### 1. Credits (economy) — ✅ implemented
 
+> **Superseded 2026-09-26:** income is now `CREDITS_PER_CLAIM` per hex claimed; the timed payout and `nextPayoutAt` below are gone. See Game Mechanics → *Economy (Credits)*.
+
 - `Player.credits: number` (synced schema field) and `GameState.nextPayoutAt: number` (server timestamp of the next payout, same pattern as `GamePhaseState.endsAt`).
 - `server/src/systems/EconomySystem.ts`: every `CREDIT_PAYOUT_INTERVAL_MS` (10s, in `constants.ts`), every player with `tilesOwned > 0` gets `credits += tilesOwned`. Runs only during `playing` — payouts stop once `results` begins, per the open question raised when this was planned.
 - Wired into `GameRoom.tick()` alongside the other systems; `nextPayoutAt` is initialized in `onCreate()`.
@@ -1528,3 +1532,5 @@ Technical decisions: how the game is built. Gameplay, balance, controls and pres
 | Upgrade data | One numeric field per upgrade level (`boosterLevel`, …) plus `equippedUpgrade` / `upgradeSwitchReadyAt` on `Player` | A `MapSchema` of levels; keeping the `upgrades` list with repeats | Plain fields sync through the player's normal change events (no extra listeners on the client) and satisfy the shared `PlayerState` `implements` check, which a `MapSchema` doesn't. Adding an upgrade means adding a field, which is rare |
 | Spawn slot storage | A plain, non-synced `spawnSlot` field on the `Player` schema class; slots picked as the lowest one no current player holds | A `Map<sessionId, slot>` in `GameRoom`; a synced `@type` field | `CombatSystem.respawnPlayer` needs the slot and only has `state`, so it lives on the player; clients never need it (they see positions). Computing free slots from the current players means a reconnect keeps its slot and a player who leaves for good frees theirs, with no extra bookkeeping |
 | Build selection | Client-only: `GameScreen` holds the picked type and sends it in `placeStructure` | A synced "selected structure" field on the player | The server already accepted any type in your inventory, so no protocol change was needed |
+| Claim income | Paid inside `CollisionSystem.claimTiles`, where the hex changes hands | A separate EconomySystem pass counting each tick's claims | The claim loop is the one place that knows a hex was taken; a second pass would have to re-derive it from the `tilesClaimed` batch |
+| Dev credits gate | Client sends only in Vite dev builds; server refuses when `NODE_ENV=production` (`DEV_CHEATS_ENABLED`) | Client-side check only; an opt-in env var | A client check alone can be bypassed by anyone sending the message; `NODE_ENV=production` is already set by the hosting guide's service, so hosted servers are safe without extra setup, while `npm run dev`, `npm start` and `tools/e2e.js` keep it on |

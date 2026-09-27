@@ -1,25 +1,17 @@
-import type { GameState } from '../state/GameState';
-import { CREDIT_PAYOUT_INTERVAL_MS } from '../constants';
+import type { GameState, Player } from '../state/GameState';
+import { DEV_CHEATS_ENABLED, DEV_CREDITS } from '../constants';
+
+// Credits are earned by claiming hexes (CREDITS_PER_CLAIM, paid in CollisionSystem.claimTiles) and
+// spent in the shop (ShopSystem). There's no timed payout any more (until 2026-09-26: 1 credit per
+// owned hex every 10 s).
 
 /**
- * Pays out 1 credit per tile a player owns, every CREDIT_PAYOUT_INTERVAL_MS.
- * Runs only during `playing` — payouts stop once `results` begins so the
- * economy can't change after the match is decided, and `lobby` has no owned
- * tiles yet regardless.
- *
- * Uses a wall-clock `nextPayoutAt` timestamp (like PhaseSystem's `endsAt`)
- * rather than counting ticks, so payouts stay correct even if TICK_RATE changes.
+ * DEV ONLY (temporary): adds DEV_CREDITS, so shop items can be tried without claiming for minutes.
+ * Playing phase only, and refused when the server runs with NODE_ENV=production.
  */
-function update(state: GameState): void {
-    const phase = state.phase.phase;
-    if (phase !== 'playing') return;
-    if (Date.now() < state.nextPayoutAt) return;
-
-    state.players.forEach((player) => {
-        if (player.tilesOwned > 0) player.credits += player.tilesOwned;
-    });
-
-    state.nextPayoutAt = Date.now() + CREDIT_PAYOUT_INTERVAL_MS;
+function grantDevCredits(state: GameState, player: Player, enabled = DEV_CHEATS_ENABLED): void {
+    if (!enabled || state.phase.phase !== 'playing') return;
+    player.credits += DEV_CREDITS;
 }
 
-export const EconomySystem = { update };
+export const EconomySystem = { grantDevCredits };

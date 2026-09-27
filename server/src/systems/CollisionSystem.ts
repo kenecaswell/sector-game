@@ -1,5 +1,5 @@
 import type { GameState } from '../state/GameState';
-import { HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
+import { CREDITS_PER_CLAIM, HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
 import {
     hexCenter,
     hexIndex,
@@ -50,11 +50,19 @@ function checkProjectileStructureCollision(
 /**
  * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
  * their `claimRadius` (the Expander upgrade doubles it). A hex in an enemy structure's footprint
- * can't be claimed — the structure protects its tile — and a teammate's hex is left alone.
+ * can't be claimed — the structure protects its tile — and a teammate's hex is left alone. Each
+ * hex taken pays CREDITS_PER_CLAIM.
  */
 function claimTiles(
     state: GameState,
-    player: { id: string; x: number; y: number; tilesOwned: number; claimRadius: number },
+    player: {
+        id: string;
+        x: number;
+        y: number;
+        tilesOwned: number;
+        claimRadius: number;
+        credits: number;
+    },
     claimed: TilesClaimedEvent['tiles']
 ): void {
     const { col: centerCol, row: centerRow } = pixelToHex(player.x, player.y);
@@ -87,6 +95,7 @@ function claimTiles(
             }
             tile.ownerId = player.id;
             player.tilesOwned++;
+            player.credits += CREDITS_PER_CLAIM;
             claimed.push({ x: col, y: row, ownerId: player.id });
         }
     }

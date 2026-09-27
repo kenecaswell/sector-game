@@ -245,7 +245,8 @@ Implementation: [Structures: footprint and shape](ARCHITECTURE.md#structures-foo
 
 ### Credits ✅
 
-- **Income:** every 10 seconds (`CREDIT_PAYOUT_INTERVAL_MS`) you earn **1 credit for each hex you own**. Income only runs during the match.
+- **Income:** 🧪 you earn **5 credits for each hex you claim** (`CREDITS_PER_CLAIM`), whether it was unclaimed or an enemy's, paid the moment you take it. Hexes you already own earn nothing more, and losing a hex doesn't cost you the credits it paid. Claiming only happens during the match, so income does too. (Until 2026-09-26 income was 1 credit per owned hex every 10 seconds.)
+- 🛠️ **Dev only (temporary):** `M` adds 500 credits during the match, in dev builds, so shop items can be tried quickly. The server refuses it when run with `NODE_ENV=production`; remove it before release.
 - **Starting credits** come from your character: 50, or 15 for the Smuggler.
 - **Spending** in the shop is the only thing that uses credits up.
 - **Credits are not part of your score**, so buying things never costs you points.
@@ -303,7 +304,7 @@ The full list of controls for players is in the README's [Controls](../README.md
 - **Right-click to walk to a spot** on desktop. Any movement key cancels it.
 - **Shooting:** Space (hold to keep firing) or click, toward the mouse. On touch, the **FIRE** button fires along your movement direction, and tapping the map fires toward that spot.
 - **Touch:** a virtual joystick (bottom left) and FIRE and Build buttons (bottom right). The FIRE button only appears once you have a gun.
-- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it), `E` shop, `I` inventory, `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout.
+- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it), `E` shop, `I` inventory, `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout. `M` (dev builds only, temporary) adds 500 credits.
 - 📝 **Touch aiming** is limited to your movement direction or a tapped spot; there's no second aiming stick.
 
 Implementation: [Input — desktop and mobile share one message contract](ARCHITECTURE.md#input--desktop-and-mobile-share-one-message-contract), [Movement](ARCHITECTURE.md#movement).
@@ -330,7 +331,7 @@ Implementation: [Input — desktop and mobile share one message contract](ARCHIT
 Things that need a design decision, not just code. Where one is also tracked in the technical roadmap, the [Planned Features](ARCHITECTURE.md#planned-features) number is given.
 
 ### Teams (Planned Features #2)
-- **Pooling:** should hexes belong to the team, and/or should credits be split between teammates on each payout? Either one changes claiming, income and score.
+- **Pooling:** should hexes belong to the team, and/or should credits earned from a claim be split between teammates? Either one changes claiming, income and score.
 - **Team win condition:** does the best team win (by total or average score?), or the best player?
 - **Team size and balance:** today anyone can join any color, including everyone on one team.
 
@@ -345,7 +346,8 @@ Things that need a design decision, not just code. Where one is also tracked in 
 - **More items:** stronger armor, and whatever structure types end up doing.
 - **Shopping risk:** maybe only allow buying while standing on your own territory (or near a city hall). Not decided.
 - **Snowballing:** territory income and purchases compound for whoever is ahead. The Expander in particular is strong (up to 9 hexes at a time) for 100 credits. Options: rising prices, a radius cap, or stackable upgrades with rising costs.
-- **Early game:** nothing but ammo is affordable at the start; check whether that feels right.
+- **Early game:** nothing but ammo is affordable at the start, but at 5 credits a hex a 100-credit item is 20 fresh hexes away; check whether that feels right.
+- **Income from re-taking ground:** each claim pays, so a hex that changes hands keeps paying whoever takes it. Is back-and-forth fighting over a border meant to be that lucrative, or should a hex pay only the first time it's claimed?
 
 ### Map and spawning
 - **Starting positions:** ✅ decided 2026-09-26 (spawn line, see [The map](#the-map)). Still open: should teammates start next to each other rather than in join order?
@@ -439,3 +441,5 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Spawn line | Players start near the east edge in one column, first joiner in the middle, later ones alternating above and below, 6 rows apart; you keep your spot all match and respawn there; every spot's area (3 steps) is kept clear of terrain | Everyone at the map center (previous); spots spread by the current player count; respawning at the center or a random spot | Requested (2026-09-26): start on the far right, first player central, more players further toward the top and bottom. Respawning at your own spot and keeping the areas clear are my choices: you come back somewhere you know, can always build where you start, and a whole line of spots is too many to clear at the old 4-step radius (it's now 3) |
 | Choosing what Build places | Pick a structure type in the inventory (Select / Selected); Build places it while you have one, else the first in your inventory; the Build button names it and counts that type | Build cycles types; a picker next to the Build button | Requested (2026-09-26). The inventory already lists structures by type, and a pick that runs out falls back instead of disabling Build |
 | Equipped button | The equipped upgrade's button is a disabled "Equipped"; there's no way to empty the slot from the inventory | "Unequip", which emptied the slot (previous) | Requested (2026-09-26). The server still accepts an empty-slot request, so this is a client-only change |
+| Income from claiming | 5 credits per hex claimed (unclaimed or an enemy's), paid on the claim; no timed income | 1 credit per owned hex every 10 s (previous) | Requested (2026-09-26). Rewards moving and taking ground rather than sitting on it. Credits aren't taken back when a hex is lost (my choice: simplest, and it makes the number on screen only go up from play) |
+| Dev credits key | `M` adds 500 credits during the match, dev builds only, refused by a production server | A lobby option; an environment variable for starting credits | Requested as a temporary development aid, so shop items and upgrades can be tried without long play |

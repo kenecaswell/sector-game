@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { useGameConnection } from '../context/GameContext';
 import { createPhaserGame } from '../game/PhaserGame';
+import { sendDevCredits } from '../net/GameConnection';
 import type { GameScene } from '../game/scenes/GameScene';
 import { BuyMenu } from '../components/BuyMenu';
 import { Inventory } from '../components/Inventory';
@@ -122,7 +123,8 @@ export function GameScreen() {
 
     // B toggles build mode, E the shop, I the inventory, L the leaderboard; Esc leaves build mode
     // and closes any popup; ` toggles the FPS readout. Phaser only captures the keys it registers
-    // (WASD, arrows, Space), so these don't conflict.
+    // (WASD, arrows, Space), so these don't conflict. DEV ONLY (temporary): M adds 500 credits, in
+    // dev builds (`npm run dev`) only; the server refuses it when run with NODE_ENV=production.
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.repeat) return;
@@ -133,6 +135,8 @@ export function GameScreen() {
                 setPanel((open) => (open === 'shop' ? 'none' : 'shop'));
             } else if (key === 'i' && shopAvailable) {
                 setPanel((open) => (open === 'inventory' ? 'none' : 'inventory'));
+            } else if (key === 'm' && phase === 'playing' && import.meta.env.DEV && room) {
+                sendDevCredits(room);
             } else if (key === 'b' && phase === 'playing') {
                 toggleBuildMode();
             } else if (key === 'escape') {
@@ -142,7 +146,7 @@ export function GameScreen() {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [shopAvailable, phase, toggleBuildMode]);
+    }, [shopAvailable, phase, toggleBuildMode, room]);
 
     return (
         // Fixed to the viewport, outside the page's normal flow. (Sizing this 100vw x 100vh inside the

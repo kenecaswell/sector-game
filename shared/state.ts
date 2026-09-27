@@ -79,5 +79,4 @@ export interface GameStateShape {
     phase: GamePhaseStateShape;
     mapWidth: number;
     mapHeight: number;
-    nextPayoutAt: number;
 }
