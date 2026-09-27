@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EXPANDER_CLAIM_RADIUS } from '../constants';
+import { EXPANDER_CLAIM_RADII } from '../constants';
 import { Player } from '../state/GameState';
 import { AMMO_PACK_SIZE, SHOP_ITEMS } from '../types/shared';
 import { CharacterSystem } from './CharacterSystem';
@@ -11,7 +11,16 @@ describe('ShopSystem — prices', () => {
     it('guns 100 / 200, upgrades and structures 100, ammo 1 credit per shot', () => {
         expect(SHOP_ITEMS.basicGun.cost).toBe(100);
         expect(SHOP_ITEMS.bigGun.cost).toBe(200);
-        for (const id of ['boost', 'armor', 'expander', 'farm', 'mine', 'fort', 'power'] as const) {
+        for (const id of [
+            'booster',
+            'armor',
+            'expander',
+            'wings',
+            'farm',
+            'mine',
+            'fort',
+            'power',
+        ] as const) {
             expect(SHOP_ITEMS[id].cost, id).toBe(100);
         }
         expect(SHOP_ITEMS.ammo.cost).toBe(AMMO_PACK_SIZE);
@@ -77,37 +86,63 @@ describe('ShopSystem — weapons', () => {
 });
 
 describe('ShopSystem — upgrades', () => {
-    it('Armor doubles max health and adds the extra 100 right away', () => {
+    it('Armor is always on: +100 max health per level (200 / 300 / 400), added right away', () => {
         const p = buyer();
         p.health = 40;
         expect(ShopSystem.purchase(p, 'armor')).toBe(true);
-        expect([p.maxHealth, p.health]).toEqual([200, 140]);
+        expect([p.armorLevel, p.maxHealth, p.health]).toEqual([1, 200, 140]);
+        ShopSystem.purchase(p, 'armor');
+        ShopSystem.purchase(p, 'armor');
+        expect([p.armorLevel, p.maxHealth, p.health]).toEqual([3, 400, 340]);
+        expect(p.equippedUpgrade).toBe(''); // Armor never takes the slot
     });
 
-    it('the Expander sets the claim radius; the boost is kept as an upgrade', () => {
+    it('Booster and Expander go up a level at a time, to 3, at 100 credits a level', () => {
         const p = buyer();
-        expect(ShopSystem.purchase(p, 'expander')).toBe(true);
-        expect(p.claimRadius).toBe(EXPANDER_CLAIM_RADIUS);
-        expect(ShopSystem.purchase(p, 'boost')).toBe(true);
-        expect(Array.from(p.upgrades)).toEqual(['expander', 'boost']);
-    });
-
-    it('every upgrade is one per player', () => {
-        const p = buyer();
-        for (const id of ['armor', 'boost', 'expander'] as const) ShopSystem.purchase(p, id);
-        const credits = p.credits;
-        for (const id of ['armor', 'boost', 'expander'] as const) {
-            expect(ShopSystem.purchase(p, id), id).toBe(false);
+        for (const level of [1, 2, 3]) {
+            expect(ShopSystem.purchase(p, 'booster')).toBe(true);
+            expect(p.boosterLevel).toBe(level);
         }
-        expect(p.credits).toBe(credits);
+        expect(ShopSystem.purchase(p, 'booster')).toBe(false); // maxed
+        for (let i = 0; i < 3; i++) ShopSystem.purchase(p, 'expander');
+        expect(p.expanderLevel).toBe(3);
+        expect(ShopSystem.purchase(p, 'expander')).toBe(false);
+        expect(p.credits).toBe(1000 - 6 * 100);
     });
 
-    it("a Robot can't buy the boost it starts with", () => {
+    it('Wings has one level', () => {
+        const p = buyer();
+        expect(ShopSystem.purchase(p, 'wings')).toBe(true);
+        expect(ShopSystem.purchase(p, 'wings')).toBe(false);
+        expect(p.wingsLevel).toBe(1);
+    });
+
+    it('the first slot upgrade you buy is equipped; later ones wait in the inventory', () => {
+        const p = buyer();
+        ShopSystem.purchase(p, 'expander');
+        expect(p.equippedUpgrade).toBe('expander');
+        expect(p.claimRadius).toBe(EXPANDER_CLAIM_RADII[0]);
+        ShopSystem.purchase(p, 'booster');
+        expect(p.equippedUpgrade).toBe('expander'); // unchanged
+        expect(p.boosterLevel).toBe(1);
+    });
+
+    it('buying the next level of the equipped upgrade takes effect at once', () => {
+        const p = buyer();
+        ShopSystem.purchase(p, 'expander');
+        ShopSystem.purchase(p, 'expander');
+        expect(p.claimRadius).toBe(EXPANDER_CLAIM_RADII[1]);
+    });
+
+    it('a Robot can buy Booster 2 and 3 on top of the Booster 1 it starts with', () => {
         const robot = new Player();
         robot.character = 'robot';
         CharacterSystem.apply(robot);
         robot.credits = 1000;
-        expect(ShopSystem.purchase(robot, 'boost')).toBe(false);
+        expect(ShopSystem.purchase(robot, 'booster')).toBe(true);
+        expect(ShopSystem.purchase(robot, 'booster')).toBe(true);
+        expect(ShopSystem.purchase(robot, 'booster')).toBe(false);
+        expect(robot.boosterLevel).toBe(3);
     });
 });
 

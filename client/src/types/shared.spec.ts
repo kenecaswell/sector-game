@@ -7,8 +7,11 @@ import {
     SHOP_ITEM_IDS,
     TEAMS,
     isShopItemId,
+    activeUpgradeLevel,
     normalizePlayerName,
     ownsShopItem,
+    shopItemDescription,
+    shopItemTitle,
 } from './shared';
 
 describe('normalizePlayerName', () => {
@@ -34,7 +37,15 @@ describe('normalizePlayerName', () => {
 });
 
 describe('ownsShopItem', () => {
-    const player = (gun: string, upgrades: string[] = []) => ({ gun, upgrades });
+    const player = (gun: string, levels: Partial<Record<string, number>> = {}) => ({
+        gun,
+        boosterLevel: 0,
+        expanderLevel: 0,
+        armorLevel: 0,
+        wingsLevel: 0,
+        equippedUpgrade: '',
+        ...levels,
+    });
 
     it('treats any gun as owning the basic gun, and only the big gun as owning it', () => {
         expect(ownsShopItem(player(''), 'basicGun')).toBe(false);
@@ -44,16 +55,54 @@ describe('ownsShopItem', () => {
         expect(ownsShopItem(player('big'), 'bigGun')).toBe(true);
     });
 
-    it('marks upgrades you have as owned', () => {
-        expect(ownsShopItem(player('', ['armor']), 'armor')).toBe(true);
-        expect(ownsShopItem(player('', ['armor']), 'boost')).toBe(false);
+    it('marks an upgrade owned only at its top level (3, or 1 for Wings)', () => {
+        expect(ownsShopItem(player('', { boosterLevel: 2 }), 'booster')).toBe(false);
+        expect(ownsShopItem(player('', { boosterLevel: 3 }), 'booster')).toBe(true);
+        expect(ownsShopItem(player('', { armorLevel: 3 }), 'armor')).toBe(true);
+        expect(ownsShopItem(player('', { wingsLevel: 1 }), 'wings')).toBe(true);
+        expect(ownsShopItem(player(''), 'expander')).toBe(false);
     });
 
     it('never marks ammo or structures as owned (you can always buy more)', () => {
-        const rich = player('big', ['boost', 'armor', 'expander']);
+        const rich = player('big', { boosterLevel: 3, armorLevel: 3, expanderLevel: 3 });
         for (const id of ['ammo', 'farm', 'mine', 'fort', 'power'] as const) {
             expect(ownsShopItem(rich, id)).toBe(false);
         }
+    });
+});
+
+describe('upgrade levels in the shop', () => {
+    const none = {
+        gun: '',
+        boosterLevel: 0,
+        expanderLevel: 0,
+        armorLevel: 0,
+        wingsLevel: 0,
+        equippedUpgrade: '',
+    };
+
+    it('offers the next level, and describes it', () => {
+        expect(shopItemTitle(none, 'booster')).toBe('Booster 1');
+        expect(shopItemTitle({ ...none, boosterLevel: 2 }, 'booster')).toBe('Booster 3');
+        expect(shopItemDescription({ ...none, boosterLevel: 2 }, 'booster')).toBe(
+            '175% of normal speed.'
+        );
+        expect(shopItemDescription({ ...none, armorLevel: 1 }, 'armor')).toMatch(/^300 max health/);
+        expect(shopItemTitle(none, 'wings')).toBe('Wings'); // one level: no number
+        expect(shopItemTitle(none, 'ammo')).toBe('Ammo pack');
+    });
+
+    it('only the equipped slot upgrade is active; Armor always is', () => {
+        const p = {
+            ...none,
+            boosterLevel: 2,
+            expanderLevel: 1,
+            armorLevel: 2,
+            equippedUpgrade: 'expander',
+        };
+        expect(activeUpgradeLevel(p, 'booster')).toBe(0);
+        expect(activeUpgradeLevel(p, 'expander')).toBe(1);
+        expect(activeUpgradeLevel(p, 'armor')).toBe(2);
     });
 });
 

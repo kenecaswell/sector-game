@@ -1,6 +1,13 @@
 import type { PlayerState } from '../types/gameState';
-import type { GamePhase, GunId, UpgradeId } from '../types/shared';
-import { GUN_NAMES, STRUCTURE_NAMES, UPGRADE_NAMES, isStructureType } from '../types/shared';
+import type { GamePhase, GunId } from '../types/shared';
+import {
+    GUN_NAMES,
+    STRUCTURE_NAMES,
+    isStructureType,
+    isUpgradeId,
+    upgradeLabel,
+    upgradeLevel,
+} from '../types/shared';
 import { usePhaseCountdown } from '../utils/usePhaseCountdown';
 
 interface HUDProps {
@@ -43,14 +50,13 @@ export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
                     <div>Tiles: {me.tilesOwned}</div>
                     <div>Credits: {me.credits}</div>
                     <div>Structures: {structureSummary(me.structureInventory)}</div>
-                    {me.upgrades.length > 0 && (
-                        <div>
-                            Upgrades:{' '}
-                            {me.upgrades
-                                .map((id) => UPGRADE_NAMES[id as UpgradeId] ?? id)
-                                .join(', ')}
-                        </div>
-                    )}
+                    <div>
+                        Upgrade:{' '}
+                        {isUpgradeId(me.equippedUpgrade)
+                            ? upgradeLabel(me.equippedUpgrade, upgradeLevel(me, me.equippedUpgrade))
+                            : 'none'}
+                    </div>
+                    {me.armorLevel > 0 && <div>{upgradeLabel('armor', me.armorLevel)}</div>}
                 </>
             )}
         </div>

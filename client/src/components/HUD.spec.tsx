@@ -43,17 +43,24 @@ describe('HUD', () => {
         expect(screen.getByText('Structures: Farm ×2, Fort')).toBeInTheDocument();
     });
 
-    it('lists upgrades only when there are any', () => {
+    it('shows the equipped upgrade with its level, and Armor when owned', () => {
         const { rerender } = render(<HUD me={makePlayer()} phase="playing" phaseEndsAt={0} />);
-        expect(screen.queryByText(/Upgrades:/)).not.toBeInTheDocument();
+        expect(screen.getByText('Upgrade: none')).toBeInTheDocument();
+        expect(screen.queryByText(/Armor/)).not.toBeInTheDocument();
         rerender(
             <HUD
-                me={makePlayer({ upgrades: ['boost', 'armor'] })}
+                me={makePlayer({
+                    boosterLevel: 2,
+                    wingsLevel: 1,
+                    equippedUpgrade: 'booster',
+                    armorLevel: 3,
+                })}
                 phase="playing"
                 phaseEndsAt={0}
             />
         );
-        expect(screen.getByText('Upgrades: Speed boost, Armor')).toBeInTheDocument();
+        expect(screen.getByText('Upgrade: Booster 2')).toBeInTheDocument();
+        expect(screen.getByText('Armor 3')).toBeInTheDocument();
     });
 
     it('never shows negative health', () => {

@@ -172,7 +172,7 @@ export function isTeamId(value: unknown): value is TeamId {
 // all behave the same for now.
 export type StructureType = 'farm' | 'mine' | 'fort' | 'power';
 export type GunId = 'basic' | 'big';
-export type UpgradeId = 'boost' | 'armor' | 'expander';
+export type UpgradeId = 'booster' | 'expander' | 'armor' | 'wings';
 export type CharacterId = 'farmer' | 'miner' | 'builder' | 'robot' | 'scientist' | 'smuggler';
 
 export interface Character {
@@ -183,7 +183,8 @@ export interface Character {
     ammo: number;
     structures: StructureType[]; // starting structure inventory, one entry per structure
     credits: number;
-    upgrades: UpgradeId[];
+    upgrades: Partial<Record<UpgradeId, number>>; // starting level of each upgrade it has
+    equipped?: UpgradeId; // the slot upgrade it starts with equipped
 }
 
 export const STRUCTURE_NAMES: Record<StructureType, string> = {
@@ -195,21 +196,81 @@ export const STRUCTURE_NAMES: Record<StructureType, string> = {
 
 export const GUN_NAMES: Record<GunId, string> = { basic: 'Basic gun', big: 'Big gun' };
 
-// Damage per hit. Players have 100 health (200 with armor).
+// Damage per hit. Players have 100 health, +100 per Armor level.
 export const GUN_DAMAGE: Record<GunId, number> = { basic: 50, big: 100 };
 
 export function isGunId(value: unknown): value is GunId {
     return typeof value === 'string' && Object.hasOwn(GUN_NAMES, value);
 }
 
-export const UPGRADE_NAMES: Record<UpgradeId, string> = {
-    boost: 'Speed boost',
-    armor: 'Armor',
-    expander: 'Expander',
+// --- Upgrades ----------------------------------------------------------------------------------
+// Bought in the shop a level at a time. A player has one upgrade *slot*: of the slot upgrades
+// (Booster, Expander, Wings) only the equipped one has an effect, and switching has a cooldown.
+// Armor isn't a slot upgrade: it always works once bought. See docs/GAME_DESIGN.md → Upgrades.
+export interface UpgradeInfo {
+    id: UpgradeId;
+    name: string;
+    maxLevel: number;
+    slot: boolean; // true = only works while equipped
+}
+
+export const UPGRADES: Record<UpgradeId, UpgradeInfo> = {
+    booster: { id: 'booster', name: 'Booster', maxLevel: 3, slot: true },
+    expander: { id: 'expander', name: 'Expander', maxLevel: 3, slot: true },
+    armor: { id: 'armor', name: 'Armor', maxLevel: 3, slot: false },
+    wings: { id: 'wings', name: 'Wings', maxLevel: 1, slot: true },
 };
 
+export const UPGRADE_IDS = Object.keys(UPGRADES) as UpgradeId[];
+
+export const UPGRADE_NAMES = Object.fromEntries(
+    UPGRADE_IDS.map((id) => [id, UPGRADES[id].name])
+) as Record<UpgradeId, string>;
+
 export function isUpgradeId(value: unknown): value is UpgradeId {
-    return typeof value === 'string' && Object.hasOwn(UPGRADE_NAMES, value);
+    return typeof value === 'string' && Object.hasOwn(UPGRADES, value);
+}
+
+export const BOOSTER_SPEED_PER_LEVEL = 0.25; // +25% of base top speed per level: 125/150/175%
+export const ARMOR_HEALTH_PER_LEVEL = 100; // +100 max health per level: 200/300/400
+export const EXPANDER_HEXES = [7, 19, 37]; // hexes claimed at once, standing mid-hex, per level
+export const UPGRADE_SWITCH_COOLDOWN_MS = 5_000; // between changes of the equipped upgrade
+
+/** A player's upgrade levels (0 = not owned) and which slot upgrade is equipped ('' = none). */
+export interface UpgradeHolder {
+    boosterLevel: number;
+    expanderLevel: number;
+    armorLevel: number;
+    wingsLevel: number;
+    equippedUpgrade: string;
+}
+
+export function upgradeLevel(player: UpgradeHolder, id: UpgradeId): number {
+    return player[`${id}Level`];
+}
+
+/** The level of `id` that's in effect: its level if it's Armor or equipped, else 0. */
+export function activeUpgradeLevel(player: UpgradeHolder, id: UpgradeId): number {
+    return UPGRADES[id].slot && player.equippedUpgrade !== id ? 0 : upgradeLevel(player, id);
+}
+
+/** "Booster 2" (or just "Wings" for a single-level upgrade). */
+export function upgradeLabel(id: UpgradeId, level: number): string {
+    return UPGRADES[id].maxLevel > 1 ? `${UPGRADES[id].name} ${level}` : UPGRADES[id].name;
+}
+
+/** What `id` does at `level`. */
+export function upgradeEffect(id: UpgradeId, level: number): string {
+    switch (id) {
+        case 'booster':
+            return `${100 + level * BOOSTER_SPEED_PER_LEVEL * 100}% of normal speed.`;
+        case 'expander':
+            return `Claim ${EXPANDER_HEXES[level - 1]} hexes at once, standing mid-hex.`;
+        case 'armor':
+            return `${100 + level * ARMOR_HEALTH_PER_LEVEL} max health. Always on, no slot needed.`;
+        case 'wings':
+            return "Walk over mountains and deep water. You still can't claim them.";
+    }
 }
 
 export const DEFAULT_CHARACTER: CharacterId = 'farmer';
@@ -223,7 +284,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         ammo: 0,
         structures: ['farm'],
         credits: 50,
-        upgrades: [],
+        upgrades: {},
     },
     miner: {
         id: 'miner',
@@ -233,7 +294,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         ammo: 0,
         structures: ['mine'],
         credits: 50,
-        upgrades: [],
+        upgrades: {},
     },
     builder: {
         id: 'builder',
@@ -243,7 +304,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         ammo: 0,
         structures: ['fort'],
         credits: 50,
-        upgrades: [],
+        upgrades: {},
     },
     robot: {
         id: 'robot',
@@ -253,7 +314,8 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         ammo: 0,
         structures: [],
         credits: 50,
-        upgrades: ['boost'],
+        upgrades: { booster: 1 },
+        equipped: 'booster',
     },
     scientist: {
         id: 'scientist',
@@ -263,7 +325,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         ammo: 0,
         structures: ['power'],
         credits: 50,
-        upgrades: [],
+        upgrades: {},
     },
     smuggler: {
         id: 'smuggler',
@@ -273,7 +335,7 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         ammo: 15,
         structures: [],
         credits: 15,
-        upgrades: [],
+        upgrades: {},
     },
 };
 
@@ -294,9 +356,10 @@ export type ShopItemId =
     | 'basicGun'
     | 'bigGun'
     | 'ammo'
-    | 'boost'
+    | 'booster'
     | 'armor'
     | 'expander'
+    | 'wings'
     | 'farm'
     | 'mine'
     | 'fort'
@@ -319,13 +382,25 @@ export interface ShopItem {
     // What buying it gives you (exactly one of these):
     gun?: GunId; // replaces your gun
     ammo?: number; // adds shots
-    upgrade?: UpgradeId; // one per player
+    upgrade?: UpgradeId; // the next level of it (up to its maxLevel); `cost` is per level
     structure?: StructureType; // adds one to your structure inventory (buy as many as you like)
 }
 
 export const AMMO_PACK_SIZE = 30; // shots per purchase
 export const AMMO_CREDITS_PER_SHOT = 1;
 export const STRUCTURE_COST = 100;
+
+const UPGRADE_COST = 100; // credits per level
+
+// One shop entry per upgrade; it always offers your next level (see shopItemTitle).
+const upgradeItem = (id: UpgradeId): ShopItem => ({
+    id,
+    category: 'upgrades',
+    name: UPGRADES[id].name,
+    description: upgradeEffect(id, 1),
+    cost: UPGRADE_COST,
+    upgrade: id,
+});
 
 const structureItem = (id: StructureType): ShopItem => ({
     id,
@@ -361,30 +436,10 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
         cost: AMMO_PACK_SIZE * AMMO_CREDITS_PER_SHOT,
         ammo: AMMO_PACK_SIZE,
     },
-    boost: {
-        id: 'boost',
-        category: 'upgrades',
-        name: UPGRADE_NAMES.boost,
-        description: 'Move 25% faster.',
-        cost: 100,
-        upgrade: 'boost',
-    },
-    armor: {
-        id: 'armor',
-        category: 'upgrades',
-        name: UPGRADE_NAMES.armor,
-        description: 'Double your health (200 instead of 100).',
-        cost: 100,
-        upgrade: 'armor',
-    },
-    expander: {
-        id: 'expander',
-        category: 'upgrades',
-        name: UPGRADE_NAMES.expander,
-        description: 'Claim hexes in a much larger radius.',
-        cost: 100,
-        upgrade: 'expander',
-    },
+    booster: upgradeItem('booster'),
+    expander: upgradeItem('expander'),
+    armor: upgradeItem('armor'),
+    wings: upgradeItem('wings'),
     farm: structureItem('farm'),
     mine: structureItem('mine'),
     fort: structureItem('fort'),
@@ -397,26 +452,48 @@ export function isShopItemId(value: unknown): value is ShopItemId {
     return typeof value === 'string' && Object.hasOwn(SHOP_ITEMS, value);
 }
 
+/** What the shop needs to know about a player to show and validate items. */
+export type ShopCustomer = UpgradeHolder & { gun: string };
+
 /**
- * True if buying `itemId` would get the player nothing: an upgrade they already have, or a gun
- * that isn't better than theirs (the basic gun once you have any gun, the big gun once you have
- * it). Ammo and structures can always be bought again. The server refuses these purchases; the
- * menu shows them as owned.
+ * True if buying `itemId` would get the player nothing: an upgrade already at its top level, or a
+ * gun that isn't better than theirs (the basic gun once you have any gun, the big gun once you
+ * have it). Ammo and structures can always be bought again. The server refuses these purchases;
+ * the menu shows them as owned.
  */
-export function ownsShopItem(
-    player: { gun: string; upgrades: { includes(value: string): boolean } },
-    itemId: ShopItemId
-): boolean {
+export function ownsShopItem(player: ShopCustomer, itemId: ShopItemId): boolean {
     const item = SHOP_ITEMS[itemId];
-    if (item.upgrade) return player.upgrades.includes(item.upgrade);
+    if (item.upgrade) return upgradeLevel(player, item.upgrade) >= UPGRADES[item.upgrade].maxLevel;
     if (item.gun === 'basic') return player.gun !== '';
     if (item.gun === 'big') return player.gun === 'big';
     return false;
 }
 
+/** The shop's name for an item for this player: upgrades show the level on offer ("Booster 2"). */
+export function shopItemTitle(player: ShopCustomer, itemId: ShopItemId): string {
+    const item = SHOP_ITEMS[itemId];
+    if (!item.upgrade) return item.name;
+    const next = Math.min(upgradeLevel(player, item.upgrade) + 1, UPGRADES[item.upgrade].maxLevel);
+    return upgradeLabel(item.upgrade, next);
+}
+
+/** The shop's description for this player: for upgrades, what the level on offer does. */
+export function shopItemDescription(player: ShopCustomer, itemId: ShopItemId): string {
+    const item = SHOP_ITEMS[itemId];
+    if (!item.upgrade) return item.description;
+    const next = Math.min(upgradeLevel(player, item.upgrade) + 1, UPGRADES[item.upgrade].maxLevel);
+    return upgradeEffect(item.upgrade, next);
+}
+
 // Client -> Server: buy an item (allowed during the `playing` phase only).
 export interface PurchaseMessage {
     itemId: ShopItemId;
+}
+
+// Client -> Server: equip a slot upgrade you own, or '' to leave the slot empty (playing phase only;
+// refused during the cooldown, and refused for leaving Wings while over a mountain or deep water).
+export interface EquipUpgradeMessage {
+    upgradeId: UpgradeId | '';
 }
 
 // --- Terrain -----------------------------------------------------------------------------------

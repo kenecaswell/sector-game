@@ -104,7 +104,7 @@ Implementation: [Map — hex grid and coordinate spaces](ARCHITECTURE.md#map--he
 
 ## Terrain
 
-🧪 **Built except Wings** (2026-09-26): every match gets a random layout; mountains and deep water block movement, nobody can claim terrain, and mountains stop shots. **Wings** (step 3) is still to come, so for now nobody can cross mountains or deep water. Every hex is one of three terrain types. There's **no elevation**: mountains are a kind of hex, not a height.
+🧪 **Built** (2026-09-26): every match gets a random layout; mountains and deep water block movement unless you have **Wings**, nobody can claim terrain, and mountains stop shots. The numbers are first-pass. Every hex is one of three terrain types. There's **no elevation**: mountains are a kind of hex, not a height.
 
 | Terrain | Walk on it? | Claim it? | Shots |
 |---|---|---|---|
@@ -146,13 +146,13 @@ Terrain comes in features, each a contiguous group of hexes (every hex touches a
 - **The spawn area is always open ground.** Everyone starts and respawns at the map center, and the generator keeps that area clear.
 - **Every ground hex can be reached on foot.** The generator never walls off ground with mountains or deep water (shallow water counts as walkable), so players without Wings can always get anywhere a structure could be built.
 
-Implementation: [Terrain](ARCHITECTURE.md#terrain). Still to come: the Wings upgrade.
+Implementation: [Terrain](ARCHITECTURE.md#terrain).
 
 ## Players
 
 - **Body:** a circle a little smaller than a hex (`PLAYER_RADIUS`, 20, against a hex radius of 32).
 - **Movement:** ✅ continuous, in any direction, with smooth acceleration, turning and stopping rather than snapping. Top speed (`PLAYER_SPEED`) is the same in every direction **as seen on screen**. A joystick pushed part-way moves you more slowly.
-- **Health:** 🧪 100 (`BASE_MAX_HEALTH`), or 200 with Armor (`ARMOR_MAX_HEALTH`).
+- **Health:** 🧪 100 (`BASE_MAX_HEALTH`), +100 per Armor level (200 / 300 / 400; `ARMOR_HEALTH_PER_LEVEL`).
 - **Death and respawn:** ✅ at 0 health you respawn instantly at the map center with full health. **You keep your tiles, credits, upgrades and kills.** The player who landed the killing blow gets the kill.
 - **Dropped connection:** ✅ your player stays on the map, frozen and drawn dimmed, and keeps its tiles and structures for **3 minutes** while the game tries to reconnect you. A frozen player can still be shot. Everyone sees a notice when you drop and when you return. After 3 minutes your spot is released and your tiles go back to unclaimed.
 - **Names:** ✅ 2–25 characters (an emoji counts as one), anything allowed. If someone already has your name (ignoring case), you get the first free "name (1)", "name (2)", …. Your last name is remembered on your device for next time.
@@ -184,7 +184,7 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 | **Farmer** | Starts with a farm. | none | 0 | 50 | farm | — |
 | **Miner** | Starts with a mine. | none | 0 | 50 | mine | — |
 | **Builder** | Starts with a fort. | none | 0 | 50 | fort | — |
-| **Robot** | Moves faster than everyone else. | none | 0 | 50 | — | Speed boost (+25%) |
+| **Robot** | Moves faster than everyone else. | none | 0 | 50 | — | Booster 1, equipped (125% speed) |
 | **Scientist** | Starts with a power plant. | none | 0 | 50 | power plant | — |
 | **Smuggler** | The only one who starts armed, but with few credits. | Basic gun | 15 | 15 | — | — |
 
@@ -197,7 +197,7 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 ✅ Holding hexes is how you earn credits and score.
 
 - **Claiming:** during the match, every moment you claim the hex you're standing on **plus every hex whose center is within your claim radius**. The normal radius is about one hex (`BASE_CLAIM_RADIUS`, the hex size): in practice just the hex under you, occasionally a neighbor when you're near an edge.
-- **Expander:** 🧪 raises your claim radius to 4 × your body radius (`EXPANDER_CLAIM_RADIUS`, 80). That claims 7 hexes when you stand in the middle of one, and up to 9 depending on where you are. Everyone can see an Expander owner's claim radius as a tinted circle around them.
+- **Expander:** 🧪 while equipped, raises your claim radius so that standing mid-hex you claim **7 / 19 / 37 hexes** at levels 1 / 2 / 3 (1, 2 or 3 rings of neighbors; `EXPANDER_CLAIM_RADII` 80 / 125 / 180 world px, `EXPANDER_HEXES`). Off-center you catch a few more at the edge. Everyone can see an Expander's claim radius as a tinted circle around its owner. See [Upgrades](#upgrades).
 - **Stealing:** walking over (or near, with the Expander) an **enemy's** hex takes it from them. A **teammate's** hex is never taken.
 - **Terrain:** mountain and water hexes can never be claimed, not even the shallow water you wade through ([Terrain](#terrain)).
 - **Protected hexes:** the 7 hexes under an **enemy's structure** can't be claimed. Destroy the structure first.
@@ -259,17 +259,28 @@ Open the shop any time during the match (**Shop** button or `E`). The game keeps
 | Weapons | **Basic gun** | 100 | Lets you shoot; 50 damage per hit. | Not if you have any gun |
 | Weapons | **Big gun** | 200 | 100 damage per hit. Replaces the Basic gun. | One |
 | Weapons | **Ammo pack** | 30 | +30 shots (1 credit per shot). | Unlimited; no ammo cap |
-| Upgrades | **Speed boost** | 100 | +25% top speed (`BOOST_SPEED_MULTIPLIER`). | One (the Robot already has it) |
-| Upgrades | **Armor** | 100 | Max health 100 → 200, and +100 health right away. | One |
-| Upgrades | **Expander** | 100 | Claim radius becomes 80 (4 × your body radius), shown as a tinted circle. | One |
-| Upgrades | 📝 **Wings** | 100 | Walk over mountains and deep water ([Terrain](#terrain)). You still can't claim them. | One |
+| Upgrades | **Booster** 1–3 | 100 a level | Top speed 125 / 150 / 175% of normal (`BOOSTER_SPEED_PER_LEVEL`). Uses the upgrade slot. | 3 levels |
+| Upgrades | **Expander** 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once. Uses the upgrade slot. | 3 levels |
+| Upgrades | **Armor** 1–3 | 100 a level | Max health 200 / 300 / 400, and +100 health right away. **Always on**, no slot. | 3 levels |
+| Upgrades | **Wings** | 100 | Walk over mountains and deep water ([Terrain](#terrain)). You still can't claim them, and mountains still stop your shots. Uses the upgrade slot. | One |
 | Structures | **Farm**, **Mine**, **Fort**, **Power plant** | 100 each | One more of that structure to place. | Unlimited |
 
-- **Upgrades are permanent for the match**, and survive respawns.
-- Items you already have show as "Owned".
+- **Each upgrade is listed once**, offering your next level ("Booster 2" once you own Booster 1); a maxed one shows "Max". A gun you can't improve on shows "Owned".
+- **Upgrade levels are permanent for the match**, and survive respawns. See [Upgrades](#upgrades) for the one-slot rule.
 - 📝 **Pacing:** starting kits give at most 50 credits and everything except ammo costs 100 or more, so a first real purchase waits on territory income. Worth watching in playtests.
 
 Implementation: [Shop](ARCHITECTURE.md#shop), [Economy (Credits)](ARCHITECTURE.md#economy-credits).
+
+### Upgrades
+
+🧪 Built 2026-09-26 (step 1 of 2; the inventory screen for switching is step 2).
+
+- **Levels.** Booster, Expander and Armor go up to level 3, Wings has one level. Each level costs 100 credits, bought one at a time in the shop, and is kept all match (respawns included).
+- **One upgrade slot.** Booster, Expander and Wings are *slot* upgrades: you can own all of them, but **only the equipped one works**. Armor isn't a slot upgrade: it always works once bought.
+- **Equipping.** A slot upgrade you buy with the slot empty equips itself; otherwise it waits in your inventory. Buying the next level of the upgrade you have equipped takes effect at once.
+- **Switching** (the inventory screen, step 2): change the equipped upgrade, or empty the slot, any time during the match, at most **once every 5 seconds** (`UPGRADE_SWITCH_COOLDOWN_MS`), so switching is a decision, not a reflex (no flicking Wings on to hop a river mid-chase and straight back to the Booster). You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
+- **Until the inventory exists**, switching can only happen by buying into an empty slot.
+- The HUD shows your equipped upgrade with its level ("Upgrade: Booster 2") and your Armor level.
 
 ## Scoring and winning
 
@@ -384,7 +395,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Ending buying early (temporary) — **superseded 2026-09-26 (ready-up lobby)** | Closing the shop during `buying` sends `endBuying`; only the host's is honored | Waiting out the 30s; letting any player end it | Requested testing shortcut: with a mock shop there's nothing to do while buying. Host-only so one player closing their popup can't start the match for everyone; to be removed when the real buy menu exists |
 | Claim radius | Claim the hex you stand on plus every hex whose center is within `claimRadius` (base 32 px = `HEX_SIZE`; Expander 80 px = 4 × `PLAYER_RADIUS`) | Keep "only the hex under you" and make the Expander a different mechanic; a fixed ring of neighbors | A radius makes "2× radius" literal and scales naturally for future upgrades. At base radius it's effectively the old behavior (own hex, occasionally a neighbor near an edge). Implemented as a small search window around the player, verified against a brute-force scan |
 | Structures protect their tile — **superseded 2026-09-26 (all 7 footprint hexes are protected, from enemies only)** | A hex with another player's structure can't be claimed | Let radius claiming flip any tile | With a large radius, tiles under structures would flip constantly, leaving a structure on a tile its owner doesn't own (and placing requires owning the tile). Rejected the alternative of destroying the structure on flip |
-| Expander | 100 credits, claim radius 4 × the player radius (80 px), permanent (kept on respawn), one per player, visible to everyone as a tinted circle | Stackable levels; lost on death; visible only to its owner | Matches the requested spec (one item, 2×). One-per-player keeps the first version simple and bounded; the circle doubles as a warning to opponents. Balance is untested — see Planned Features #9 |
+| Expander — **superseded 2026-09-26 (Expander levels, below)** | 100 credits, claim radius 4 × the player radius (80 px), permanent (kept on respawn), one per player, visible to everyone as a tinted circle | Stackable levels; lost on death; visible only to its owner | Matches the requested spec (one item, 2×). One-per-player keeps the first version simple and bounded; the circle doubles as a warning to opponents |
 | Ammo pricing | 1 credit per shot, sold in packs of 30 (30 credits), no cap | Per-shot purchase; capped magazine | Requested. No cap is a known gap; tune with playtesting |
 | Player size | `PLAYER_RADIUS` raised from 16 to 20 (body, projectile hit radius, structure collision); the Expander's claim radius is *defined* as 4 × `PLAYER_RADIUS` | Keep 16; keep the Expander at 2 × the base claim radius | Requested playtest of a bigger player. The Expander used to be 2 × a 32 px base claim radius, which is independent of body size, so it wouldn't have grown; tying it to `PLAYER_RADIUS` (4 × = 64 at 16, 80 at 20) makes the two move together while the base claim radius (and so base tile-claiming pace) stays put. If instead the base claim radius should also follow the player size, that is a one-line change but speeds up base claiming (~50% more hexes per step at 40 px) |
 | Host reassignment — **superseded 2026-09-26 (ready-up lobby)** | Promote the next connected player as soon as the host disconnects; a newcomer also takes over if the recorded host is disconnected; keep a lone disconnected host so a reconnect restores them | Promote only when the reconnect window expires (previous behavior); always keep the original host | A disconnected host can't send `startGame`, and the old behavior blocked a lobby for up to 3 minutes (it also made the shared dev room confusing) |
@@ -395,7 +406,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Characters | 6 characters in a shared `CHARACTERS` catalog; the kit (gun, ammo, credits, structures, upgrades) replaces the player's stats when the countdown ends; locked while ready | Apply the kit at selection time; free choice after readying | Applying once at start means lobby switching can't be abused and a mid-match joiner just gets the default kit applied on join |
 | Structure inventory | `Player.structureInventory` (one entry per structure); `placeStructure` names a type from it and uses one up; `Structure.type` recorded; all types identical for now | Unlimited building with the character setting only the type | Chosen by the developer (2026-09-26): the starting structures are part of what distinguishes characters |
 | Getting a gun | Unarmed players can't shoot; a Basic gun in the shop (40 credits at first, 100 since the catalog rebuild) | Only Smugglers can shoot until a later shop pass | Chosen by the developer (2026-09-26), so the other five characters can still fight |
-| Robot boost | `boost` upgrade multiplies top speed by 1.25 (`BOOST_SPEED_MULTIPLIER`), acceleration unchanged | Higher acceleration too; a timed boost | "Speed boost" was the spec; 1.25 is a first-pass value to tune |
+| Robot boost — **superseded 2026-09-26 (Booster levels, below)** | `boost` upgrade multiplies top speed by 1.25 (`BOOST_SPEED_MULTIPLIER`), acceleration unchanged | Higher acceleration too; a timed boost | "Speed boost" was the spec; 1.25 is a first-pass value to tune |
 | Player names | Editable in the lobby, 2–25 characters (code points), any characters; a taken name (ignoring case) gets the first free " (N)"; saved to `localStorage` and sent as a join option | Allow duplicate names; server-side accounts | The developer allowed either; the suffix keeps names readable in the leaderboard and results and fixed the old duplicate "Player N" bug. Saving the typed (unsuffixed) name avoids stacking suffixes over games |
 | Structure footprint | A structure occupies its hex plus the 6 neighbors; all 7 must be on the map, owned by the builder, and free of other footprints | Single hex (previous); allowing teammates' hexes | Requested (2026-09-26) |
 | Structure shape — **superseded the same day (flat-top, 2 × tile radius)** | One hexagon with exactly the 7 hexes' area, corners on grid vertices, turned ~19.1° from the tiles; used for collision, hits and drawing, while the footprint hexes are used for placement and protection | A tile-aligned hexagon covering the 7 hexes (~29% larger, reaching well into the next ring); the jagged 7-hex outline | "A hexagon the size of 7 tiles" was requested; this is the only hexagon with exactly that area whose corners sit on the grid. Cost: 6 of the 12 touching placements overlap by ≤ 10.5 px, accepted rather than refusing placements whose 7 hexes are all yours |
@@ -420,3 +431,8 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Compact ranges and lakes | Each new mountain (every placement beside the range, every orientation) and each new lake hex goes where it touches the most, ties at random | Random placement beside the feature (previous, lacy with arms and holes); also pulling toward the middle (tried: made ranges smaller and more scattered) | Requested: chunky, not lacy. Measured on 40 maps: ~3.9 same-feature neighbors per hex for both, vs ~3.45 for the lacy version |
 | Feature gap | At least 3 ground hexes between any two features (`FEATURE_GAP`) | 1 (previous); 2 | Requested ("at least 3 tiles away"); 3 hexes between chosen by the developer |
 | Shallow vs deep, small vs large: stored or derived? | Shallow/deep is derived from the water's shape wherever it's needed; small/large mountain pieces are recorded by the generator but not synced yet | Enumerate them as extra terrain values | Deriving shallow water keeps one source of truth. Which hexes form a mountain piece can't be derived, so it'll be synced when the sprites need it |
+| Upgrade levels | Booster, Expander and Armor have 3 levels, Wings 1; 100 credits a level; the shop lists each upgrade once and offers the next level | One of each (previous) | Requested (2026-09-26). "Speed boost" renamed "Booster" |
+| Booster steps | +25% of base top speed per level: 125 / 150 / 175% | Compounding 25% (125 / 156 / 195%) | Chosen by the developer: even, readable steps |
+| Expander steps | Claim 7 / 19 / 37 hexes (1 / 2 / 3 rings; radii 80 / 125 / 180 px) | 7 / 12 / 19 | Chosen by the developer: big, visible jumps |
+| One upgrade slot | Only the equipped slot upgrade (Booster, Expander, Wings) works; switch at most every 5 s; can't take Wings off over solid terrain; a purchase into an empty slot equips itself | Every owned upgrade works (previous); instant switching; switching only on your own territory | Requested (one slot); the 5 s cooldown chosen by the developer to stop reflex swaps in a fight. The Wings rule and auto-equip are my additions: no getting stuck inside a mountain, and a first purchase just works |
+| Armor | Always on (no slot), 3 levels of +100 max health (200 / 300 / 400) | Armor in the slot, with health capped at 100 when switched off | Chosen by the developer |

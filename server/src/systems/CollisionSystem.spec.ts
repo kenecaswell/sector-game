@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BASE_CLAIM_RADIUS, EXPANDER_CLAIM_RADIUS } from '../constants';
+import { BASE_CLAIM_RADIUS, EXPANDER_CLAIM_RADII } from '../constants';
+import { EXPANDER_HEXES } from '../types/shared';
 import {
     STRUCTURE_CORNER_OFFSETS,
     hexCenter,
@@ -29,17 +30,27 @@ describe('CollisionSystem — claiming', () => {
     it('with the Expander on a hex center: claims it and all 6 neighbors', () => {
         const state = world();
         const p = addPlayerAt(state, 'a', 20, 20);
-        p.claimRadius = EXPANDER_CLAIM_RADIUS;
+        p.claimRadius = EXPANDER_CLAIM_RADII[0];
         expect(claimOnce(state, p)).toHaveLength(7);
     });
 
-    it('claims exactly what a brute-force scan says, from 800 random spots incl. the edges', () => {
+    it.each([1, 2, 3])(
+        'Expander %i on a hex center claims EXPANDER_HEXES (7 / 19 / 37)',
+        (level) => {
+            const state = world();
+            const p = addPlayerAt(state, 'a', 30, 30);
+            p.claimRadius = EXPANDER_CLAIM_RADII[level - 1];
+            expect(claimOnce(state, p)).toHaveLength(EXPANDER_HEXES[level - 1]);
+        }
+    );
+
+    it('claims exactly what a brute-force scan says, from 1,600 random spots incl. the edges', () => {
         const size = mapPixelSize(64, 64);
         // One world, reset between trials (building 800 worlds of 4,096 tiles is slow).
         const state = world();
         const p = addPlayer(state, 'a');
         let mismatches = 0;
-        for (const radius of [BASE_CLAIM_RADIUS, EXPANDER_CLAIM_RADIUS]) {
+        for (const radius of [BASE_CLAIM_RADIUS, ...EXPANDER_CLAIM_RADII]) {
             for (let n = 0; n < 400; n++) {
                 p.x = Math.random() * size.width;
                 p.y = Math.random() * size.height;
@@ -76,7 +87,7 @@ describe('CollisionSystem — claiming', () => {
             victim.tilesOwned++;
         }
         const p = addPlayerAt(state, 'a', 20, 20);
-        p.claimRadius = EXPANDER_CLAIM_RADIUS;
+        p.claimRadius = EXPANDER_CLAIM_RADII[0];
         claimOnce(state, p);
         expect(victim.tilesOwned).toBe(0);
         expect(p.tilesOwned).toBe(7);
@@ -93,7 +104,7 @@ describe('CollisionSystem — claiming', () => {
         tileAt(state, 19, 20).ownerId = 'f';
         foe.tilesOwned = 1;
         const p = addPlayerAt(state, 'a', 20, 20, 'red');
-        p.claimRadius = EXPANDER_CLAIM_RADIUS;
+        p.claimRadius = EXPANDER_CLAIM_RADII[0];
         claimOnce(state, p);
         expect(tileAt(state, 21, 20).ownerId).toBe('m');
         expect(mate.tilesOwned).toBe(1);
@@ -109,7 +120,7 @@ describe('CollisionSystem — claiming', () => {
         addStructure(state, 'o', 30, 30);
         const footprint = new Set(structureFootprint(30, 30).map((h) => `${h.col},${h.row}`));
         const foe = addPlayer(state, 'f');
-        foe.claimRadius = EXPANDER_CLAIM_RADIUS;
+        foe.claimRadius = EXPANDER_CLAIM_RADII[0];
         for (const h of structureFootprint(30, 30)) {
             const c = hexCenter(h.col, h.row);
             foe.x = c.x;

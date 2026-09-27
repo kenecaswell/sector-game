@@ -10,6 +10,7 @@ import { ShopSystem } from '../systems/ShopSystem';
 import { LobbySystem } from '../systems/LobbySystem';
 import { CharacterSystem } from '../systems/CharacterSystem';
 import { StructureSystem } from '../systems/StructureSystem';
+import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { mapPixelSize } from '../hex';
 import { generateTerrain, seededRandom } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
@@ -33,6 +34,7 @@ import type {
     SetReadyMessage,
     SetNameMessage,
     JoinOptions,
+    EquipUpgradeMessage,
 } from '../types/shared';
 import { GUN_DAMAGE, isGunId, isStructureType } from '../types/shared';
 
@@ -85,6 +87,9 @@ export class GameRoom extends Room<GameState> {
         );
         this.onMessage<SetNameMessage>('setName', (client, msg) =>
             this.withPlayer(client, (p) => LobbySystem.setName(this.state, p, msg?.name))
+        );
+        this.onMessage<EquipUpgradeMessage>('equipUpgrade', (client, msg) =>
+            this.withPlayer(client, (p) => UpgradeSystem.equip(this.state, p, msg?.upgradeId))
         );
         this.onMessage<PurchaseMessage>('purchase', (client, msg) =>
             this.handlePurchase(client, msg)

@@ -190,7 +190,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     const signature = roster
                         .map(
                             (p) =>
-                                `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.upgrades.join(',')}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.credits}|${p.claimRadius}|${p.connected}`
+                                `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.upgradeSwitchReadyAt}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.credits}|${p.claimRadius}|${p.connected}`
                         )
                         .join(';');
                     if (signature === lastSignature) return;
@@ -200,11 +200,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
                 $(joinedRoom.state).players.onAdd((player) => {
                     $(player).onChange(syncPlayers);
-                    // Items added to or removed from these lists don't fire the player's onChange.
+                    // Items added to or removed from this list don't fire the player's onChange.
                     $(player).structureInventory.onAdd(syncPlayers);
                     $(player).structureInventory.onRemove(syncPlayers);
-                    $(player).upgrades.onAdd(syncPlayers);
-                    $(player).upgrades.onRemove(syncPlayers);
                     syncPlayers();
                 });
                 $(joinedRoom.state).players.onRemove(syncPlayers);

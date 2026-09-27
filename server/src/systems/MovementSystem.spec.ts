@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-    BOOST_SPEED_MULTIPLIER,
     INPUT_STALE_MS,
     MAP_EDGE_MARGIN,
     PLAYER_RADIUS,
@@ -8,6 +7,7 @@ import {
     SCREEN_Y_SCALE as SQ,
 } from '../constants';
 import { hexCenter, mapPixelSize, structureContact } from '../hex';
+import { BOOSTER_SPEED_PER_LEVEL } from '../types/shared';
 import {
     DT,
     addPlayer,
@@ -56,12 +56,26 @@ describe('MovementSystem — speed', () => {
         );
     });
 
-    it('the boost upgrade raises top speed by BOOST_SPEED_MULTIPLIER', () => {
+    it.each([1, 2, 3])('an equipped Booster %i adds 25% of normal top speed per level', (level) => {
         const state = world();
-        const robot = addPlayer(state, 'r');
-        robot.upgrades.push('boost');
-        runMovement(state, inputs({ r: { x: 1, y: 0 } }), 20);
-        expect(onScreenSpeed(robot)).toBeCloseTo(PLAYER_SPEED * BOOST_SPEED_MULTIPLIER, 0);
+        const player = addPlayer(state, 'r');
+        player.boosterLevel = level;
+        player.equippedUpgrade = 'booster';
+        runMovement(state, inputs({ r: { x: 1, y: 0 } }), 30);
+        expect(onScreenSpeed(player)).toBeCloseTo(
+            PLAYER_SPEED * (1 + BOOSTER_SPEED_PER_LEVEL * level),
+            0
+        );
+    });
+
+    it("an owned Booster that isn't equipped does nothing", () => {
+        const state = world();
+        const player = addPlayer(state, 'r');
+        player.boosterLevel = 3;
+        player.wingsLevel = 1;
+        player.equippedUpgrade = 'wings';
+        runMovement(state, inputs({ r: { x: 1, y: 0 } }), 30);
+        expect(onScreenSpeed(player)).toBeCloseTo(PLAYER_SPEED, 0);
     });
 
     it('drops stale input: a player whose client went silent coasts to a stop', () => {

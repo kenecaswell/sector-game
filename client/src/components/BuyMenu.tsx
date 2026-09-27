@@ -7,6 +7,8 @@ import {
     SHOP_ITEMS,
     SHOP_ITEM_IDS,
     ownsShopItem,
+    shopItemDescription,
+    shopItemTitle,
 } from '../types/shared';
 
 // Button looks live in real CSS because inline styles can't express :hover / :active. The class
@@ -79,13 +81,22 @@ export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
         const owned = !!player && ownsShopItem(player, itemId);
         const affordable = credits >= item.cost;
         const bought = boughtId === itemId;
-        const label = bought ? '✓' : owned ? 'Owned' : `${item.cost} cr`;
+        // A maxed upgrade reads "Max"; a gun you can't improve on reads "Owned".
+        const label = bought ? '✓' : owned ? (item.upgrade ? 'Max' : 'Owned') : `${item.cost} cr`;
         return (
             <button
                 type="button"
                 className={bought ? 'shop-buy shop-buy--bought' : 'shop-buy'}
                 disabled={owned || !affordable}
-                title={owned ? 'You already own this' : affordable ? 'Buy' : 'Not enough credits'}
+                title={
+                    owned
+                        ? item.upgrade
+                            ? 'Already at the top level'
+                            : 'You already own this'
+                        : affordable
+                          ? 'Buy'
+                          : 'Not enough credits'
+                }
                 onClick={() => handleBuy(itemId)}
             >
                 {label}
@@ -200,10 +211,14 @@ export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
                                 >
                                     <div>
                                         <div style={{ fontWeight: 'bold' }}>
-                                            {SHOP_ITEMS[itemId].name}
+                                            {player
+                                                ? shopItemTitle(player, itemId)
+                                                : SHOP_ITEMS[itemId].name}
                                         </div>
                                         <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                            {SHOP_ITEMS[itemId].description}
+                                            {player
+                                                ? shopItemDescription(player, itemId)
+                                                : SHOP_ITEMS[itemId].description}
                                         </div>
                                     </div>
                                     {buttonFor(itemId)}

@@ -32,7 +32,12 @@ export interface PlayerState {
     ready: boolean; // lobby only
     gun: string; // a GunId, or '' = unarmed
     structureInventory: readonly string[]; // StructureTypes left to place
-    upgrades: readonly string[]; // UpgradeIds owned
+    boosterLevel: number; // upgrade levels, 0 = not owned (see UPGRADES in types.ts)
+    expanderLevel: number;
+    armorLevel: number;
+    wingsLevel: number;
+    equippedUpgrade: string; // the slot upgrade in effect: an UpgradeId, or '' for none
+    upgradeSwitchReadyAt: number; // server ms timestamp: when the equipped upgrade can next change
 }
 
 export interface TileState {

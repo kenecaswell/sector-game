@@ -125,7 +125,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      | Farmer | — | 0 | 50 | Farm | — |
      | Miner | — | 0 | 50 | Mine | — |
      | Builder | — | 0 | 50 | Fort | — |
-     | Robot | — | 0 | 50 | — | Speed boost (+25% top speed) |
+     | Robot | — | 0 | 50 | — | Booster 1, equipped (+25% top speed) |
      | Scientist | — | 0 | 50 | Power plant | — |
      | Smuggler | Basic gun | 15 | 15 | — | — |
 
@@ -143,12 +143,13 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 | Weapons | Basic gun | 100 | Lets you shoot, 50 damage per hit |
 | | Big gun | 200 | 100 damage per hit; replaces the basic gun |
 | | Ammo pack | 30 | 30 shots |
-| Upgrades | Speed boost | 100 | Move 25% faster |
-| | Armor | 100 | 200 health instead of 100 |
-| | Expander | 100 | Claim hexes in a much larger radius (shown as a tinted circle around you) |
+| Upgrades | Booster 1–3 | 100 a level | 125 / 150 / 175% speed |
+| | Expander 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you) |
+| | Armor 1–3 | 100 a level | 200 / 300 / 400 health; always on |
+| | Wings | 100 | Walk over mountains and deep water |
 | Structures | Farm, Mine, Fort, Power plant | 100 each | One more structure to build |
 
-Upgrades are one each and last the whole match. Hexes with an enemy's structure on them can't be claimed.
+The shop offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Expander and Wings, only the equipped one works (Armor always does); the first one you buy equips itself, and you can switch at most every 5 seconds. Hexes with an enemy's structure on them can't be claimed.
 
 **Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you build on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, mine: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 

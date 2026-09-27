@@ -23,10 +23,12 @@ describe('GameState schema', () => {
 
         encoder.discardChanges();
         player.health = 42;
-        player.upgrades.push('armor');
+        player.boosterLevel = 2;
+        player.equippedUpgrade = 'booster';
         decoder.decode(encoder.encode());
         expect(client.players.get('a')?.health).toBe(42);
-        expect(Array.from(client.players.get('a')!.upgrades)).toEqual(['armor']);
+        expect(client.players.get('a')?.boosterLevel).toBe(2);
+        expect(client.players.get('a')?.equippedUpgrade).toBe('booster');
     });
 
     it("syncs each tile's terrain (sent once with the full state)", () => {
@@ -61,7 +63,14 @@ describe('GameState schema', () => {
             connected: true,
         });
         expect(player.structureInventory).toHaveLength(0);
-        expect(player.upgrades).toHaveLength(0);
+        expect(player).toMatchObject({
+            boosterLevel: 0,
+            expanderLevel: 0,
+            armorLevel: 0,
+            wingsLevel: 0,
+            equippedUpgrade: '',
+            upgradeSwitchReadyAt: 0,
+        });
     });
 
     it('defaults shots to basic-gun damage and structures to full health', () => {

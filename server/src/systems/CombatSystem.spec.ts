@@ -9,7 +9,7 @@ import {
 import { hexCenter, mapPixelSize } from '../hex';
 import { DT, addPlayer, addShot, addStructure, shootAt, world } from '../test/world';
 import { GUN_DAMAGE, type PlayerHitEvent } from '../types/shared';
-import { CharacterSystem } from './CharacterSystem';
+import { UpgradeSystem } from './UpgradeSystem';
 import { CombatSystem } from './CombatSystem';
 
 const quiet = () => {};
@@ -47,23 +47,23 @@ describe('CombatSystem — hits and kills', () => {
         const target = addPlayer(state, 't');
         shootAt(state, 'a', target, GUN_DAMAGE.big);
         expect(shooter.kills).toBe(1);
-        target.upgrades.push('armor');
-        CharacterSystem.applyUpgradeEffects(target);
+        target.armorLevel = 1;
+        UpgradeSystem.applyUpgradeEffects(target);
         target.health = target.maxHealth;
         shootAt(state, 'a', target, GUN_DAMAGE.big);
         expect(target.health).toBe(100);
         expect(shooter.kills).toBe(1);
     });
 
-    it('respawns at max health (200 with Armor)', () => {
+    it('respawns at max health (400 with Armor 3)', () => {
         const state = world();
         addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 't');
-        target.upgrades.push('armor');
-        CharacterSystem.applyUpgradeEffects(target);
+        target.armorLevel = 3;
+        UpgradeSystem.applyUpgradeEffects(target);
         target.health = 50;
         shootAt(state, 'a', target);
-        expect(target.health).toBe(200);
+        expect(target.health).toBe(400);
     });
 
     it("doesn't hit the shooter, or anyone outside the playing phase", () => {

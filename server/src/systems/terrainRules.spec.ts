@@ -1,7 +1,7 @@
 // Step 2 of terrain: how mountains and water affect movement, claiming and shots.
 // (Generation is covered in terrain.spec.ts.)
 import { describe, expect, it } from 'vitest';
-import { EXPANDER_CLAIM_RADIUS, PLAYER_RADIUS, SCREEN_Y_SCALE as SQ } from '../constants';
+import { EXPANDER_CLAIM_RADII, PLAYER_RADIUS, SCREEN_Y_SCALE as SQ } from '../constants';
 import { hexCenter, hexContact, hexNeighbors } from '../hex';
 import {
     DT,
@@ -26,12 +26,17 @@ function walkEastInto(
     hexes: Array<[number, number]>,
     col = 30,
     row = 30,
-    ticks = 30
+    ticks = 30,
+    upgrades: string[] = []
 ) {
     const state = world();
     setTerrain(state, terrain, hexes);
     const target = hexCenter(col, row);
     const player = addPlayer(state, 'a', target.x - 150, target.y);
+    if (upgrades.includes('wings')) {
+        player.wingsLevel = 1;
+        player.equippedUpgrade = 'wings';
+    }
     runMovement(state, inputs({ a: { x: 1, y: 0 } }), ticks);
     return player.x - target.x;
 }
@@ -89,18 +94,18 @@ describe('terrain and movement', () => {
         }
         for (const terrain of [mountain, water]) {
             let worst = Infinity;
+            // One world per terrain, reused (building 90 worlds of 4,096 tiles each is slow).
+            const state = world();
+            setTerrain(state, terrain, blob);
+            const player = addPlayer(state, 'p');
             for (let angle = 0; angle < 360; angle += 20) {
                 for (const offset of [-80, -40, 0, 40, 80]) {
                     const a = (angle * Math.PI) / 180;
                     const dir = { x: Math.cos(a), y: Math.sin(a) };
-                    const state = world();
-                    setTerrain(state, terrain, blob);
-                    const player = addPlayer(
-                        state,
-                        'p',
-                        center.x - dir.x * 300 - dir.y * offset,
-                        center.y - dir.y * 300 + dir.x * offset
-                    );
+                    player.x = center.x - dir.x * 300 - dir.y * offset;
+                    player.y = center.y - dir.y * 300 + dir.x * offset;
+                    player.vx = 0;
+                    player.vy = 0;
                     const input = inputs({ p: dir });
                     for (let t = 0; t < 120; t++) {
                         runMovement(state, input, 1);
@@ -118,6 +123,28 @@ describe('terrain and movement', () => {
     });
 });
 
+describe('Wings', () => {
+    const lake: Array<[number, number]> = [
+        [30, 30],
+        ...hexNeighbors(30, 30).map((h) => [h.col, h.row] as [number, number]),
+    ];
+
+    it('carry a player straight over a mountain and over deep water', () => {
+        expect(walkEastInto(mountain, [[30, 30]], 30, 30, 30, ['wings'])).toBeGreaterThan(50);
+        expect(walkEastInto(water, lake, 30, 30, 30, ['wings'])).toBeGreaterThan(50);
+    });
+
+    it("still don't let you claim terrain you fly over", () => {
+        const state = world();
+        setTerrain(state, mountain, [[20, 20]]);
+        const player = addPlayerAt(state, 'a', 20, 20);
+        player.wingsLevel = 1;
+        player.equippedUpgrade = 'wings';
+        CollisionSystem.claimTiles(state, player, []);
+        expect(tileAt(state, 20, 20).ownerId).toBe('');
+    });
+});
+
 describe('terrain and claiming', () => {
     it('nobody claims mountain or water, even with the Expander over them', () => {
         const state = world();
@@ -125,7 +152,7 @@ describe('terrain and claiming', () => {
         setTerrain(state, mountain, terrainHexes.slice(0, 3));
         setTerrain(state, water, terrainHexes.slice(3));
         const player = addPlayerAt(state, 'a', 20, 20);
-        player.claimRadius = EXPANDER_CLAIM_RADIUS;
+        player.claimRadius = EXPANDER_CLAIM_RADII[0];
         const claimed: Array<{ x: number; y: number }> = [];
         CollisionSystem.claimTiles(state, player, claimed as never);
         expect(claimed).toEqual([{ x: 20, y: 20, ownerId: 'a' }]); // only the ground hex

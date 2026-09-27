@@ -26,7 +26,12 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         ready: false,
         gun: '',
         structureInventory: [],
-        upgrades: [],
+        boosterLevel: 0,
+        expanderLevel: 0,
+        armorLevel: 0,
+        wingsLevel: 0,
+        equippedUpgrade: '',
+        upgradeSwitchReadyAt: 0,
         ...overrides,
     };
 }

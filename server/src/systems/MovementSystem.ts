@@ -1,6 +1,5 @@
 import type { GameState } from '../state/GameState';
 import {
-    BOOST_SPEED_MULTIPLIER,
     INPUT_STALE_MS,
     MAP_EDGE_MARGIN,
     PLAYER_ACCEL,
@@ -10,6 +9,7 @@ import {
 } from '../constants';
 import { hexContact, hexNeighbors, mapPixelSize, pixelToHex, structureContact } from '../hex';
 import { blocksWalkingAt } from '../terrain';
+import { UpgradeSystem } from './UpgradeSystem';
 import { areAllies } from '../teams';
 
 export interface PlayerInput {
@@ -25,8 +25,8 @@ const APPROACH_EPSILON = 1e-3; // px; see findBlockingStructure
  * Moves each connected player by easing their velocity toward the velocity
  * their input asks for, at a fixed acceleration (PLAYER_ACCEL). Direction is
  * a free-form vector, so movement can be at any angle; its magnitude (0..1)
- * scales speed, which lets an analog joystick walk slowly. The 'boost' upgrade
- * raises top speed by BOOST_SPEED_MULTIPLIER. Because the same
+ * scales speed, which lets an analog joystick walk slowly. An equipped Booster
+ * raises top speed (UpgradeSystem.speedMultiplier). Because the same
  * acceleration limit applies when speeding up, stopping, and changing
  * direction, motion is smooth rather than snapping between headings.
  *
@@ -34,6 +34,9 @@ const APPROACH_EPSILON = 1e-3; // px; see findBlockingStructure
  * vector's length is taken with y scaled down, so a full-strength vector pointing
  * up the screen has a larger world-y component than one pointing sideways has
  * world-x, and both look equally fast. Longer vectors are clamped to that limit.
+ *
+ * Mountains and deep water are solid too (see pushOutOfTerrain), except to
+ * players with Wings equipped.
  *
  * Structures are solid to everyone except their owner and the owner's
  * teammates: a player can't move into an enemy structure and instead slides
@@ -78,9 +81,7 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
             dy /= magnitude;
         }
 
-        const topSpeed = player.upgrades.includes('boost')
-            ? PLAYER_SPEED * BOOST_SPEED_MULTIPLIER
-            : PLAYER_SPEED;
+        const topSpeed = PLAYER_SPEED * UpgradeSystem.speedMultiplier(player);
         const targetVx = dx * topSpeed;
         const targetVy = dy * topSpeed;
         const deltaVx = targetVx - player.vx;
@@ -127,7 +128,8 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
             }
         }
 
-        ({ x, y } = pushOutOfTerrain(state, player, x, y));
+        // Wings carry a player over mountains and deep water.
+        if (!UpgradeSystem.canFly(player)) ({ x, y } = pushOutOfTerrain(state, player, x, y));
 
         player.x = Math.max(MAP_EDGE_MARGIN, Math.min(width - MAP_EDGE_MARGIN, x));
         player.y = Math.max(MAP_EDGE_MARGIN, Math.min(height - MAP_EDGE_MARGIN, y));

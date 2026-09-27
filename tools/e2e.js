@@ -385,7 +385,30 @@ async function shop() {
     section('The shop over the wire');
     await withServer(0.05, async () => {
         const a = await join(new Client(URL));
-        await startMatch(a);
+        const robot = await join(new Client(URL));
+        robot.send('selectCharacter', { characterId: 'robot' });
+        await sleep(200);
+        await startMatch(a, robot);
+
+        // The Robot starts with Booster 1 equipped: enough to exercise the upgrade slot.
+        const bot = () => robot.state.players.get(robot.sessionId);
+        check(
+            'the Robot starts with Booster 1 equipped',
+            bot().boosterLevel === 1 && bot().equippedUpgrade === 'booster'
+        );
+        robot.send('equipUpgrade', { upgradeId: '' });
+        await waitFor(() => bot().equippedUpgrade === '', 2000);
+        const readyAt = bot().upgradeSwitchReadyAt;
+        robot.send('equipUpgrade', { upgradeId: 'booster' });
+        robot.send('equipUpgrade', { upgradeId: 'wings' });
+        await sleep(300);
+        check(
+            'emptying the slot works; switching again during the cooldown, or to an unowned upgrade, is refused',
+            bot().equippedUpgrade === '' &&
+                readyAt - Date.now() > shared.UPGRADE_SWITCH_COOLDOWN_MS - 1500 &&
+                bot().upgradeSwitchReadyAt === readyAt
+        );
+
         // A Farmer starts with 50 credits: enough for an ammo pack, not for anything that costs 100.
         const start = me(a).credits;
         for (const itemId of ['basicGun', 'expander', 'farm']) a.send('purchase', { itemId });

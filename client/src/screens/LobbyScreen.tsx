@@ -12,13 +12,14 @@ import {
     STRUCTURE_NAMES,
     TEAMS,
     TEAM_IDS,
-    UPGRADE_NAMES,
     isCharacterId,
     isTeamId,
     normalizePlayerName,
     type Character,
     type CharacterId,
     type TeamId,
+    type UpgradeId,
+    upgradeLabel,
 } from '../types/shared';
 import { usePhaseCountdown } from '../utils/usePhaseCountdown';
 
@@ -393,7 +394,14 @@ function CharacterCard({ character }: { character: Character }) {
         ['Ammo', String(character.ammo)],
         ['Credits', String(character.credits)],
         ['Structures', list(character.structures.map((type) => STRUCTURE_NAMES[type]))],
-        ['Upgrades', list(character.upgrades.map((id) => UPGRADE_NAMES[id]))],
+        [
+            'Upgrades',
+            list(
+                (Object.entries(character.upgrades) as Array<[UpgradeId, number]>).map(
+                    ([id, level]) => upgradeLabel(id, level)
+                )
+            ),
+        ],
     ];
 
     return (

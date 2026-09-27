@@ -28,7 +28,7 @@ export class Player extends Schema implements PlayerState {
     @type('number') vy: number = 0;
     @type('number') angle: number = 0; // facing/aim direction in radians (world space)
     @type('number') health: number = BASE_MAX_HEALTH;
-    @type('number') maxHealth: number = BASE_MAX_HEALTH; // ARMOR_MAX_HEALTH with the Armor upgrade
+    @type('number') maxHealth: number = BASE_MAX_HEALTH; // + ARMOR_HEALTH_PER_LEVEL per Armor level
     // Ammo, credits, gun, structure inventory and upgrades are all set from the chosen character's
     // starting kit when the match starts (CharacterSystem); these defaults only matter in the lobby.
     @type('number') ammo: number = 0;
@@ -36,7 +36,7 @@ export class Player extends Schema implements PlayerState {
     @type('number') kills: number = 0;
     @type('number') score: number = 0; // computed by ScoreSystem: tiles + kills x 50 + structures
     @type('number') credits: number = 0;
-    @type('number') claimRadius: number = BASE_CLAIM_RADIUS; // world px; larger once the Expander is owned
+    @type('number') claimRadius: number = BASE_CLAIM_RADIUS; // world px; larger with the Expander equipped
     @type('boolean') connected: boolean = true;
     @type('string') color: string = ''; // always the team's color (TEAMS in types/shared.ts)
     @type('string') teamId: string = ''; // a TeamId; players on the same team are allies
@@ -44,7 +44,13 @@ export class Player extends Schema implements PlayerState {
     @type('boolean') ready: boolean = false; // lobby only: the match starts when everyone is ready
     @type('string') gun: string = ''; // a GunId, or '' = unarmed (can't shoot)
     @type(['string']) structureInventory = new ArraySchema<string>(); // StructureTypes left to place
-    @type(['string']) upgrades = new ArraySchema<string>(); // UpgradeIds owned, e.g. 'boost'
+    // Upgrade levels (0 = not owned) and the one equipped slot upgrade; see UpgradeSystem.
+    @type('uint8') boosterLevel: number = 0;
+    @type('uint8') expanderLevel: number = 0;
+    @type('uint8') armorLevel: number = 0;
+    @type('uint8') wingsLevel: number = 0;
+    @type('string') equippedUpgrade: string = ''; // an UpgradeId with `slot: true`, or '' for none
+    @type('number') upgradeSwitchReadyAt: number = 0; // server ms: the equipped upgrade can change again
 }
 
 export class Tile extends Schema implements TileState {

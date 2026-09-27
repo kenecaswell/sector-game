@@ -12,9 +12,6 @@ export const TICK_RATE = 20; // Hz
 export const RECONNECT_WINDOW_SECONDS = 180; // 3 minutes
 
 export const PLAYER_SPEED = 200; // pixels/sec, top on-screen speed (see SCREEN_Y_SCALE)
-// The 'boost' upgrade (the Robot starts with it) multiplies top speed by this. Acceleration is
-// unchanged, so a boosted player takes a little longer to reach their higher top speed.
-export const BOOST_SPEED_MULTIPLIER = 1.25;
 // If a client sends nothing for this long (tab backgrounded, connection stalled), its last
 // input is discarded and the player coasts to a stop instead of running on forever. The client
 // re-sends its input at least every 250ms while active, so this leaves generous margin.
@@ -25,8 +22,7 @@ export const PLAYER_ACCEL = 1200; // pixels/sec^2 — speeding up, slowing down,
 export const MAP_EDGE_MARGIN = 20;
 
 // Damage per hit comes from the shooter's gun (GUN_DAMAGE in types/shared.ts: basic 50, big 100).
-export const BASE_MAX_HEALTH = 100; // two basic-gun hits kill
-export const ARMOR_MAX_HEALTH = 200; // with the Armor upgrade: +100%
+export const BASE_MAX_HEALTH = 100; // two basic-gun hits kill; Armor adds ARMOR_HEALTH_PER_LEVEL a level
 export const PROJECTILE_LIFETIME_MS = 2000;
 
 // Phase lengths. PHASE_TIME_SCALE (an environment variable, dev/testing only) shrinks them all so
@@ -40,11 +36,13 @@ export const MATCH_DURATION_MS = 5 * 60_000 * PHASE_TIME_SCALE; // the `playing`
 // look at the results, then closed. It closes sooner if everyone leaves.
 export const RESULTS_DURATION_MS = 60_000 * PHASE_TIME_SCALE;
 
-// Claiming uses the player's `claimRadius`: BASE_CLAIM_RADIUS (shared/constants.ts) normally, this
-// with the Expander upgrade (see CharacterSystem.applyUpgradeEffects). The client draws a tinted
-// circle of the player's current `claimRadius` once it's above the base. The Expander's claim radius scales with the player's size: 4x the player radius (80px at 20;
-// it was 64px, twice the base radius, when the player radius was 16).
-export const EXPANDER_CLAIM_RADIUS = PLAYER_RADIUS * 4;
+// Claiming uses the player's `claimRadius`: BASE_CLAIM_RADIUS (shared/constants.ts) normally, or one
+// of these with the Expander equipped, by level (see UpgradeSystem.applyUpgradeEffects). They're
+// picked so a player standing mid-hex claims EXPANDER_HEXES (7 / 19 / 37: 1, 2 and 3 rings of
+// neighbors), whose centers sit up to 55 / 111 / 166 world px away. Level 1 is 4 x the player radius
+// (80 px), the Expander's radius before it had levels. The client draws a tinted circle of the
+// player's `claimRadius` whenever it's above the base.
+export const EXPANDER_CLAIM_RADII = [PLAYER_RADIUS * 4, 125, 180];
 
 // Score = tiles owned x TILE_POINTS + kills x KILL_POINTS + structures owned x STRUCTURE_POINTS.
 // Credits are NOT part of the score (they're for buying things). STRUCTURE_POINTS is a
