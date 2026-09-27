@@ -110,6 +110,7 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Build a structure | `B` or the **Build** button (shows your next structure and how many you have left), then click where to put it — the outline is yellow where you can build, red where you can't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
 | Shop | **Shop** button (below Leaderboard) or `E`; `Esc` closes | **Shop** button |
+| Inventory (your gun, ammo, structures, upgrades; switch the equipped upgrade) | **Inventory** button (below Shop) or `I`; `Esc` closes | **Inventory** button |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 
 Your score is always shown at the top center. The mouse only aims and shoots. If you prefer "forward is toward the cursor" (with `A`/`D` strafing), set `MOVE_RELATIVE_TO_AIM = true` in [`client/src/game/constants.ts`](client/src/game/constants.ts) — but note it tends to feel like chasing the mouse, because the camera follows you.
@@ -149,7 +150,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 | | Wings | 100 | Walk over mountains and deep water |
 | Structures | Farm, Mine, Fort, Power plant | 100 each | One more structure to build |
 
-The shop offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Expander and Wings, only the equipped one works (Armor always does); the first one you buy equips itself, and you can switch at most every 5 seconds. Hexes with an enemy's structure on them can't be claimed.
+The shop offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Expander and Wings, only the equipped one works (Armor always does); the first one you buy equips itself, and you switch in the **Inventory**, at most every 5 seconds. Hexes with an enemy's structure on them can't be claimed.
 
 **Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Credits aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you build on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, mine: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 

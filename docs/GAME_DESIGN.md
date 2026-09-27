@@ -273,13 +273,13 @@ Implementation: [Shop](ARCHITECTURE.md#shop), [Economy (Credits)](ARCHITECTURE.m
 
 ### Upgrades
 
-🧪 Built 2026-09-26 (step 1 of 2; the inventory screen for switching is step 2).
+🧪 Built 2026-09-26.
 
 - **Levels.** Booster, Expander and Armor go up to level 3, Wings has one level. Each level costs 100 credits, bought one at a time in the shop, and is kept all match (respawns included).
 - **One upgrade slot.** Booster, Expander and Wings are *slot* upgrades: you can own all of them, but **only the equipped one works**. Armor isn't a slot upgrade: it always works once bought.
 - **Equipping.** A slot upgrade you buy with the slot empty equips itself; otherwise it waits in your inventory. Buying the next level of the upgrade you have equipped takes effect at once.
-- **Switching** (the inventory screen, step 2): change the equipped upgrade, or empty the slot, any time during the match, at most **once every 5 seconds** (`UPGRADE_SWITCH_COOLDOWN_MS`), so switching is a decision, not a reflex (no flicking Wings on to hop a river mid-chase and straight back to the Booster). You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
-- **Until the inventory exists**, switching can only happen by buying into an empty slot.
+- **Switching** in the **inventory** (`I`, or the Inventory button under Shop): change the equipped upgrade, or empty the slot, any time during the match, at most **once every 5 seconds** (`UPGRADE_SWITCH_COOLDOWN_MS`), so switching is a decision, not a reflex (no flicking Wings on to hop a river mid-chase and straight back to the Booster). You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
+- **The inventory** also shows your gun, ammo and structures by type, and your Armor level. Each owned slot upgrade has an **Equip** button (**Unequip** on the equipped one, which empties the slot); while the cooldown runs the buttons are disabled with a countdown ("You can switch again in 3s"), and while you're over a mountain or deep water with Wings on, it says why you can't switch.
 - The HUD shows your equipped upgrade with its level ("Upgrade: Booster 2") and your Armor level.
 
 ## Scoring and winning
@@ -303,7 +303,7 @@ The full list of controls for players is in the README's [Controls](../README.md
 - **Right-click to walk to a spot** on desktop. Any movement key cancels it.
 - **Shooting:** Space (hold to keep firing) or click, toward the mouse. On touch, the **FIRE** button fires along your movement direction, and tapping the map fires toward that spot.
 - **Touch:** a virtual joystick (bottom left) and FIRE and Build buttons (bottom right). The FIRE button only appears once you have a gun.
-- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it), `E` shop, `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout.
+- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it), `E` shop, `I` inventory, `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout.
 - 📝 **Touch aiming** is limited to your movement direction or a tapped spot; there's no second aiming stick.
 
 Implementation: [Input — desktop and mobile share one message contract](ARCHITECTURE.md#input--desktop-and-mobile-share-one-message-contract), [Movement](ARCHITECTURE.md#movement).
@@ -436,3 +436,4 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Expander steps | Claim 7 / 19 / 37 hexes (1 / 2 / 3 rings; radii 80 / 125 / 180 px) | 7 / 12 / 19 | Chosen by the developer: big, visible jumps |
 | One upgrade slot | Only the equipped slot upgrade (Booster, Expander, Wings) works; switch at most every 5 s; can't take Wings off over solid terrain; a purchase into an empty slot equips itself | Every owned upgrade works (previous); instant switching; switching only on your own territory | Requested (one slot); the 5 s cooldown chosen by the developer to stop reflex swaps in a fight. The Wings rule and auto-equip are my additions: no getting stuck inside a mountain, and a first purchase just works |
 | Armor | Always on (no slot), 3 levels of +100 max health (200 / 300 / 400) | Armor in the slot, with health capped at 100 when switched off | Chosen by the developer |
+| Inventory | A popup like the shop (`I` / Inventory button): gun, ammo, structures, Armor, and owned slot upgrades with Equip / Unequip, a cooldown countdown, and a note when Wings can't come off | Switching from the HUD; a permanent side panel | Requested ("an inventory where they can switch between upgrades and see their owned structures and guns and ammo"). A popup matches the shop and leaderboard and fits phones. The Wings note (checked live on the client with the same `blocksWalking` rule) means a refused switch is never silent |

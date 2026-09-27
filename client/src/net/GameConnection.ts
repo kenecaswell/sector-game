@@ -13,6 +13,7 @@ import { SERVER_URL } from './config';
 import type {
     GameOverEvent,
     InputAckEvent,
+    EquipUpgradeMessage,
     InputMessage,
     JoinOptions,
     PlaceStructureMessage,
@@ -178,6 +179,13 @@ export function sendSelectCharacter(
     characterId: SelectCharacterMessage['characterId']
 ): void {
     room.send<SelectCharacterMessage>('selectCharacter', { characterId });
+}
+
+export function sendEquipUpgrade(
+    room: GameRoom,
+    upgradeId: EquipUpgradeMessage['upgradeId']
+): void {
+    room.send<EquipUpgradeMessage>('equipUpgrade', { upgradeId });
 }
 
 export function sendSetName(room: GameRoom, name: string): void {

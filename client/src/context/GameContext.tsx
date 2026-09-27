@@ -17,6 +17,7 @@ import {
     sendPlaceStructure,
     sendPurchase,
     sendSelectCharacter,
+    sendEquipUpgrade,
     sendSelectTeam,
     sendSetName,
     sendSetReady,
@@ -32,6 +33,7 @@ import type {
     ShopItemId,
     StructureType,
     TeamId,
+    UpgradeId,
 } from '../types/shared';
 import type { PlayerState } from '../types/gameState';
 import { normalizePlayerName } from '../types/shared';
@@ -75,6 +77,8 @@ interface GameContextValue {
     // Rename yourself (lobby only) and remember the name for next time. Ignored if invalid.
     setName: (name: string) => void;
     purchase: (itemId: ShopItemId) => void;
+    // Equip a slot upgrade you own, or '' to empty the slot (the server enforces the cooldown).
+    equipUpgrade: (upgradeId: UpgradeId | '') => void;
     // Leave the finished match and join a fresh lobby / just go back to the start screen.
     playAgain: () => void;
     exitResults: () => void;
@@ -354,6 +358,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
         [room]
     );
 
+    const equipUpgrade = useCallback(
+        (upgradeId: UpgradeId | '') => {
+            if (!room) return;
+            sendEquipUpgrade(room, upgradeId);
+        },
+        [room]
+    );
+
     const setName = useCallback(
         (name: string) => {
             const normalized = normalizePlayerName(name);
@@ -402,6 +414,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             setReady,
             setName,
             purchase,
+            equipUpgrade,
             playAgain,
             exitResults,
         }),
@@ -425,6 +438,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             setReady,
             setName,
             purchase,
+            equipUpgrade,
             playAgain,
             exitResults,
         ]

@@ -4,6 +4,9 @@ import { useGameConnection } from '../context/GameContext';
 import { createPhaserGame } from '../game/PhaserGame';
 import type { GameScene } from '../game/scenes/GameScene';
 import { BuyMenu } from '../components/BuyMenu';
+import { Inventory } from '../components/Inventory';
+import { hexIndex, isValidHex, pixelToHex } from '../game/hex';
+import { blocksWalking } from '../game/terrain';
 import { HUD } from '../components/HUD';
 import { NoticeStack } from '../components/NoticeStack';
 import { Leaderboard } from '../components/Leaderboard';
@@ -27,12 +30,13 @@ export function GameScreen() {
         shoot,
         placeStructure,
         purchase,
+        equipUpgrade,
     } = useGameConnection();
     const containerRef = useRef<HTMLDivElement>(null);
     const gameRef = useRef<Phaser.Game | null>(null);
     const [buildModeArmed, setBuildModeArmed] = useState(false);
     // Only one popup is open at a time.
-    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'shop'>('none');
+    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'shop' | 'inventory'>('none');
     const [showStats, setShowStats] = useState(false);
     const touch = isTouchDevice();
     const shopAvailable = phase === 'playing';
@@ -64,6 +68,24 @@ export function GameScreen() {
 
     const getGame = useCallback(() => gameRef.current, []);
 
+    // Read live from the room (positions don't re-render React): is the player over a mountain or
+    // deep water right now? The server won't take Wings off there, so the inventory says so.
+    const overSolidTerrain = useCallback(() => {
+        if (!room || !sessionId) return false;
+        const self = room.state.players.get(sessionId);
+        if (!self) return false;
+        const { mapWidth, mapHeight, tiles } = room.state;
+        const { col, row } = pixelToHex(self.x, self.y);
+        return blocksWalking(
+            (c, r) =>
+                isValidHex(c, r, mapWidth, mapHeight)
+                    ? tiles[hexIndex(c, r, mapWidth)]?.terrain
+                    : undefined,
+            col,
+            row
+        );
+    }, [room, sessionId]);
+
     const getScene = (): GameScene | undefined =>
         gameRef.current?.scene.getScene('GameScene') as GameScene | undefined;
 
@@ -86,9 +108,9 @@ export function GameScreen() {
         if (canBuild) setBuildModeArmed(!buildArmed);
     }, [canBuild, buildArmed]);
 
-    // B toggles build mode, E the shop, L the leaderboard; Esc leaves build mode and closes either
-    // popup; ` toggles the FPS readout. Phaser only captures the keys it registers (WASD, arrows,
-    // Space), so these don't conflict.
+    // B toggles build mode, E the shop, I the inventory, L the leaderboard; Esc leaves build mode
+    // and closes any popup; ` toggles the FPS readout. Phaser only captures the keys it registers
+    // (WASD, arrows, Space), so these don't conflict.
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.repeat) return;
@@ -97,6 +119,8 @@ export function GameScreen() {
                 setPanel((open) => (open === 'leaderboard' ? 'none' : 'leaderboard'));
             } else if (key === 'e' && shopAvailable) {
                 setPanel((open) => (open === 'shop' ? 'none' : 'shop'));
+            } else if (key === 'i' && shopAvailable) {
+                setPanel((open) => (open === 'inventory' ? 'none' : 'inventory'));
             } else if (key === 'b' && phase === 'playing') {
                 toggleBuildMode();
             } else if (key === 'escape') {
@@ -134,6 +158,16 @@ export function GameScreen() {
                     onClick={() => setPanel((open) => (open === 'shop' ? 'none' : 'shop'))}
                 />
             )}
+            {shopAvailable && (
+                <TopButton
+                    label="Inventory"
+                    top={100}
+                    active={panel === 'inventory'}
+                    onClick={() =>
+                        setPanel((open) => (open === 'inventory' ? 'none' : 'inventory'))
+                    }
+                />
+            )}
             {panel === 'leaderboard' && (
                 <Leaderboard
                     players={players}
@@ -143,6 +177,14 @@ export function GameScreen() {
             )}
             {panel === 'shop' && shopAvailable && (
                 <BuyMenu player={me} onBuy={purchase} onClose={() => setPanel('none')} />
+            )}
+            {panel === 'inventory' && shopAvailable && (
+                <Inventory
+                    player={me}
+                    onEquip={equipUpgrade}
+                    overSolidTerrain={overSolidTerrain}
+                    onClose={() => setPanel('none')}
+                />
             )}
 
             {phase === 'playing' && (
