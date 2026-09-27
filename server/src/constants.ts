@@ -45,20 +45,20 @@ export const RESULTS_DURATION_MS = 60_000 * PHASE_TIME_SCALE;
 export const EXPANDER_CLAIM_RADII = [PLAYER_RADIUS * 4, 125, 180];
 
 // Score = tiles owned x TILE_POINTS + kills x KILL_POINTS + structures owned x STRUCTURE_POINTS.
-// Credits are NOT part of the score (they're for buying things). STRUCTURE_POINTS is a
+// Materials are NOT part of the score (they're for buying things). STRUCTURE_POINTS is a
 // placeholder for the one generic structure; planned types (city hall/school/house/fort)
 // will each get their own value.
 export const TILE_POINTS = 1;
 export const KILL_POINTS = 50;
 export const STRUCTURE_POINTS = 25;
 
-// Credits from claiming: this many for a hex nobody has claimed before this match. Re-taking a hex
+// Materials from claiming: this many for a hex nobody has claimed before this match. Re-taking a hex
 // (from an enemy, or one released when its owner left) pays nothing. Pickups are the other source.
-export const CREDITS_PER_CLAIM = 1;
+export const MATERIALS_PER_CLAIM = 1;
 
-// DEV ONLY (temporary): the M key sends 'devCredits', which adds DEV_CREDITS during the match.
+// DEV ONLY (temporary): the M key sends 'devMaterials', which adds DEV_MATERIALS during the match.
 // Refused when NODE_ENV is 'production'. Remove before hosting (see docs/HOSTING.md).
-export const DEV_CREDITS = 500;
+export const DEV_MATERIALS = 500;
 export const DEV_CHEATS_ENABLED = process.env.NODE_ENV !== 'production';
 
 // Terrain generation (see terrain.ts and docs/GAME_DESIGN.md → Terrain). A new layout is made for
@@ -111,7 +111,7 @@ export const PICKUP_GRID = { cols: 4, rows: 3 };
 export const PICKUP_JITTER = 2;
 // What each location gets. Weights are percentages and add up to 100.
 export const PICKUP_CHANCES = {
-    credits: 40, // a pile of PICKUP_CREDITS credits
+    materials: 40, // a pile of PICKUP_MATERIALS materials
     ammo: 25, // a pile of PICKUP_AMMO shots
     upgrade: 10, // level 1 of a random upgrade (Booster, Expander, Armor, Wings)
     basicGun: 10,
@@ -119,5 +119,5 @@ export const PICKUP_CHANCES = {
     structure: 5, // one random structure type
     nothing: 5,
 };
-export const PICKUP_CREDITS = { min: 10, max: 50 };
+export const PICKUP_MATERIALS = { min: 10, max: 50 };
 export const PICKUP_AMMO = { min: 10, max: 30 };

@@ -4,12 +4,12 @@ import { addPlayer, addStructure, world } from '../test/world';
 import { ScoreSystem } from './ScoreSystem';
 
 describe('ScoreSystem', () => {
-    it("scores tiles + kills + your own structures; credits and others' structures don't count", () => {
+    it("scores tiles + kills + your own structures; materials and others' structures don't count", () => {
         const state = world();
         const p = addPlayer(state, 'a', 0, 0);
         p.tilesOwned = 10;
         p.kills = 2;
-        p.credits = 9999;
+        p.materials = 9999;
         addStructure(state, 'a', 1, 1);
         addStructure(state, 'a', 5, 5);
         addStructure(state, 'other', 9, 9);

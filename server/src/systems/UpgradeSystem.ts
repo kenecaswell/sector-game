@@ -6,7 +6,6 @@ import {
     ARMOR_HEALTH_PER_LEVEL,
     BOOSTER_SPEED_PER_LEVEL,
     UPGRADES,
-    UPGRADE_SWITCH_COOLDOWN_MS,
     activeUpgradeLevel,
     isUpgradeId,
     upgradeLevel,
@@ -40,24 +39,24 @@ function canFly(player: Player): boolean {
 }
 
 /**
- * Equips a slot upgrade the player owns, or empties the slot (`''`). Refused outside the match,
- * during the cooldown (UPGRADE_SWITCH_COOLDOWN_MS after the last change), for an upgrade they don't
- * own or one that doesn't use the slot (Armor), when nothing would change, and for taking Wings
- * off while over a mountain or deep water (they'd be stuck inside it). Returns whether it happened.
+ * Equips a slot upgrade the player owns, or empties the slot (`''`). Switching is instant, as often
+ * as you like (a 5 s cooldown was removed 2026-09-27). Refused outside the match, for an upgrade
+ * they don't own or one that doesn't use the slot (Armor), when nothing would change, and for
+ * taking Wings off while over a mountain or deep water (they'd be stuck inside it). Returns whether
+ * it happened.
  */
-function equip(state: GameState, player: Player, upgradeId: unknown, now = Date.now()): boolean {
+function equip(state: GameState, player: Player, upgradeId: unknown): boolean {
     if (state.phase.phase !== 'playing') return false;
     if (upgradeId !== '' && !isUpgradeId(upgradeId)) return false;
     if (upgradeId !== '' && (!UPGRADES[upgradeId].slot || upgradeLevel(player, upgradeId) === 0)) {
         return false;
     }
-    if (upgradeId === player.equippedUpgrade || now < player.upgradeSwitchReadyAt) return false;
+    if (upgradeId === player.equippedUpgrade) return false;
     if (canFly(player)) {
         const { col, row } = pixelToHex(player.x, player.y);
         if (blocksWalkingAt(state, col, row)) return false;
     }
     player.equippedUpgrade = upgradeId;
-    player.upgradeSwitchReadyAt = now + UPGRADE_SWITCH_COOLDOWN_MS;
     applyUpgradeEffects(player);
     return true;
 }

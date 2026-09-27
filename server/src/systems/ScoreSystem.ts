@@ -7,7 +7,7 @@ import type { FinalScore } from '../types/shared';
  *   tiles owned x TILE_POINTS + kills x KILL_POINTS + structures owned x STRUCTURE_POINTS.
  *
  * Score is derived, not accumulated, so it goes down when tiles or structures
- * are lost — same as it goes up when they're gained. Credits are deliberately
+ * are lost — same as it goes up when they're gained. Materials are deliberately
  * not part of it (they're a spendable currency). Colyseus only syncs a field
  * when its value actually changes, so recomputing every tick costs nothing on
  * the wire.

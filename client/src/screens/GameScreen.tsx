@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { useGameConnection } from '../context/GameContext';
 import { createPhaserGame } from '../game/PhaserGame';
-import { sendDevCredits } from '../net/GameConnection';
+import { sendDevMaterials } from '../net/GameConnection';
 import type { GameScene } from '../game/scenes/GameScene';
-import { BuyMenu } from '../components/BuyMenu';
+import { FabricatorMenu } from '../components/FabricatorMenu';
 import { Inventory } from '../components/Inventory';
 import { hexIndex, isValidHex, pixelToHex } from '../game/hex';
 import { blocksWalking } from '../game/terrain';
@@ -45,7 +45,7 @@ export function GameScreen() {
         selectedStructureRef.current = selectedStructure;
     }, [selectedStructure]);
     // Only one popup is open at a time.
-    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'shop' | 'inventory'>('none');
+    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'fabricator' | 'inventory'>('none');
     const [showStats, setShowStats] = useState(false);
     const touch = isTouchDevice();
     const shopAvailable = phase === 'playing';
@@ -121,9 +121,9 @@ export function GameScreen() {
         if (canBuild) setBuildModeArmed(!buildArmed);
     }, [canBuild, buildArmed]);
 
-    // B toggles build mode, E the shop, I the inventory, L the leaderboard; Esc leaves build mode
-    // and closes any popup; ` toggles the FPS readout. Phaser only captures the keys it registers
-    // (WASD, arrows, Space), so these don't conflict. DEV ONLY (temporary): M adds 500 credits, in
+    // B toggles build mode, I the inventory, L the leaderboard; Esc leaves build mode and closes
+    // any popup. E is unbound (it opened the Shop / Fabricator until 2026-09-27; kept free for later); ` toggles the FPS readout. Phaser only captures the keys it registers
+    // (WASD, arrows, Space), so these don't conflict. DEV ONLY (temporary): M adds 500 materials, in
     // dev builds (`npm run dev`) only; the server refuses it when run with NODE_ENV=production.
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -131,12 +131,10 @@ export function GameScreen() {
             const key = event.key.toLowerCase();
             if (key === 'l') {
                 setPanel((open) => (open === 'leaderboard' ? 'none' : 'leaderboard'));
-            } else if (key === 'e' && shopAvailable) {
-                setPanel((open) => (open === 'shop' ? 'none' : 'shop'));
             } else if (key === 'i' && shopAvailable) {
                 setPanel((open) => (open === 'inventory' ? 'none' : 'inventory'));
             } else if (key === 'm' && phase === 'playing' && import.meta.env.DEV && room) {
-                sendDevCredits(room);
+                sendDevMaterials(room);
             } else if (key === 'b' && phase === 'playing') {
                 toggleBuildMode();
             } else if (key === 'escape') {
@@ -168,10 +166,12 @@ export function GameScreen() {
             />
             {shopAvailable && (
                 <TopButton
-                    label="Shop"
+                    label="Fabricator"
                     top={56}
-                    active={panel === 'shop'}
-                    onClick={() => setPanel((open) => (open === 'shop' ? 'none' : 'shop'))}
+                    active={panel === 'fabricator'}
+                    onClick={() =>
+                        setPanel((open) => (open === 'fabricator' ? 'none' : 'fabricator'))
+                    }
                 />
             )}
             {shopAvailable && (
@@ -191,8 +191,12 @@ export function GameScreen() {
                     onClose={() => setPanel('none')}
                 />
             )}
-            {panel === 'shop' && shopAvailable && (
-                <BuyMenu player={me} onBuy={purchase} onClose={() => setPanel('none')} />
+            {panel === 'fabricator' && shopAvailable && (
+                <FabricatorMenu
+                    player={me}
+                    onFabricate={purchase}
+                    onClose={() => setPanel('none')}
+                />
             )}
             {panel === 'inventory' && shopAvailable && (
                 <Inventory
@@ -213,7 +217,7 @@ export function GameScreen() {
                     title={
                         canBuild
                             ? 'Build mode (B). Esc to cancel. Pick which structure in the inventory (I).'
-                            : 'No structures left. Buy more in the shop (E).'
+                            : 'No structures left. Fabricate more in the Fabricator.'
                     }
                     onClick={(e) => {
                         e.currentTarget.blur(); // so Space keeps meaning "shoot"

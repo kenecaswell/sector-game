@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { PlayerState } from '../types/gameState';
 import type { GunId } from '../types/shared';
 import {
@@ -13,7 +13,8 @@ import {
     upgradeLevel,
     type UpgradeId,
 } from '../types/shared';
-import { usePhaseCountdown } from '../utils/usePhaseCountdown';
+
+const WINGS_CHECK_MS = 200;
 
 // Real CSS for :hover / :disabled (inline styles can't); prefixed so it can't collide.
 const INVENTORY_CSS = `
@@ -56,8 +57,8 @@ interface InventoryProps {
 /**
  * Inventory popup over the game canvas (I, or the Inventory button): your gun, ammo, structures
  * and upgrades. This is where you pick which structure Build places next. Only one slot upgrade
- * (Booster, Expander, Wings) works at a time; this is where you switch it, at most once every
- * UPGRADE_SWITCH_COOLDOWN_MS. The equipped one's button is disabled (you switch by equipping
+ * (Booster, Expander, Wings) works at a time; this is where you switch it, instantly (a 5 s cooldown
+ * was removed 2026-09-27). The equipped one's button is disabled (you switch by equipping
  * another, not by emptying the slot). Armor always works. The server checks every switch; the
  * buttons just avoid offering ones it would refuse.
  */
@@ -69,17 +70,20 @@ export function Inventory({
     overSolidTerrain,
     onClose,
 }: InventoryProps) {
-    // Ticks a few times a second, which also keeps the Wings-over-terrain check current.
-    const secondsLeft = usePhaseCountdown(player?.upgradeSwitchReadyAt ?? 0, 200);
-    const coolingDown = secondsLeft !== null && secondsLeft > 0;
+    // Re-renders a few times a second so the Wings-over-terrain check (read live from the room,
+    // since positions don't re-render React) stays current while the panel is open.
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const timer = window.setInterval(() => setTick((tick) => tick + 1), WINGS_CHECK_MS);
+        return () => window.clearInterval(timer);
+    }, []);
     const wingsStuck = player?.equippedUpgrade === 'wings' && overSolidTerrain();
     const owned = player
         ? UPGRADE_IDS.filter((id) => UPGRADES[id].slot && upgradeLevel(player, id) > 0)
         : [];
 
     let note = 'One upgrade works at a time. Armor is always on.';
-    if (coolingDown) note = `You can switch again in ${secondsLeft}s.`;
-    else if (wingsStuck) note = "You can't take Wings off over a mountain or deep water.";
+    if (wingsStuck) note = "You can't take Wings off over a mountain or deep water.";
 
     return (
         <div
@@ -166,13 +170,13 @@ export function Inventory({
                         />
                     )}
                     {owned.length === 0 && (!player || player.armorLevel === 0) && (
-                        <Row name="None yet" detail="Buy upgrades in the shop (E)." />
+                        <Row name="None yet" detail="Fabricate upgrades in the Fabricator." />
                     )}
                     {player &&
                         owned.map((id) => {
                             const level = upgradeLevel(player, id);
                             const equipped = player.equippedUpgrade === id;
-                            const disabled = equipped || coolingDown || wingsStuck;
+                            const disabled = equipped || wingsStuck;
                             return (
                                 <Row
                                     key={id}
@@ -208,7 +212,8 @@ function structureRows(
 ): ReactNode {
     const counts = new Map<string, number>();
     inventory.forEach((type) => counts.set(type, (counts.get(type) ?? 0) + 1));
-    if (counts.size === 0) return <Row name="None" detail="Buy structures in the shop (E)." />;
+    if (counts.size === 0)
+        return <Row name="None" detail="Fabricate structures in the Fabricator." />;
     return Array.from(counts, ([type, count]) => {
         if (!isStructureType(type)) return <Row key={type} name={type} detail={`×${count}`} />;
         const selected = type === buildNext;

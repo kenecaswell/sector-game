@@ -48,7 +48,7 @@ export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
                     <div>Gun: {GUN_NAMES[me.gun as GunId] ?? 'none'}</div>
                     <div>Ammo: {me.ammo}</div>
                     <div>Tiles: {me.tilesOwned}</div>
-                    <div>Credits: {me.credits}</div>
+                    <div>Materials: {me.materials}</div>
                     <div>Structures: {structureSummary(me.structureInventory)}</div>
                     <div>
                         Upgrade:{' '}

@@ -17,7 +17,7 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         tilesOwned: 0,
         kills: 0,
         score: 0,
-        credits: 0,
+        materials: 0,
         claimRadius: 32,
         connected: true,
         color: '#e74c3c',
@@ -31,7 +31,6 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         armorLevel: 0,
         wingsLevel: 0,
         equippedUpgrade: '',
-        upgradeSwitchReadyAt: 0,
         ...overrides,
     };
 }

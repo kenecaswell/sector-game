@@ -22,8 +22,8 @@ export interface PlayerState {
     ammo: number;
     tilesOwned: number;
     kills: number;
-    score: number; // computed server-side: tiles + kills x 50 + structures (credits excluded)
-    credits: number;
+    score: number; // computed server-side: tiles + kills x 50 + structures (materials excluded)
+    materials: number;
     claimRadius: number; // world px; above the base radius means the Expander is owned
     connected: boolean;
     color: string; // the team's color
@@ -37,7 +37,6 @@ export interface PlayerState {
     armorLevel: number;
     wingsLevel: number;
     equippedUpgrade: string; // the slot upgrade in effect: an UpgradeId, or '' for none
-    upgradeSwitchReadyAt: number; // server ms timestamp: when the equipped upgrade can next change
 }
 
 export interface TileState {
@@ -68,9 +67,9 @@ export interface StructureState {
 
 export interface PickupState {
     id: string;
-    kind: string; // a PickupKind: 'credits' | 'ammo' | 'item'
+    kind: string; // a PickupKind: 'materials' | 'ammo' | 'item'
     itemId: string; // a ShopItemId for kind 'item' (a gun, a level-1 upgrade or a structure), else ''
-    amount: number; // credits or shots, for 'credits' and 'ammo'
+    amount: number; // materials or shots, for 'materials' and 'ammo'
     tileX: number; // the hex it lies on (col, row)
     tileY: number;
 }

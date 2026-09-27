@@ -12,7 +12,7 @@ import { ShopSystem } from './ShopSystem';
 import type { Broadcast } from './Broadcast';
 
 /**
- * Whether `player` can take this pickup. Credits, ammo and structures always; a gun only if it's
+ * Whether `player` can take this pickup. Materials, ammo and structures always; a gun only if it's
  * better than theirs (the shop's rule: no downgrades); an upgrade only if they don't have it yet
  * (a pickup is level 1). One they can't use stays on the map for someone else.
  */
@@ -25,7 +25,7 @@ function canCollect(player: Player, pickup: Pickup): boolean {
 }
 
 function collect(player: Player, pickup: Pickup): void {
-    if (pickup.kind === 'credits') player.credits += pickup.amount;
+    if (pickup.kind === 'materials') player.materials += pickup.amount;
     else if (pickup.kind === 'ammo') player.ammo += pickup.amount;
     else if (isShopItemId(pickup.itemId)) ShopSystem.grant(player, pickup.itemId);
 }

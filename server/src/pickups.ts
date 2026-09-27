@@ -5,7 +5,7 @@
 import {
     PICKUP_AMMO,
     PICKUP_CHANCES,
-    PICKUP_CREDITS,
+    PICKUP_MATERIALS,
     PICKUP_GRID,
     PICKUP_JITTER,
     SPAWN_CLEAR_RADIUS,
@@ -29,7 +29,7 @@ export interface PickupSpec {
     row: number;
 }
 
-const STRUCTURE_ITEMS: StructureType[] = ['farm', 'mine', 'fort', 'power'];
+const STRUCTURE_ITEMS: StructureType[] = ['farm', 'fabricator', 'fort', 'power'];
 
 /**
  * One roll of PICKUP_CHANCES: what a location gets, or null for nothing. `random` returns [0, 1).
@@ -50,8 +50,8 @@ export function rollPickup(random: () => number): Omit<PickupSpec, 'col' | 'row'
     const pick = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)];
 
     switch (outcome) {
-        case 'credits':
-            return { kind: 'credits', itemId: '', amount: between(PICKUP_CREDITS) };
+        case 'materials':
+            return { kind: 'materials', itemId: '', amount: between(PICKUP_MATERIALS) };
         case 'ammo':
             return { kind: 'ammo', itemId: '', amount: between(PICKUP_AMMO) };
         case 'upgrade':

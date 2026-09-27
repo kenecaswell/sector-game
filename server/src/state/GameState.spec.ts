@@ -79,7 +79,7 @@ describe('GameState schema', () => {
             health: BASE_MAX_HEALTH,
             maxHealth: BASE_MAX_HEALTH,
             ammo: 0,
-            credits: 0,
+            materials: 0,
             gun: '',
             character: DEFAULT_CHARACTER,
             ready: false,
@@ -94,7 +94,6 @@ describe('GameState schema', () => {
             armorLevel: 0,
             wingsLevel: 0,
             equippedUpgrade: '',
-            upgradeSwitchReadyAt: 0,
         });
     });
 

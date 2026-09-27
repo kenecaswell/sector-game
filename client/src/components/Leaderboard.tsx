@@ -10,7 +10,7 @@ interface LeaderboardProps {
 /**
  * Leaderboard popup over the game canvas — GameScreen shows and hides it.
  * Clicking the dimmed backdrop, the close button, or pressing Esc closes it.
- * Ranked by `scoreFor` (a credits stand-in until real scoring exists) and
+ * Ranked by `scoreFor` (a materials stand-in until real scoring exists) and
  * re-rendered whenever GameContext's reactive `players` array updates.
  */
 export function Leaderboard({ players, sessionId, onClose }: LeaderboardProps) {

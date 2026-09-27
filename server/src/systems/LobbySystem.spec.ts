@@ -65,7 +65,7 @@ describe('LobbySystem — ready-up and countdown', () => {
     it('when the countdown ends: everyone gets their kit and the match starts', () => {
         const a = addPlayer(state, 'a');
         const b = addPlayer(state, 'b');
-        LobbySystem.selectCharacter(state, b, 'smuggler');
+        LobbySystem.selectCharacter(state, b, 'explorer');
         LobbySystem.setReady(state, a, true);
         LobbySystem.setReady(state, b, true);
         tick();
@@ -74,7 +74,7 @@ describe('LobbySystem — ready-up and countdown', () => {
         expect(state.phase.phase).toBe('playing');
         expect(state.phase.endsAt - Date.now()).toBeGreaterThan(MATCH_DURATION_MS - 100);
         expect(Array.from(a.structureInventory)).toEqual(['farm']);
-        expect([b.gun, b.ammo, b.credits]).toEqual(['basic', 15, 15]);
+        expect([b.gun, b.ammo, b.materials]).toEqual(['basic', 15, 15]);
     });
 });
 

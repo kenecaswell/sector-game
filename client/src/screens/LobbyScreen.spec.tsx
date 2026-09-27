@@ -95,16 +95,16 @@ describe('LobbyScreen — team, character and ready', () => {
         await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'blue');
         await userEvent.selectOptions(
             screen.getByRole('combobox', { name: 'Character' }),
-            'smuggler'
+            'explorer'
         );
         expect(connection.selectTeam).toHaveBeenCalledWith('blue');
-        expect(connection.selectCharacter).toHaveBeenCalledWith('smuggler');
+        expect(connection.selectCharacter).toHaveBeenCalledWith('explorer');
     });
 
     it("shows how many players are on each team and your character's kit", () => {
-        showLobby({ character: 'smuggler' }, [makePlayer({ id: 'b', name: 'Bo', teamId: 'red' })]);
+        showLobby({ character: 'explorer' }, [makePlayer({ id: 'b', name: 'Bo', teamId: 'red' })]);
         expect(screen.getByRole('option', { name: 'Red (2)' })).toBeInTheDocument();
-        expect(screen.getByText('Smuggler', { selector: 'strong' })).toBeInTheDocument(); // the card's title
+        expect(screen.getByText('Explorer', { selector: 'strong' })).toBeInTheDocument(); // the card's title
         expect(screen.getByText('Basic gun')).toBeInTheDocument();
     });
 

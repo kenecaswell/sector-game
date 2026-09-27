@@ -14,7 +14,7 @@ import {
 // Button looks live in real CSS because inline styles can't express :hover / :active. The class
 // names are prefixed so they can't collide with anything else on the page.
 const BUTTON_CSS = `
-.shop-buy {
+.fab-make {
     flex-shrink: 0;
     min-width: 64px;
     padding: 6px 10px;
@@ -26,78 +26,79 @@ const BUTTON_CSS = `
     cursor: pointer;
     transition: transform 90ms ease, background-color 120ms ease, box-shadow 120ms ease;
 }
-.shop-buy:not(:disabled):hover { background: #ffd84a; }
-.shop-buy:not(:disabled):active {
+.fab-make:not(:disabled):hover { background: #ffd84a; }
+.fab-make:not(:disabled):active {
     background: #c9a20d;
     transform: scale(0.92);
     box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.4);
 }
-.shop-buy:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.shop-buy:disabled {
+.fab-make:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.fab-make:disabled {
     background: rgba(255, 255, 255, 0.12);
     color: rgba(255, 255, 255, 0.5);
     cursor: default;
 }
-.shop-buy--bought,
-.shop-buy--bought:disabled {
+.fab-make--made,
+.fab-make--made:disabled {
     background: #2ecc71;
     color: #fff;
     transform: scale(1.08);
 }
 `;
 
-const BOUGHT_FLASH_MS = 700;
+const MADE_FLASH_MS = 700;
 
-interface BuyMenuProps {
+interface FabricatorMenuProps {
     player: PlayerState | undefined;
-    onBuy: (itemId: ShopItemId) => void;
+    onFabricate: (itemId: ShopItemId) => void;
     onClose: () => void;
 }
 
 /**
- * Shop popup over the game canvas; GameScreen lets players toggle it during the match (E). Items
- * are grouped by category, straight from the shared SHOP_ITEMS catalog. Clicking the dimmed
- * backdrop, the close button, or pressing Esc closes it. The server validates every purchase; the
- * buttons just avoid offering ones that would be rejected (not enough credits, or `ownsShopItem`:
- * an upgrade you already have or a gun that isn't better than yours).
+ * The Fabricator popup over the game canvas (the Shop until 2026-09-27; the catalog and the
+ * `purchase` message keep their shop names in code): make items from materials. GameScreen shows it
+ * from the Fabricator button during the match (no hotkey). Items are grouped by category, straight from the shared SHOP_ITEMS catalog, and cost
+ * materials. Clicking the dimmed backdrop, the close button, or pressing Esc closes it. The server
+ * validates every request; the buttons just avoid offering ones that would be rejected (not enough
+ * materials, or `ownsShopItem`: an upgrade you already have or a gun that isn't better than yours).
  */
-export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
-    const credits = player?.credits ?? 0;
-    // Which item's button is showing its "bought" confirmation right now. It's shown when the
-    // button is pressed (the server accepts any purchase the button allowed, barring a race).
-    const [boughtId, setBoughtId] = useState<ShopItemId | null>(null);
-    const boughtTimer = useRef<number | undefined>(undefined);
-    useEffect(() => () => window.clearTimeout(boughtTimer.current), []);
+export function FabricatorMenu({ player, onFabricate, onClose }: FabricatorMenuProps) {
+    const materials = player?.materials ?? 0;
+    // Which item's button is showing its "made" confirmation right now. It's shown when the
+    // button is pressed (the server accepts any request the button allowed, barring a race).
+    const [madeId, setMadeId] = useState<ShopItemId | null>(null);
+    const madeTimer = useRef<number | undefined>(undefined);
+    useEffect(() => () => window.clearTimeout(madeTimer.current), []);
 
-    const handleBuy = (itemId: ShopItemId) => {
-        onBuy(itemId);
-        setBoughtId(itemId);
-        window.clearTimeout(boughtTimer.current);
-        boughtTimer.current = window.setTimeout(() => setBoughtId(null), BOUGHT_FLASH_MS);
+    const handleFabricate = (itemId: ShopItemId) => {
+        onFabricate(itemId);
+        setMadeId(itemId);
+        window.clearTimeout(madeTimer.current);
+        madeTimer.current = window.setTimeout(() => setMadeId(null), MADE_FLASH_MS);
     };
 
     const buttonFor = (itemId: ShopItemId) => {
         const item = SHOP_ITEMS[itemId];
         const owned = !!player && ownsShopItem(player, itemId);
-        const affordable = credits >= item.cost;
-        const bought = boughtId === itemId;
+        const affordable = materials >= item.cost;
+        const made = madeId === itemId;
         // A maxed upgrade reads "Max"; a gun you can't improve on reads "Owned".
-        const label = bought ? '✓' : owned ? (item.upgrade ? 'Max' : 'Owned') : `${item.cost} cr`;
+        const label = made ? '✓' : owned ? (item.upgrade ? 'Max' : 'Owned') : `${item.cost} mat`;
         return (
             <button
                 type="button"
-                className={bought ? 'shop-buy shop-buy--bought' : 'shop-buy'}
+                className={made ? 'fab-make fab-make--made' : 'fab-make'}
                 disabled={owned || !affordable}
                 title={
                     owned
                         ? item.upgrade
                             ? 'Already at the top level'
-                            : 'You already own this'
+                            : 'You already have this'
                         : affordable
-                          ? 'Buy'
-                          : 'Not enough credits'
+                          ? 'Fabricate'
+                          : 'Not enough materials'
                 }
-                onClick={() => handleBuy(itemId)}
+                onClick={() => handleFabricate(itemId)}
             >
                 {label}
             </button>
@@ -122,7 +123,7 @@ export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
             <style>{BUTTON_CSS}</style>
             <div
                 role="dialog"
-                aria-label="Shop"
+                aria-label="Fabricator"
                 onClick={(e) => e.stopPropagation()}
                 style={{
                     width: 420,
@@ -146,10 +147,10 @@ export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
                         alignItems: 'center',
                     }}
                 >
-                    <strong style={{ fontSize: 18 }}>Shop</strong>
+                    <strong style={{ fontSize: 18 }}>Fabricator</strong>
                     <button
                         type="button"
-                        aria-label="Close shop"
+                        aria-label="Close fabricator"
                         onClick={onClose}
                         style={{
                             border: 'none',
@@ -172,13 +173,13 @@ export function BuyMenu({ player, onBuy, onClose }: BuyMenuProps) {
                         fontWeight: 'bold',
                     }}
                 >
-                    <span style={{ color: '#f1c40f' }}>Credits: {credits}</span>
+                    <span style={{ color: '#f1c40f' }}>Materials: {materials}</span>
                     <span>Ammo: {player?.ammo ?? 0}</span>
                     <span>{GUN_NAMES[player?.gun as GunId] ?? 'No gun'}</span>
                 </div>
 
                 <div style={{ marginBottom: 10, opacity: 0.8 }}>
-                    Shopping is on your own time — the game keeps running.
+                    Fabricating is on your own time — the game keeps running.
                 </div>
 
                 {(Object.keys(SHOP_CATEGORY_NAMES) as ShopCategory[]).map((category) => (

@@ -66,7 +66,7 @@ describe('ownsShopItem', () => {
 
     it('never marks ammo or structures as owned (you can always buy more)', () => {
         const rich = player('big', { boosterLevel: 3, armorLevel: 3, expanderLevel: 3 });
-        for (const id of ['ammo', 'farm', 'mine', 'fort', 'power'] as const) {
+        for (const id of ['ammo', 'farm', 'fabricator', 'fort', 'power'] as const) {
             expect(ownsShopItem(rich, id)).toBe(false);
         }
     });
@@ -130,7 +130,7 @@ describe('catalogs', () => {
         for (const id of CHARACTER_IDS) {
             expect(CHARACTERS[id].name.length).toBeGreaterThan(0);
             expect(CHARACTERS[id].ammo).toBeGreaterThanOrEqual(0);
-            expect(CHARACTERS[id].credits).toBeGreaterThanOrEqual(0);
+            expect(CHARACTERS[id].materials).toBeGreaterThanOrEqual(0);
         }
     });
 
@@ -142,7 +142,7 @@ describe('catalogs', () => {
 
 describe('pickupLabel', () => {
     it('names piles by amount and items like the shop (upgrades at level 1)', () => {
-        expect(pickupLabel('credits', '', 30)).toBe('30 credits');
+        expect(pickupLabel('materials', '', 30)).toBe('30 materials');
         expect(pickupLabel('ammo', '', 12)).toBe('12 ammo');
         expect(pickupLabel('item', 'booster', 0)).toBe('Booster 1');
         expect(pickupLabel('item', 'wings', 0)).toBe('Wings');

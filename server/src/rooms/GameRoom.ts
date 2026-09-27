@@ -97,8 +97,8 @@ export class GameRoom extends Room<GameState> {
             this.withPlayer(client, (p) => UpgradeSystem.equip(this.state, p, msg?.upgradeId))
         );
         // DEV ONLY (temporary): the M key. EconomySystem refuses it with NODE_ENV=production.
-        this.onMessage('devCredits', (client) =>
-            this.withPlayer(client, (p) => EconomySystem.grantDevCredits(this.state, p))
+        this.onMessage('devMaterials', (client) =>
+            this.withPlayer(client, (p) => EconomySystem.grantDevMaterials(this.state, p))
         );
         this.onMessage<PurchaseMessage>('purchase', (client, msg) =>
             this.handlePurchase(client, msg)
