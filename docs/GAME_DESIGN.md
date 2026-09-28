@@ -232,7 +232,7 @@ Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detecti
 
 - **Getting them:** each structure-starting character begins with one, and you can fabricate more (100 materials each). You hold them in a **structure inventory** until you place them.
 - **Footprint:** a structure sits on a center hex and **covers that hex plus its 6 neighbors**.
-- **Placing:** press **Build** (the button, or `B`), then pick a spot. It places the structure you picked in the **inventory** (each structure type there has a **Select** button; the picked one shows **Selected**), or, until you pick one or once you've run out of it, the first in your inventory. The Build button names it and how many of that type you have ("Build Fort (2)"). **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can place it there, red if not.
+- **Placing:** click a structure's icon in the **inventory bar** on the right of the screen ([Inventory bar](#inventory-bar)), then pick a spot. `B` does the same for the structure you picked last, or the first you have. While placing, **`Tab` switches to the next structure type you hold** (`Shift+Tab` the previous), in catalog order. A hint at the bottom says what you're placing. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can place it there, red if not.
 - **Solid:** enemies can't walk through your structure; they slide around it. You and your teammates can walk over it.
 - **Protection:** enemies can't claim any of its 7 hexes.
 - **Health and destruction:** 🧪 100 health. Enemy shots damage it, and at 0 it's destroyed and removed. 📝 There's no visible damage state yet (planned: intact → cracked → heavily damaged).
@@ -280,7 +280,7 @@ Implementation: [Pickups](ARCHITECTURE.md#pickups).
 
 ### Fabricator
 
-🧪 Items aren't bought, they're **fabricated** from materials. Open the **Fabricator** any time during the match with the **Fabricator** button (it was the Shop, on `E`, until 2026-09-27; `E` is now unbound, kept for something later). Placing a structure you have is still **Build** (`B`). The game keeps running while it's open, so fabricating in the middle of a fight is risky. The catalog is `SHOP_ITEMS` in `shared/types.ts` (the code keeps its shop names). Prices show as "100 mat".
+🧪 Items aren't bought, they're **fabricated** from materials. Open the **Fabricator** any time during the match with the **Fabricator** button or **`F`** (it was the Shop, on `E`, until 2026-09-27; `E` is now unbound, kept for something later). Placing a structure you have is still **Build** (`B`). The game keeps running while it's open, so fabricating in the middle of a fight is risky. The catalog is `SHOP_ITEMS` in `shared/types.ts` (the code keeps its shop names). Prices show as "100 mat".
 
 | Category | Item | Cost | What it does | Limit |
 |---|---|---|---|---|
@@ -306,11 +306,18 @@ Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materia
 - **Levels.** Booster, Expander and Armor go up to level 3, Wings has one level. Each level costs 100 materials, fabricated one at a time, and is kept all match (respawns included).
 - **One upgrade slot.** Booster, Expander and Wings are *slot* upgrades: you can own all of them, but **only the equipped one works**. Armor isn't a slot upgrade: it always works once bought.
 - **Equipping.** A slot upgrade you fabricate with the slot empty equips itself; otherwise it waits in your inventory. Fabricating the next level of the upgrade you have equipped takes effect at once.
-- **Switching** in the **inventory** (`I`, or the Inventory button under Fabricator): change the equipped upgrade any time during the match, **instantly and as often as you like** (a 5-second cooldown was removed 2026-09-27). You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
-- **The inventory** also shows your gun, ammo and structures by type, and your Armor level. Each owned slot upgrade has an **Equip** button; the equipped one's is a disabled **Equipped** (you switch by equipping another, not by emptying the slot). While you're over a mountain or deep water with Wings on, the buttons are disabled and it says why.
-- The HUD shows your equipped upgrade with its level ("Upgrade: Booster 2") and your Armor level.
+- **Switching** by clicking an upgrade in the [inventory bar](#inventory-bar): change the equipped upgrade any time during the match, **instantly and as often as you like** (a 5-second cooldown was removed 2026-09-27). You can't empty the slot, only switch to another. You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
 
-## Scoring and winning
+### Inventory bar
+
+✅ Your structures and upgrades are shown **on screen, down the right side** (under the Leaderboard and Fabricator buttons), as clickable icons. It replaced the Build button and the Inventory popup (2026-09-27). **`I` hides and shows it.**
+
+- **Structures:** one icon per type you hold, with how many (a Farm icon with "2"), in catalog order. **Click one to build it**: build mode starts with that type and a hint appears at the bottom ("Pick a spot for the Farm…"). Click it again, press `Esc` or `B` to stop. The icon being built is outlined in yellow.
+- **Upgrades:** one icon per upgrade you own, with its level for the three-level ones. **Click one to switch to it**, instantly. The one in use is outlined and can't be clicked. Armor is shown, outlined, because it's always on. While you're over a mountain or deep water with Wings on, the others are disabled.
+- Hidden when you hold no structures or upgrades. Hover an icon for its name and effect.
+- **Look** (until art): the pickup shapes — a tiny slab in the structure's color, a diamond in the upgrade's color.
+
+
 
 ✅ first version. Your score is shown at the top of the screen all match and recalculated continuously (`TILE_POINTS`, `KILL_POINTS`, `STRUCTURE_POINTS`):
 
@@ -330,8 +337,8 @@ The full list of controls for players is in the README's [Controls](../README.md
 - **Movement keys move in fixed on-screen directions** (`W`/`A`/`S`/`D` or arrows = up, left, down, right), and the mouse only aims and shoots. The first prototype moved you "forward" toward the cursor instead; it felt like chasing the mouse, because the camera follows you while the cursor stays still.
 - **Right-click to walk to a spot** on desktop. Any movement key cancels it.
 - **Shooting:** Space (hold to keep firing) or click, toward the mouse. On touch, the **FIRE** button fires along your movement direction, and tapping the map fires toward that spot.
-- **Touch:** a virtual joystick (bottom left) and FIRE and Build buttons (bottom right). The FIRE button only appears once you have a gun.
-- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it), `I` inventory, `E` unused (it opened the Shop; kept free for something later), `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout. `M` (dev builds only, temporary) adds 500 materials.
+- **Touch:** a virtual joystick (bottom left), the FIRE button (bottom right), and the inventory bar's icons (right side) for building and switching upgrades. The FIRE button only appears once you have a gun.
+- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it; `Tab` / `Shift+Tab` switch structure while in it), `F` the Fabricator, `I` hides/shows the inventory bar, `E` unused (it opened the Shop; kept free for something later), `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout. `M` (dev builds only, temporary) adds 500 materials.
 - 📝 **Touch aiming** is limited to your movement direction or a tapped spot; there's no second aiming stick.
 
 Implementation: [Input — desktop and mobile share one message contract](ARCHITECTURE.md#input--desktop-and-mobile-share-one-message-contract), [Movement](ARCHITECTURE.md#movement).
@@ -386,11 +393,8 @@ Things that need a design decision, not just code. Where one is also tracked in 
   - Should maps be shareable or replayable (a visible seed)?
 - **Map outline:** the jagged hex edge versus the rectangular walkable area could be fixed at the same time.
 
-### Inventory on the HUD (planned, deferred)
-Requested 2026-09-27, not built yet. Show the player's inventory **on screen, on the right, as part of the HUD**, instead of only in the Inventory popup:
-- **Structures:** an icon per type you own with its count (a Farm icon with "2"). **Clicking it starts building that structure** (build mode with that type), which replaces the **Build** button; the button goes away once this exists.
-- **Upgrades:** an icon per owned upgrade; **clicking one switches to it** (the 5-second switching cooldown was already removed to make this work).
-- Open: what the Inventory popup keeps (gun and ammo, or nothing), how the icons look before there's art (reuse the pickup shapes?), touch sizing, and keyboard shortcuts (number keys?).
+### Inventory bar (follow-ups)
+Built 2026-09-27 (see [Inventory bar](#inventory-bar)). Still open: number-key shortcuts for the icons; showing gun and ammo in the bar too; real icons once there's art.
 
 ### Art and presentation (Planned Features #7, #10)
 - Real art for hexes, terrain, structures and characters, including characters that face six directions to match the hex grid.
@@ -484,3 +488,5 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Fabricator, Build and `E` (revised) | The menu is the **Fabricator** (button only; `E` is unbound and kept for later); placing a structure is **Build** on `B` again | "Fabricate" for both, with `F` for placing (previous, same day) | Requested (2026-09-27). The menu shares its name with the Fabricator structure for now |
 | No switching cooldown | Switch the equipped upgrade instantly, as often as you like; the Wings-over-terrain rule stays | At most once every 5 s (previous) | Requested (2026-09-27), ahead of the planned HUD inventory where clicking an upgrade switches to it. This allows flicking Wings on to cross a river mid-chase; revisit if it's abused |
 | Smuggler renamed Explorer | The armed starting character is the **Explorer** (id `explorer`); same kit (Basic gun, 15 ammo, 15 materials) and description. Older text was reworded | Keep the id `smuggler` and change only the name | Requested (2026-09-27). Renaming the id too keeps code and game in step, as with mine → fabricator |
+| Inventory bar | Structures and upgrades as icons down the right side; clicking a structure starts building it, clicking an upgrade switches to it; the Build button is removed and `B` stays; the left HUD drops its Structures and Upgrade lines | Keeping the Build button alongside; a bottom bar | Requested (2026-09-27). The right side is free on desktop and phones (the joystick and FIRE hold the bottom corners). A bottom hint replaces the Build button's "Pick a spot" text. The Inventory popup stays for now |
+| Inventory popup removed; `F`, `I`, `Tab` | The Inventory popup and its button are gone (the inventory bar covers structures and upgrades; gun and ammo are in the top-left HUD). `F` opens the Fabricator, `I` hides/shows the inventory bar, `Tab` in build mode cycles structure types | Keeping the popup for gun and ammo | Requested (2026-09-27). `Shift+Tab` going backwards is my addition. Tab only does this in build mode, so it's left alone otherwise |

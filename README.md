@@ -107,10 +107,11 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
 | Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
-| Build a structure (place one you have) | `B` or the **Build** button, bottom right (shows which structure it will place and how many of that type you have; pick the type in the Inventory), then click where to put it — the outline is yellow where it fits, red where it doesn't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
+| Build a structure (place one you have) | Click its icon in the **inventory bar** (right side, under Structures; the number is how many you have), or `B` for the one you picked last; while placing, `Tab` switches to your next structure type (`Shift+Tab` the previous). Then click where to put it — the outline is yellow where it fits, red where it doesn't. `Esc`, `B`, or its icon again cancels | Tap its icon, then tap where to put it (a refused tap flashes red); tap the icon again to cancel |
+| Switch upgrade | Click its icon in the inventory bar (under Upgrades; the number is its level). The one in use is outlined; Armor is always on | Tap its icon |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
-| Fabricator (make items from materials) | **Fabricator** button (below Leaderboard); `Esc` closes. No hotkey (`E` is kept free) | **Fabricator** button |
-| Inventory (your gun, ammo, structures, upgrades; pick which structure Build places; switch the equipped upgrade) | **Inventory** button (below Fabricator) or `I`; `Esc` closes | **Inventory** button |
+| Fabricator (make items from materials) | **Fabricator** button (below Leaderboard) or `F`; `Esc` closes | **Fabricator** button |
+| Hide / show the inventory bar | `I` | — |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 | **Dev only (temporary):** +500 materials | `M` during the match, in a dev build (`npm run dev`); a server started with `NODE_ENV=production` refuses it | — |
 
@@ -138,7 +139,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Explorer starts with one), place the structures your character started with on hexes you own, and gather materials. The Fabricator stays available from the **Fabricator** button — the game keeps running while it's open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
-**Fabricator** (during the match; the **Fabricator** button). Items aren't bought, they're fabricated from materials:
+**Fabricator** (during the match; the **Fabricator** button or `F`). Items aren't bought, they're fabricated from materials:
 
 | | Item | Cost | What it does |
 |---|---|---|---|

@@ -1,13 +1,6 @@
 import type { PlayerState } from '../types/gameState';
 import type { GamePhase, GunId } from '../types/shared';
-import {
-    GUN_NAMES,
-    STRUCTURE_NAMES,
-    isStructureType,
-    isUpgradeId,
-    upgradeLabel,
-    upgradeLevel,
-} from '../types/shared';
+import { GUN_NAMES } from '../types/shared';
 import { usePhaseCountdown } from '../utils/usePhaseCountdown';
 
 interface HUDProps {
@@ -16,6 +9,10 @@ interface HUDProps {
     phaseEndsAt: number;
 }
 
+/**
+ * Top-left stats: phase and time left, health, gun, ammo, tiles and materials. Structures and
+ * upgrades are on the right, in the InventoryBar (moved there 2026-09-27).
+ */
 export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
     const secondsLeft = usePhaseCountdown(phaseEndsAt);
 
@@ -49,27 +46,8 @@ export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
                     <div>Ammo: {me.ammo}</div>
                     <div>Tiles: {me.tilesOwned}</div>
                     <div>Materials: {me.materials}</div>
-                    <div>Structures: {structureSummary(me.structureInventory)}</div>
-                    <div>
-                        Upgrade:{' '}
-                        {isUpgradeId(me.equippedUpgrade)
-                            ? upgradeLabel(me.equippedUpgrade, upgradeLevel(me, me.equippedUpgrade))
-                            : 'none'}
-                    </div>
-                    {me.armorLevel > 0 && <div>{upgradeLabel('armor', me.armorLevel)}</div>}
                 </>
             )}
         </div>
     );
-}
-
-/** e.g. "Farm, Fort ×2", or "none". */
-function structureSummary(inventory: readonly string[]): string {
-    const counts = new Map<string, number>();
-    inventory.forEach((type) => counts.set(type, (counts.get(type) ?? 0) + 1));
-    if (counts.size === 0) return 'none';
-    return Array.from(counts, ([type, count]) => {
-        const name = isStructureType(type) ? STRUCTURE_NAMES[type] : type;
-        return count > 1 ? `${name} ×${count}` : name;
-    }).join(', ');
 }

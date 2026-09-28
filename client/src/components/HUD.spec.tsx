@@ -26,41 +26,16 @@ describe('HUD', () => {
         expect(screen.getByText('Materials: 55')).toBeInTheDocument();
     });
 
-    it('says "none" when unarmed and has nothing to build', () => {
-        render(<HUD me={makePlayer()} phase="playing" phaseEndsAt={0} />);
-        expect(screen.getByText('Gun: none')).toBeInTheDocument();
-        expect(screen.getByText('Structures: none')).toBeInTheDocument();
-    });
-
-    it('groups structures by type with counts', () => {
+    it('says "none" when unarmed, and leaves structures and upgrades to the inventory bar', () => {
         render(
             <HUD
-                me={makePlayer({ structureInventory: ['farm', 'fort', 'farm'] })}
+                me={makePlayer({ structureInventory: ['farm'], boosterLevel: 1 })}
                 phase="playing"
                 phaseEndsAt={0}
             />
         );
-        expect(screen.getByText('Structures: Farm ×2, Fort')).toBeInTheDocument();
-    });
-
-    it('shows the equipped upgrade with its level, and Armor when owned', () => {
-        const { rerender } = render(<HUD me={makePlayer()} phase="playing" phaseEndsAt={0} />);
-        expect(screen.getByText('Upgrade: none')).toBeInTheDocument();
-        expect(screen.queryByText(/Armor/)).not.toBeInTheDocument();
-        rerender(
-            <HUD
-                me={makePlayer({
-                    boosterLevel: 2,
-                    wingsLevel: 1,
-                    equippedUpgrade: 'booster',
-                    armorLevel: 3,
-                })}
-                phase="playing"
-                phaseEndsAt={0}
-            />
-        );
-        expect(screen.getByText('Upgrade: Booster 2')).toBeInTheDocument();
-        expect(screen.getByText('Armor 3')).toBeInTheDocument();
+        expect(screen.getByText('Gun: none')).toBeInTheDocument();
+        expect(screen.queryByText(/Structures|Upgrade|Farm|Booster/)).not.toBeInTheDocument();
     });
 
     it('never shows negative health', () => {
