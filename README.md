@@ -131,7 +131,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      | Farmer | — | 0 | 50 | Farm | — |
      | Miner | — | 0 | 50 | Fabricator | — |
      | Builder | — | 0 | 50 | Fort | — |
-     | Robot | — | 0 | 50 | — | Booster 1, equipped (+25% top speed) |
+     | Robot | — | 0 | 50 | — | Booster 1, equipped (+33% top speed) |
      | Scientist | — | 0 | 50 | Power plant | — |
      | Explorer | Basic gun | 15 | 15 | — | — |
 
@@ -149,8 +149,8 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 | Weapons | Basic gun | 100 | Lets you shoot, 50 damage per hit |
 | | Big gun | 200 | 100 damage per hit; replaces the basic gun |
 | | Ammo pack | 30 | 30 shots |
-| Upgrades | Booster 1–3 | 100 a level | 125 / 150 / 175% speed |
-| | Expander 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you) |
+| Upgrades | Booster 1–3 | 100 a level | 133 / 166 / 199% speed |
+| | Expander 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you); 90 / 80 / 70% speed |
 | | Armor 1–3 | 100 a level | 200 / 300 / 400 health; always on |
 | | Wings | 100 | Walk over mountains and deep water |
 | Structures | Farm, Fabricator, Fort, Power plant | 100 each | One more structure to place |

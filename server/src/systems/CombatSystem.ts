@@ -1,7 +1,7 @@
 import type { GameState, Player } from '../state/GameState';
 import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
-import { PROJECTILE_LIFETIME_MS } from '../constants';
+import { PROJECTILE_LIFETIME_MS, SHOT_TERRAIN_STEP } from '../constants';
 import { projectileVelocity } from '../../../shared/projectiles';
 import { isMountainAtPoint, spawnPoint } from '../terrain';
 import { mapPixelSize } from '../hex';
@@ -42,12 +42,18 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
         proj.x += velocity.x * dt;
         proj.y += velocity.y * dt;
 
-        // Mountains stop shots (water doesn't). Checking the middle of this tick's travel as well
-        // as its end keeps a shot from skipping over a mountain's corner.
-        const mid = { x: (prev.x + proj.x) / 2, y: (prev.y + proj.y) / 2 };
-        if (isMountainAtPoint(state, mid.x, mid.y) || isMountainAtPoint(state, proj.x, proj.y)) {
-            toRemove.add(id);
-            return;
+        // Mountains stop shots (water doesn't). This tick's travel is checked every
+        // SHOT_TERRAIN_STEP px, so a shot can't skip over the thin tip of a mountain hex.
+        const travel = Math.hypot(proj.x - prev.x, proj.y - prev.y);
+        const steps = Math.max(1, Math.ceil(travel / SHOT_TERRAIN_STEP));
+        for (let k = 1; k <= steps; k++) {
+            const t = k / steps;
+            const x = prev.x + (proj.x - prev.x) * t;
+            const y = prev.y + (proj.y - prev.y) * t;
+            if (isMountainAtPoint(state, x, y)) {
+                toRemove.add(id);
+                return;
+            }
         }
 
         state.players.forEach((player) => {

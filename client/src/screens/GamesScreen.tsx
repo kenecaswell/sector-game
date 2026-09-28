@@ -4,6 +4,7 @@ import { normalizeGameCode, type GameListing } from '../types/shared';
 import { filterGames, settingsSummary } from '../utils/games';
 import { MENU_CSS } from './menuStyles';
 import { MenuHeader } from './MenuHeader';
+import { MenuFooter } from './MenuFooter';
 
 const REFRESH_MS = 3000;
 
@@ -143,6 +144,7 @@ export function GamesScreen({
                               : ''}
                 </p>
             </div>
+            <MenuFooter />
         </main>
     );
 }

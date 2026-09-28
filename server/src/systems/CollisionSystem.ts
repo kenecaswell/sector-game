@@ -39,7 +39,7 @@ function checkProjectilePlayerCollision(
 }
 
 // A projectile hits a structure when it's inside the structure's hexagon (see hex.ts). Shots
-// move at most ~33px a tick and the hexagon is ~150px across, so testing the end point is enough.
+// move at most ~50px a tick and the hexagon is ~150px across, so testing the end point is enough.
 function checkProjectileStructureCollision(
     proj: { x: number; y: number },
     structure: { tileX: number; tileY: number }

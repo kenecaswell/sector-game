@@ -88,9 +88,12 @@ describe('upgrade levels in the shop', () => {
         expect(shopItemTitle(none, 'booster')).toBe('Booster 1');
         expect(shopItemTitle({ ...none, boosterLevel: 2 }, 'booster')).toBe('Booster 3');
         expect(shopItemDescription({ ...none, boosterLevel: 2 }, 'booster')).toBe(
-            '175% of normal speed.'
+            '199% of normal speed.'
         );
         expect(shopItemDescription({ ...none, armorLevel: 1 }, 'armor')).toMatch(/^300 max health/);
+        expect(shopItemDescription({ ...none, expanderLevel: 1 }, 'expander')).toBe(
+            'Claim 19 hexes at once, standing mid-hex. 80% of normal speed.'
+        );
         expect(shopItemTitle(none, 'wings')).toBe('Wings'); // one level: no number
         expect(shopItemTitle(none, 'ammo')).toBe('Ammo pack');
     });

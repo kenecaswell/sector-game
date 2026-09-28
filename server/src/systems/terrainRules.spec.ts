@@ -198,7 +198,7 @@ describe('terrain and shots', () => {
     });
 
     it("doesn't skip a mountain's corner between ticks", () => {
-        // Shots fired straight down the screen move ~33 world px per tick, and near a hex's left and
+        // Shots fired straight down the screen move ~50 world px per tick, and near a hex's left and
         // right points the hex is much thinner than that. Every shot whose path crosses the hex
         // must stop there, not pop out the other side.
         const c = hexCenter(30, 30);

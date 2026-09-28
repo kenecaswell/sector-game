@@ -180,6 +180,15 @@ describe('LobbyScreen — game settings', () => {
         await userEvent.selectOptions(color, 'green');
         expect(connection.selectTeam).toHaveBeenCalledWith('green');
         expect(screen.getByText(/Teams are off in this game/)).toBeInTheDocument();
+        // Bo's row has no team/color label (their dot shows it); only the picker's option says Blue.
+        expect(screen.queryByText('Blue')).not.toBeInTheDocument();
+        expect(screen.getByText('© 2026 kenecaswell')).toBeInTheDocument();
+    });
+
+    it("with teams on, other players' rows name their team", () => {
+        connection.settings = settings(true);
+        showLobby({ teamId: 'red' }, [makePlayer({ id: 'b', name: 'Bo', teamId: 'blue' })]);
+        expect(screen.getByText('Blue')).toBeInTheDocument();
     });
 
     it('Leave leaves the game and goes back to the game list', async () => {

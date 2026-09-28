@@ -10,11 +10,21 @@ export const MENU_CSS = `
     color: #fff;
     font-family: sans-serif;
     display: flex;
-    justify-content: center;
-    padding: 32px 16px;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 0;
     box-sizing: border-box;
 }
-.menu-column { width: 640px; max-width: 100%; text-align: left; }
+/* The content grows to fill the screen, so the footer sits at the bottom (or below long content). */
+.menu-column { width: 640px; max-width: 100%; text-align: left; flex: 1 0 auto; }
+.menu-footer {
+    flex-shrink: 0;
+    margin-top: 40px;
+    padding: 16px 0 20px;
+    font-size: 12px;
+    opacity: 0.5;
+    text-align: center;
+}
 .menu-header {
     display: grid;
     grid-template-columns: 1fr auto 1fr;

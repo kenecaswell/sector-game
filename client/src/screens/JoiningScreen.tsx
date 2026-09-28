@@ -1,5 +1,6 @@
 import { MENU_CSS } from './menuStyles';
 import { MenuHeader } from './MenuHeader';
+import { MenuFooter } from './MenuFooter';
 
 interface JoiningScreenProps {
     code: string;
@@ -46,6 +47,7 @@ export function JoiningScreen({ code, error, onRetry, onBack }: JoiningScreenPro
                     )}
                 </div>
             </div>
+            <MenuFooter />
         </main>
     );
 }

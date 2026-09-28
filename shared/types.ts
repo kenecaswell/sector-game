@@ -303,7 +303,8 @@ export function isUpgradeId(value: unknown): value is UpgradeId {
     return typeof value === 'string' && Object.hasOwn(UPGRADES, value);
 }
 
-export const BOOSTER_SPEED_PER_LEVEL = 0.25; // +25% of base top speed per level: 125/150/175%
+export const BOOSTER_SPEED_PER_LEVEL = 0.33; // +33% of base top speed per level: 133/166/199%
+export const EXPANDER_SLOW_PER_LEVEL = 0.1; // the Expander costs 10% of base top speed per level: 90/80/70%
 export const ARMOR_HEALTH_PER_LEVEL = 100; // +100 max health per level: 200/300/400
 export const EXPANDER_HEXES = [7, 19, 37]; // hexes claimed at once, standing mid-hex, per level
 
@@ -334,9 +335,9 @@ export function upgradeLabel(id: UpgradeId, level: number): string {
 export function upgradeEffect(id: UpgradeId, level: number): string {
     switch (id) {
         case 'booster':
-            return `${100 + level * BOOSTER_SPEED_PER_LEVEL * 100}% of normal speed.`;
+            return `${Math.round(100 + level * BOOSTER_SPEED_PER_LEVEL * 100)}% of normal speed.`;
         case 'expander':
-            return `Claim ${EXPANDER_HEXES[level - 1]} hexes at once, standing mid-hex.`;
+            return `Claim ${EXPANDER_HEXES[level - 1]} hexes at once, standing mid-hex. ${Math.round(100 - level * EXPANDER_SLOW_PER_LEVEL * 100)}% of normal speed.`;
         case 'armor':
             return `${100 + level * ARMOR_HEALTH_PER_LEVEL} max health. Always on, no slot needed.`;
         case 'wings':

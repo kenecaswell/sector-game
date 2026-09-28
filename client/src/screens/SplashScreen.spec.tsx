@@ -10,5 +10,6 @@ describe('SplashScreen', () => {
         expect(screen.getByRole('heading', { name: 'SECTOR 42' })).toBeInTheDocument();
         await userEvent.click(screen.getByRole('button', { name: 'PLAY' }));
         expect(onPlay).toHaveBeenCalled();
+        expect(screen.getByRole('contentinfo')).toHaveTextContent('© 2026 kenecaswell');
     });
 });

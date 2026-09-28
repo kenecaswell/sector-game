@@ -9,6 +9,7 @@ import {
 } from '../types/shared';
 import { MENU_CSS } from './menuStyles';
 import { MenuHeader } from './MenuHeader';
+import { MenuFooter } from './MenuFooter';
 
 interface CreateGameScreenProps {
     /** The player's saved name, for the suggested game name ("Ada's game"). */
@@ -134,6 +135,7 @@ export function CreateGameScreen({
                     </button>
                 </div>
             </form>
+            <MenuFooter />
         </main>
     );
 }

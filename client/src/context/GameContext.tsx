@@ -160,10 +160,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     },
                     onGameOver: (event) => setGameOver(event),
                     onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
-                        pushNotice(
-                            'warning',
-                            `${event.name} disconnected`
-                        );
+                        pushNotice('warning', `${event.name} disconnected`);
                     },
                     // Only you are told what you picked up (everyone sees it vanish from the map).
                     onPickupCollected: (event: PickupCollectedEvent) => {

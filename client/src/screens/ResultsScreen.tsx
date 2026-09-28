@@ -1,6 +1,8 @@
 import type { FinalScore } from '../types/shared';
 import { rankScores, teamTotals } from '../utils/results';
 import { usePhaseCountdown } from '../utils/usePhaseCountdown';
+import { MENU_CSS } from './menuStyles';
+import { MenuFooter } from './MenuFooter';
 
 interface ResultsScreenProps {
     scores: FinalScore[];
@@ -44,22 +46,10 @@ export function ResultsScreen({
     }
 
     return (
-        <div
-            style={{
-                position: 'fixed',
-                inset: 0,
-                overflowY: 'auto',
-                background: '#1a1a2e',
-                color: '#fff',
-                fontFamily: 'sans-serif',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 16,
-                boxSizing: 'border-box',
-            }}
-        >
-            <div style={{ width: 560, maxWidth: '100%', textAlign: 'center' }}>
+        <div className="menu-screen">
+            <style>{MENU_CSS}</style>
+            {/* Centered in the space above the footer. */}
+            <div style={{ width: 560, maxWidth: '100%', textAlign: 'center', margin: 'auto 0' }}>
                 <div style={{ fontSize: 13, letterSpacing: 2, opacity: 0.7 }}>MATCH OVER</div>
                 <h1 style={{ margin: '4px 0 20px', fontSize: 34, color: '#f1c40f' }}>{headline}</h1>
 
@@ -202,6 +192,7 @@ export function ResultsScreen({
                     </button>
                 </div>
             </div>
+            <MenuFooter />
         </div>
     );
 }

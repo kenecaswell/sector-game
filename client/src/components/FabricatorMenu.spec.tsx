@@ -71,7 +71,7 @@ describe('FabricatorMenu', () => {
         renderMenu(makePlayer({ materials: 1000, boosterLevel: 1, expanderLevel: 2 }));
         const booster = screen.getByRole('group', { name: 'Booster' });
         expect(within(booster).getByText('Booster 2')).toBeInTheDocument();
-        expect(within(booster).getByText('150% of normal speed.')).toBeInTheDocument();
+        expect(within(booster).getByText('166% of normal speed.')).toBeInTheDocument();
         const expander = screen.getByRole('group', { name: 'Expander' });
         expect(within(expander).getByText('Expander 3')).toBeInTheDocument();
         expect(within(expander).getByText(/Claim 37 hexes/)).toBeInTheDocument();

@@ -27,6 +27,7 @@ import { usePhaseCountdown } from '../utils/usePhaseCountdown';
 import { gamePath, navigate } from '../utils/route';
 import { MENU_CSS } from './menuStyles';
 import { MenuHeader } from './MenuHeader';
+import { MenuFooter } from './MenuFooter';
 
 // Real CSS for what inline styles can't express (:hover, :disabled, the narrow-screen layout).
 // Selects use `appearance: none` with a drawn arrow: Safari otherwise ignores most of their styling
@@ -118,7 +119,12 @@ const LOBBY_CSS = `
     .lobby-row--head { display: none; }
     .lobby-name, .lobby-ready, .lobby-status { grid-column: 1 / -1; }
     .lobby-ready { padding: 10px; }
-    .lobby-status { text-align: left; }
+    /* Other players: one line, name · character · ready (their dot shows their color/team). */
+    .lobby-row--other { grid-template-columns: minmax(0, 1fr) auto auto; padding: 6px 12px; column-gap: 12px; }
+    .lobby-row--other .lobby-team { display: none; }
+    .lobby-row--other .lobby-name, .lobby-row--other .lobby-status { grid-column: auto; }
+    .lobby-row--other .lobby-status { font-size: 12px; text-align: right; }
+    .lobby-row--other > div:nth-child(3) { font-size: 14px; opacity: 0.85; }
 }
 `;
 
@@ -174,24 +180,11 @@ export function LobbyScreen() {
     players.forEach((p) => teamCounts.set(p.teamId, (teamCounts.get(p.teamId) ?? 0) + 1));
 
     return (
-        <div
-            style={{
-                position: 'fixed',
-                inset: 0,
-                overflowY: 'auto',
-                background: '#1a1a2e',
-                color: '#fff',
-                fontFamily: 'sans-serif',
-                display: 'flex',
-                justifyContent: 'center',
-                padding: '32px 16px',
-                boxSizing: 'border-box',
-            }}
-        >
+        <div className="menu-screen">
             <style>{MENU_CSS}</style>
             <style>{LOBBY_CSS}</style>
             <NoticeStack notices={notices} />
-            <div style={{ width: 680, maxWidth: '100%', textAlign: 'left' }}>
+            <div className="menu-column" style={{ width: 680 }}>
                 <MenuHeader
                     backLabel="Leave"
                     onBack={() => {
@@ -262,7 +255,7 @@ export function LobbyScreen() {
                                 onName={setName}
                             />
                         ) : (
-                            <OtherRow key={player.id} player={player} />
+                            <OtherRow key={player.id} player={player} teams={teams} />
                         )
                     )}
                 </div>
@@ -276,6 +269,7 @@ export function LobbyScreen() {
                     The match starts 3 seconds after everyone is ready.
                 </p>
             </div>
+            <MenuFooter />
         </div>
     );
 }
@@ -444,14 +438,26 @@ function NameField({ name, onName }: { name: string; onName: (name: string) => v
     );
 }
 
-function OtherRow({ player }: { player: PlayerState }) {
+/**
+ * Another player: name (with their color dot), team (only when teams are on; with teams off the
+ * dot says it all), character, ready state. On phones it's one compact line without the team.
+ */
+function OtherRow({ player, teams }: { player: PlayerState; teams: boolean }) {
     return (
-        <div className="lobby-row" role="listitem" style={{ opacity: player.connected ? 1 : 0.5 }}>
+        <div
+            className="lobby-row lobby-row--other"
+            role="listitem"
+            style={{ opacity: player.connected ? 1 : 0.5 }}
+        >
             <Name player={player} />
-            <div className="lobby-pick">
-                <span className="lobby-swatch" style={{ background: player.color }} />
-                {teamName(player)}
-            </div>
+            {teams ? (
+                <div className="lobby-pick lobby-team">
+                    <span className="lobby-swatch" style={{ background: player.color }} />
+                    {teamName(player)}
+                </div>
+            ) : (
+                <div className="lobby-team" />
+            )}
             <div>{characterOf(player).name}</div>
             <div
                 className="lobby-status"

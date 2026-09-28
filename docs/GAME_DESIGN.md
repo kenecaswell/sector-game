@@ -201,7 +201,7 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 | **Farmer** | Starts with a farm. | none | 0 | 50 | farm | — |
 | **Miner** | Starts with a fabricator. | none | 0 | 50 | fabricator | — |
 | **Builder** | Starts with a fort. | none | 0 | 50 | fort | — |
-| **Robot** | Moves faster than everyone else. | none | 0 | 50 | — | Booster 1, equipped (125% speed) |
+| **Robot** | Moves faster than everyone else. | none | 0 | 50 | — | Booster 1, equipped (133% speed) |
 | **Scientist** | Starts with a power plant. | none | 0 | 50 | power plant | — |
 | **Explorer** | The only one who starts armed, but with few materials. | Basic gun | 15 | 15 | — | — |
 
@@ -237,7 +237,7 @@ Implementation: [Tile Claiming](ARCHITECTURE.md#tile-claiming).
   You have at most one gun. The Big gun replaces the Basic gun, and you can fabricate it without owning the Basic gun first. You can't go back to the Basic gun.
 - **Ammo:** each shot uses 1. You can fabricate ammo before you have a gun. 📝 Ammo **never regenerates and has no cap**; the only source is buying ammo packs. Running out means you can't shoot until you buy more.
 - **Fire rate:** up to 5 shots per second while you hold the fire control (200 ms apart, `FIRE_INTERVAL_MS`). 📝 This limit is currently enforced only by the game client; the server should own it.
-- **Shots:** travel in a straight line at the same on-screen speed in every direction, and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`), which is roughly a quarter of the map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
+- **Shots:** travel in a straight line at the same on-screen speed in every direction, at 🧪 **600 on-screen px/s** (`PROJECTILE_SPEED`; 400 until 2026-09-27), and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`): a range of about 1,200 px, roughly 40% of a Small map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
 - **Friendly fire:** none. Shots pass through teammates and teammates' structures.
 - **Kills:** the shooter's kill count goes up and the victim respawns at their spawn spot (see [Players](#players)). Kills are permanent and count toward score.
 
@@ -304,8 +304,8 @@ Implementation: [Pickups](ARCHITECTURE.md#pickups).
 | Weapons | **Basic gun** | 100 | Lets you shoot; 50 damage per hit. | Not if you have any gun |
 | Weapons | **Big gun** | 200 | 100 damage per hit. Replaces the Basic gun. | One |
 | Weapons | **Ammo pack** | 30 | +30 shots (1 material per shot). | Unlimited; no ammo cap |
-| Upgrades | **Booster** 1–3 | 100 a level | Top speed 125 / 150 / 175% of normal (`BOOSTER_SPEED_PER_LEVEL`). Uses the upgrade slot. | 3 levels |
-| Upgrades | **Expander** 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once. Uses the upgrade slot. | 3 levels |
+| Upgrades | **Booster** 1–3 | 100 a level | Top speed 133 / 166 / 199% of normal (`BOOSTER_SPEED_PER_LEVEL`, +33% a level). Uses the upgrade slot. | 3 levels |
+| Upgrades | **Expander** 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once, but top speed drops to 90 / 80 / 70% of normal (`EXPANDER_SLOW_PER_LEVEL`, −10% a level). Uses the upgrade slot. | 3 levels |
 | Upgrades | **Armor** 1–3 | 100 a level | Max health 200 / 300 / 400, and +100 health right away. **Always on**, no slot. | 3 levels |
 | Upgrades | **Wings** | 100 | Walk over mountains and deep water ([Terrain](#terrain)). You still can't claim them, and mountains still stop your shots. Uses the upgrade slot. | One |
 | Structures | **Farm**, **Fabricator**, **Fort**, **Power plant** | 100 each | One more of that structure to place. | Unlimited |
@@ -489,7 +489,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Feature gap | At least 3 ground hexes between any two features (`FEATURE_GAP`) | 1 (previous); 2 | Requested ("at least 3 tiles away"); 3 hexes between chosen by the developer |
 | Shallow vs deep, small vs large: stored or derived? | Shallow/deep is derived from the water's shape wherever it's needed; small/large mountain pieces are recorded by the generator but not synced yet | Enumerate them as extra terrain values | Deriving shallow water keeps one source of truth. Which hexes form a mountain piece can't be derived, so it'll be synced when the sprites need it |
 | Upgrade levels | Booster, Expander and Armor have 3 levels, Wings 1; 100 materials a level; the shop lists each upgrade once and offers the next level | One of each (previous) | Requested (2026-09-26). "Speed boost" renamed "Booster" |
-| Booster steps | +25% of base top speed per level: 125 / 150 / 175% | Compounding 25% (125 / 156 / 195%) | Chosen by the developer: even, readable steps |
+| Booster steps — **superseded 2026-09-27 (+33%, below)** | +25% of base top speed per level: 125 / 150 / 175% | Compounding 25% (125 / 156 / 195%) | Chosen by the developer: even, readable steps |
 | Expander steps | Claim 7 / 19 / 37 hexes (1 / 2 / 3 rings; radii 80 / 125 / 180 px) | 7 / 12 / 19 | Chosen by the developer: big, visible jumps |
 | One upgrade slot | Only the equipped slot upgrade (Booster, Expander, Wings) works; switch at most every 5 s; can't take Wings off over solid terrain; a purchase into an empty slot equips itself | Every owned upgrade works (previous); instant switching; switching only on your own territory | Requested (one slot); the 5 s cooldown chosen by the developer to stop reflex swaps in a fight. The Wings rule and auto-equip are my additions: no getting stuck inside a mountain, and a first purchase just works |
 | Armor | Always on (no slot), 3 levels of +100 max health (200 / 300 / 400) | Armor in the slot, with health capped at 100 when switched off | Chosen by the developer |
@@ -513,3 +513,5 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Start screens and games | Splash (title + Play) → game list (Create game on top, find by code or name, open games) → Create game (map size, teams, drop pods, length) → lobby; every game has a 4-character code and a `/game/CODE` URL | Quick-play (join any open game); a host-controlled lobby | Requested (2026-09-27). My choices: map sizes 64/80/96 (bigger costs too much graphics memory on phones), 4-character codes without look-alike characters, a game name field (the list filters by name), "Play again" going back to the list, drop-pod grid scaled with the map, and no connection-status line on the start screen |
 | Menu header, Create buttons, 7-minute games | The game list, Create game and joining screens share a header: back on the left, "SECTOR 42" centered, the right kept free for a settings button. Create game's buttons are centered, with a plain-text Cancel left of a green Create game. Game length adds 7 minutes | — | Requested (2026-09-27) |
 | Colors with teams off; lobby header and phone layout | With teams off, players pick a color no one else has (the Team picker relabeled Color, taken colors disabled); the lobby uses the menu header (Leave left, SECTOR 42 centered); on phones the pickers sit side by side under your name | No choice of color with teams off (previous, same day) | Requested (2026-09-27). The server enforces "not taken" in `selectTeam` |
+| Compact lobby rows; footer | On phones other players take one line (name with color dot, character, ready); with teams off their team/color isn't spelled out (the dot shows it); every menu screen has a "© 2026 kenecaswell" footer with space above it | — | Requested (2026-09-27) |
+| Booster, Expander and shot speeds (revised) | Booster +33% a level (133 / 166 / 199%); the Expander now slows you 10% a level (90 / 80 / 70%) while equipped; shots 50% faster (600 on-screen px/s, same 2 s lifetime, so 50% more range) | +25% Booster, no Expander penalty, 400 px/s shots (previous) | Requested (2026-09-27). The Expander's wide claims get a cost; faster shots are easier to land. Keeping the lifetime (my choice) means the range grows too; shorten `PROJECTILE_LIFETIME_MS` if that's too far |

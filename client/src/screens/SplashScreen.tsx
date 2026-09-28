@@ -1,4 +1,5 @@
 import { MENU_CSS } from './menuStyles';
+import { MenuFooter } from './MenuFooter';
 
 // The splash screen's own look: a placeholder backdrop (a dark sky over a hex grid, until there's
 // game art) and a big pulsing Play button.
@@ -45,6 +46,7 @@ const SPLASH_CSS = `
     transition: transform 90ms ease, background-color 120ms ease;
 }
 .splash-play:hover { background: #ffd84a; }
+.splash-footer { position: absolute; bottom: 0; left: 0; right: 0; margin: 0; }
 .splash-play:active { transform: scale(0.96); }
 .splash-play:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
 @keyframes splash-pulse {
@@ -73,6 +75,7 @@ export function SplashScreen({ onPlay }: SplashScreenProps) {
             <button type="button" className="splash-play" onClick={onPlay}>
                 PLAY
             </button>
+            <MenuFooter className="menu-footer splash-footer" />
         </main>
     );
 }

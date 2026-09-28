@@ -5,6 +5,7 @@ import { blocksWalkingAt } from '../terrain';
 import {
     ARMOR_HEALTH_PER_LEVEL,
     BOOSTER_SPEED_PER_LEVEL,
+    EXPANDER_SLOW_PER_LEVEL,
     UPGRADES,
     activeUpgradeLevel,
     isUpgradeId,
@@ -28,9 +29,17 @@ function applyUpgradeEffects(player: Player): void {
     player.claimRadius = expander > 0 ? EXPANDER_CLAIM_RADII[expander - 1] : BASE_CLAIM_RADIUS;
 }
 
-/** Top speed relative to normal: +BOOSTER_SPEED_PER_LEVEL per level of an equipped Booster. */
+/**
+ * Top speed relative to normal: +BOOSTER_SPEED_PER_LEVEL per level of an equipped Booster, and
+ * −EXPANDER_SLOW_PER_LEVEL per level of an equipped Expander (claiming a wide area costs speed).
+ * Only one of them can be equipped at a time.
+ */
 function speedMultiplier(player: Player): number {
-    return 1 + BOOSTER_SPEED_PER_LEVEL * activeUpgradeLevel(player, 'booster');
+    return (
+        1 +
+        BOOSTER_SPEED_PER_LEVEL * activeUpgradeLevel(player, 'booster') -
+        EXPANDER_SLOW_PER_LEVEL * activeUpgradeLevel(player, 'expander')
+    );
 }
 
 /** Whether the player flies over mountains and deep water (Wings equipped). */

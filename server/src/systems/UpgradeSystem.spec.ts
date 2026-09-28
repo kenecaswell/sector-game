@@ -26,7 +26,7 @@ describe('UpgradeSystem.equip', () => {
         UpgradeSystem.equip(state, player, 'expander');
         UpgradeSystem.equip(state, player, 'booster');
         expect(player.claimRadius).toBe(BASE_CLAIM_RADIUS);
-        expect(UpgradeSystem.speedMultiplier(player)).toBe(1.5);
+        expect(UpgradeSystem.speedMultiplier(player)).toBeCloseTo(1.66, 9); // Booster 2
     });
 
     it('switches instantly, as often as you like (no cooldown)', () => {
@@ -74,6 +74,33 @@ describe('UpgradeSystem.equip', () => {
         expect(player.maxHealth).toBe(200);
         UpgradeSystem.equip(state, player, 'wings');
         expect(player.maxHealth).toBe(200);
+    });
+});
+
+describe('UpgradeSystem.speedMultiplier', () => {
+    it('Booster: +33% a level (133 / 166 / 199%); Expander: −10% a level (90 / 80 / 70%)', () => {
+        const { state, player } = owner();
+        const at = (id: 'booster' | 'expander', level: number) => {
+            player[`${id}Level`] = level;
+            UpgradeSystem.equip(state, player, id);
+            return UpgradeSystem.speedMultiplier(player);
+        };
+        expect([1, 2, 3].map((level) => at('booster', level))).toEqual([
+            expect.closeTo(1.33, 9),
+            expect.closeTo(1.66, 9),
+            expect.closeTo(1.99, 9),
+        ]);
+        expect([1, 2, 3].map((level) => at('expander', level))).toEqual([
+            expect.closeTo(0.9, 9),
+            expect.closeTo(0.8, 9),
+            expect.closeTo(0.7, 9),
+        ]);
+    });
+
+    it("an Expander you own but haven't equipped doesn't slow you", () => {
+        const { state, player } = owner(); // owns Expander 3
+        UpgradeSystem.equip(state, player, 'wings');
+        expect(UpgradeSystem.speedMultiplier(player)).toBe(1);
     });
 });
 

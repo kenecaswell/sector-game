@@ -1,5 +1,5 @@
 import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
-import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
+import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH, PROJECTILE_SPEED } from '../constants';
 import {
     DEFAULT_CHARACTER,
     GUN_DAMAGE,
@@ -72,7 +72,7 @@ export class Projectile extends Schema implements ProjectileState {
     @type('number') x: number = 0;
     @type('number') y: number = 0;
     @type('number') angle: number = 0;
-    @type('number') speed: number = 400; // on-screen pixels/sec (see SCREEN_Y_SCALE)
+    @type('number') speed: number = PROJECTILE_SPEED; // on-screen pixels/sec (see SCREEN_Y_SCALE)
     @type('number') spawnedAt: number = 0; // server timestamp ms, for lifetime expiry
     @type('number') damage: number = GUN_DAMAGE.basic; // set from the shooter's gun when fired
 }
