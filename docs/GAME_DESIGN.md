@@ -73,13 +73,30 @@ This is the section to grow as the world takes shape.
 
 ## Match flow
 
+### Getting into a game ✅
+
+- **Start screen:** the title over (placeholder) art and one big **Play** button. Nothing connects to the server until you pick a game.
+- **Game list** (after Play, `/play`): **Create game** at the top, a **find** box (code or name), then the open games, refreshed every few seconds: name, code, players (of 10), settings, and whether it's in the lobby or in play. Full games can't be picked. Finished games aren't listed. Typing a full code that isn't listed offers "Join game CODE" anyway.
+- **Every game has a code**: 4 characters, without look-alikes (no 0/O, 1/I). **`/game/CODE`** in the address bar goes straight to that game, so a link can be shared. The lobby shows the code with a **Copy link** button.
+- **Create game** (`/play/new`) sets the game's name (default "Name's game") and its settings, fixed for that game:
+
+| Setting | Options | Default |
+|---|---|---|
+| Map size | Small 64 × 64, Big 80 × 80, Large 96 × 96 | Small |
+| Teams | On (players pick a team color and play as allies) / Off (everyone for themselves) | Off |
+| Drop pods | On / Off ([Pickups](#pickups)) | On |
+| Game length | 5, 7 or 10 minutes | 5 |
+
+- **With teams off** the lobby's Team picker becomes a **Color** picker: you can take any of the 8 colors nobody else has (others show "(taken)"). Everyone starts on their own color, and nobody is anyone's ally (with more than 8 players, colors repeat, but they're still enemies). 📝 A better color/team picker is planned (Planned Features #10).
+- **Bigger maps** get more drop pods (a 5 × 4 grid on Big, 6 × 5 on Large) and a respawn wave every 2:50 whatever the length (two in a 7-minute game, three in a 10-minute one).
+
 A match moves through four phases. ✅
 
 | Phase | What happens | How long |
 |---|---|---|
-| **Lobby** | Players join, set a name, pick a team color and a character, and press **Ready**. | Until every connected player is ready |
+| **Lobby** | Players join, set a name, pick a character (and a team color, if the game has teams on), and press **Ready**. | Until every connected player is ready |
 | **Countdown** | Everyone is ready: "Starting in 3…". Nobody can move yet. If anyone un-readies or a new player joins, it cancels back to the lobby. | 3 s (`COUNTDOWN_DURATION_MS`) |
-| **Playing** | The whole match. Claiming, shooting, fabricating and gathering all happen at once. | 5 min (`MATCH_DURATION_MS`) |
+| **Playing** | The whole match. Claiming, shooting, fabricating and gathering all happen at once. | 5, 7 or 10 min (the game's setting) |
 | **Results** | Final standings and the winner. No new players can join. The room closes when the timer ends (or when the last player leaves), but each player's results stay on screen until they choose **Play again** or **Main menu**. | 60 s (`RESULTS_DURATION_MS`) |
 
 - **Nobody is in charge.** There is no host and no Start button: the match starts itself once everyone is ready.
@@ -87,13 +104,13 @@ A match moves through four phases. ✅
 - **Team and character are locked while you're ready.** Un-ready to change them, so what everyone saw when they readied is what starts. Your name can still change while you're ready, but not once the match starts.
 - **Players who drop don't hold up the lobby.** A disconnected player is left out of the ready check.
 - **Joining mid-match** is allowed during the playing phase. The newcomer plays the default character (Farmer).
-- **Play again** puts you in a fresh lobby (not a rematch in the same room).
+- **Play again** takes you back to the game list (**Main menu** to the start screen); the finished game is closed.
 
 Implementation: [Game Phases](ARCHITECTURE.md#game-phases), [Room Lifecycle](ARCHITECTURE.md#room-lifecycle).
 
 ## The map
 
-✅ A **64 × 64 grid of flat-top hexes**, viewed at an isometric tilt, all at one flat height (no elevation). 📝 Each match gets a freshly generated layout of ground, mountains and water; see [Terrain](#terrain).
+✅ A **grid of flat-top hexes**: 64 × 64 (Small, the default), 80 × 80 (Big) or 96 × 96 (Large), picked when the game is created,, viewed at an isometric tilt, all at one flat height (no elevation). 📝 Each match gets a freshly generated layout of ground, mountains and water; see [Terrain](#terrain).
 
 - **Size in play:** crossing the map takes about **15 s left to right** and **11 s top to bottom** at normal speed. (The vertical trip is shorter because the tilted view squashes the map vertically and speed is measured on screen.)
 - **Edges:** you can walk right up to the edge but not off it. The camera always keeps you centered, even at the edge.
@@ -493,3 +510,6 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Inventory popup removed; `F`, `I`, `Tab` | The Inventory popup and its button are gone (the inventory bar covers structures and upgrades; gun and ammo are in the top-left HUD). `F` opens the Fabricator, `I` hides/shows the inventory bar, `Tab` in build mode cycles structure types | Keeping the popup for gun and ammo | Requested (2026-09-27). `Shift+Tab` going backwards is my addition. Tab only does this in build mode, so it's left alone otherwise |
 | Mystery drop pods, tiered odds | Every pickup is the same drop pod; its contents are rolled when opened, from the opener's score tier (four tiers by rank; ties share the average place), with better odds further behind; unusable outcomes are dropped from the roll; no empty pods | Contents fixed at generation (previous); tiers by fixed score bands | Requested (2026-09-27): surprise, and a catch-up mechanism for losing players. Ranking (not score bands) works at any score scale; my choices: ties averaging (so everyone at 0 lands mid-table, not top), dropping unusable outcomes rather than leaving the pod, and removing the 5% empty pod |
 | Empty locations, pod respawns, spawn platforms | 5% of locations get no pod (back from before the drop pods); a respawn wave at 2:50 refills empty cells the same way, each pod after a 0–15 s delay, avoiding structures; a metal platform with a team-colored light marks each player's spawn | Respawning each opened pod in place; a fixed respawn position | Requested (2026-09-27). My reading: the wave refills only cells whose pod was opened (or never appeared), and repeats every 2:50; the team light is my addition so players can tell whose pad is whose |
+| Start screens and games | Splash (title + Play) → game list (Create game on top, find by code or name, open games) → Create game (map size, teams, drop pods, length) → lobby; every game has a 4-character code and a `/game/CODE` URL | Quick-play (join any open game); a host-controlled lobby | Requested (2026-09-27). My choices: map sizes 64/80/96 (bigger costs too much graphics memory on phones), 4-character codes without look-alike characters, a game name field (the list filters by name), "Play again" going back to the list, drop-pod grid scaled with the map, and no connection-status line on the start screen |
+| Menu header, Create buttons, 7-minute games | The game list, Create game and joining screens share a header: back on the left, "SECTOR 42" centered, the right kept free for a settings button. Create game's buttons are centered, with a plain-text Cancel left of a green Create game. Game length adds 7 minutes | — | Requested (2026-09-27) |
+| Colors with teams off; lobby header and phone layout | With teams off, players pick a color no one else has (the Team picker relabeled Color, taken colors disabled); the lobby uses the menu header (Leave left, SECTOR 42 centered); on phones the pickers sit side by side under your name | No choice of color with teams off (previous, same day) | Requested (2026-09-27). The server enforces "not taken" in `selectTeam` |

@@ -5,11 +5,12 @@ import { Server } from 'colyseus';
 import { Encoder } from '@colyseus/schema';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { GameRoom } from './rooms/GameRoom';
+import { listGames } from './games';
 
-// Default BUFFER_SIZE (8KB) is too small for a full-state sync of a 64x64
-// tile map (4096 Tile schema instances plus players/structures/projectiles) —
-// bump it so `getFullState` doesn't overflow when a client joins.
-Encoder.BUFFER_SIZE = 128 * 1024;
+// Default BUFFER_SIZE (8KB) is too small for a full-state sync of the map (4,096 Tile schema
+// instances on a Small map, 9,216 on a Large one, plus players/structures/projectiles) — bump it
+// so `getFullState` doesn't overflow when a client joins.
+Encoder.BUFFER_SIZE = 256 * 1024;
 
 const PORT = Number(process.env.PORT) || 2567;
 
@@ -19,6 +20,13 @@ app.use(express.json());
 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
+});
+
+// The open games, for the client's game list (see games.ts).
+app.get('/games', (_req, res) => {
+    listGames()
+        .then((games) => res.json(games))
+        .catch(() => res.status(500).json({ error: 'could not list games' }));
 });
 
 const httpServer = createServer(app);

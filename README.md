@@ -39,9 +39,11 @@ cd client
 npm run dev
 ```
 
-Open http://localhost:5173, click **Join Game**, set your name, pick a team and a character, and press **Ready**. The match starts 3 seconds after everyone in the room is ready (on your own, that's straight away).
+Open http://localhost:5173 and click **Play**. On the game list, pick an open game or **Create game** (map size, teams, drop pods, game length). In the lobby, set your name, pick a character (and a team, if the game has teams on), and press **Ready**. The match starts 3 seconds after everyone in the game is ready (on your own, that's straight away).
 
-To try multiplayer, open the page in a second tab or window. Each tab is its own player, because the reconnection token lives in per-tab `sessionStorage`. The exception is Chrome's "Duplicate tab", which copies that storage, so the copy would rejoin as the same player; open a fresh tab instead.
+Every game has a 4-character code (shown in the list and the lobby, with a **Copy link** button). `http://localhost:5173/game/CODE` goes straight to that game. The list comes from the server's `GET /games`.
+
+To try multiplayer, open the game's link (or the list) in a second tab or window. Each tab is its own player, because the reconnection token lives in per-tab `sessionStorage`. The exception is Chrome's "Duplicate tab", which copies that storage, so the copy would rejoin as the same player; open a fresh tab instead.
 
 ## Scripts
 
@@ -119,8 +121,9 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 ## How a match works
 
+0. **Pick a game** — **Play** on the start screen opens the game list: **Create game** at the top, a box to find a game by code or name, and the open games (lobbies first, then games in play, with player counts and settings). Joining one, or opening its link, takes you to its lobby. Creating one picks its settings: map size Small 64 × 64 (default), Big 80 × 80 or Large 96 × 96; teams off (default) or on; drop pods on (default) or off; game length 5 (default), 7 or 10 minutes.
 1. **Lobby** — every player is listed. Click (or tap) your name to change it: 2–25 characters, anything goes. It's remembered for next time, and if someone already has it you get a "(1)" added. Next to your name are three choices:
-   - **Team** — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
+   - **Team** (games with teams on) or **Color** (teams off: any color nobody else has) — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
    - **Character** — your starting kit (default Farmer):
 
      | Character | Gun | Ammo | Materials | Structures | Upgrades |

@@ -31,7 +31,7 @@ const requestedScale = Number(process.env.PHASE_TIME_SCALE);
 export const PHASE_TIME_SCALE = requestedScale > 0 ? requestedScale : 1;
 // Once everyone in the lobby is ready (see LobbySystem).
 export const COUNTDOWN_DURATION_MS = 3_000 * PHASE_TIME_SCALE;
-export const MATCH_DURATION_MS = 5 * 60_000 * PHASE_TIME_SCALE; // the `playing` phase
+// The `playing` phase lasts the game's own match length (settings.matchMinutes; PhaseSystem).
 // After the match ends the room is locked (no new players) and kept open this long so players can
 // look at the results, then closed. It closes sooner if everyone leaves.
 export const RESULTS_DURATION_MS = 60_000 * PHASE_TIME_SCALE;
@@ -104,9 +104,11 @@ export const PICKUPS_ENABLED =
     process.env.PICKUPS === undefined
         ? PICKUPS_DEFAULT
         : !['0', 'false', 'off'].includes(process.env.PICKUPS);
-// One location per cell of a PICKUP_GRID.cols x PICKUP_GRID.rows grid over the map (12), each at
+// One location per cell of a grid over the map, each at
 // its cell's center nudged up to PICKUP_JITTER hexes, then moved to the nearest hex that's ground
 // and outside every spawn area.
+// PICKUP_GRID is for the Small (64 x 64) map; bigger maps scale it with their size (pickups.ts →
+// pickupGrid): 5 x 4 on Big, 6 x 5 on Large.
 export const PICKUP_GRID = { cols: 4, rows: 3 };
 // Chance (%) that a location gets no pod at all, at the start and at each respawn wave.
 export const PICKUP_EMPTY_CHANCE = 5;

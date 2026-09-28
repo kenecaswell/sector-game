@@ -23,6 +23,7 @@ import {
     sendSetReady,
     sendShoot,
     type GameRoom,
+    type ConnectTarget,
 } from '../net/GameConnection';
 import type {
     CharacterId,
@@ -36,7 +37,7 @@ import type {
     TeamId,
     UpgradeId,
 } from '../types/shared';
-import type { PlayerState } from '../types/gameState';
+import type { GameSettingsState, PlayerState } from '../types/gameState';
 import { normalizePlayerName, pickupLabel } from '../types/shared';
 import { loadPlayerName, savePlayerName } from '../utils/playerName';
 
@@ -67,7 +68,11 @@ interface GameContextValue {
     phaseEndsAt: number;
     players: PlayerState[];
     gameOver: GameOverEvent | null;
-    connect: () => void;
+    // The game you're in (or were last in): its code (room id) and settings. Null before joining.
+    gameCode: string | null;
+    settings: GameSettingsState | null;
+    // Join a game by code, or create one with these settings (see ConnectTarget).
+    connect: (target: ConnectTarget) => void;
     leave: () => void;
     input: (dir: { x: number; y: number }, angle?: number) => void;
     shoot: (angle: number) => void;
@@ -112,6 +117,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     // (set up inside connect, for reconnect retries) can call the latest
     // version of it without referencing the `connect` binding before it exists.
     const connectRef = useRef<() => void>(() => {});
+    // The game last asked for, so reconnect retries go back to the same one.
+    const targetRef = useRef<ConnectTarget | null>(null);
+    const [gameCode, setGameCode] = useState<string | null>(null);
+    const [settings, setSettings] = useState<GameSettingsState | null>(null);
 
     useEffect(() => {
         roomRef.current = room;
@@ -134,143 +143,151 @@ export function GameProvider({ children }: { children: ReactNode }) {
         );
     }, []);
 
-    const connect = useCallback(() => {
-        if (connectingRef.current || roomRef.current) return;
-        connectingRef.current = true;
-        leavingRef.current = false;
-        setStatus((prev) => (prev === 'reconnecting' ? prev : 'connecting'));
-        setError(null);
+    const connect = useCallback(
+        (target: ConnectTarget) => {
+            if (connectingRef.current || roomRef.current) return;
+            targetRef.current = target;
+            connectingRef.current = true;
+            leavingRef.current = false;
+            setStatus((prev) => (prev === 'reconnecting' ? prev : 'connecting'));
+            setError(null);
 
-        connectToGame(
-            {
-                onPhaseChanged: (event) => {
-                    setPhase(event.phase);
-                    setPhaseEndsAt(event.endsAt);
+            connectToGame(
+                {
+                    onPhaseChanged: (event) => {
+                        setPhase(event.phase);
+                        setPhaseEndsAt(event.endsAt);
+                    },
+                    onGameOver: (event) => setGameOver(event),
+                    onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
+                        pushNotice(
+                            'warning',
+                            `${event.name} disconnected`
+                        );
+                    },
+                    // Only you are told what you picked up (everyone sees it vanish from the map).
+                    onPickupCollected: (event: PickupCollectedEvent) => {
+                        if (event.playerId !== roomRef.current?.sessionId) return;
+                        pushNotice(
+                            'success',
+                            `Picked up ${pickupLabel(event.kind, event.itemId, event.amount)}`
+                        );
+                    },
+                    onPlayerReconnected: (event: PlayerReconnectedEvent) => {
+                        if (event.playerId === roomRef.current?.sessionId) return; // that's us
+                        pushNotice('success', `${event.name} reconnected`);
+                    },
                 },
-                onGameOver: (event) => setGameOver(event),
-                onPlayerDisconnected: (event: PlayerDisconnectedEvent) => {
-                    const minutes = Math.max(1, Math.round(event.reconnectWindowMs / 60000));
-                    pushNotice(
-                        'warning',
-                        `${event.name} disconnected — their spot is held for ${minutes} min`
-                    );
-                },
-                // Only you are told what you picked up (everyone sees it vanish from the map).
-                onPickupCollected: (event: PickupCollectedEvent) => {
-                    if (event.playerId !== roomRef.current?.sessionId) return;
-                    pushNotice(
-                        'success',
-                        `Picked up ${pickupLabel(event.kind, event.itemId, event.amount)}`
-                    );
-                },
-                onPlayerReconnected: (event: PlayerReconnectedEvent) => {
-                    if (event.playerId === roomRef.current?.sessionId) return; // that's us
-                    pushNotice('success', `${event.name} reconnected`);
-                },
-            },
-            { name: loadPlayerName() }
-        )
-            .then(async (joinedRoom) => {
-                // The join handshake resolves before the server's initial full-state
-                // message has been decoded, so `state.phase` is undefined until the
-                // first state change fires. Wait for it so nothing downstream sees a
-                // half-populated state.
-                if (!joinedRoom.state?.phase) {
-                    await new Promise<void>((resolve) =>
-                        joinedRoom.onStateChange.once(() => resolve())
-                    );
-                }
+                target,
+                { name: loadPlayerName() }
+            )
+                .then(async (joinedRoom) => {
+                    // The join handshake resolves before the server's initial full-state
+                    // message has been decoded, so `state.phase` is undefined until the
+                    // first state change fires. Wait for it so nothing downstream sees a
+                    // half-populated state.
+                    if (!joinedRoom.state?.phase) {
+                        await new Promise<void>((resolve) =>
+                            joinedRoom.onStateChange.once(() => resolve())
+                        );
+                    }
 
-                reconnectingRef.current = false;
-                reconnectAttemptsRef.current = 0;
-                roomRef.current = joinedRoom;
-                setRoom(joinedRoom);
-                setLastSessionId(joinedRoom.sessionId);
-                setStatus('connected');
-                setGameOver(null);
-                setPhase(joinedRoom.state.phase.phase);
-                setPhaseEndsAt(joinedRoom.state.phase.endsAt);
+                    reconnectingRef.current = false;
+                    reconnectAttemptsRef.current = 0;
+                    roomRef.current = joinedRoom;
+                    setRoom(joinedRoom);
+                    setLastSessionId(joinedRoom.sessionId);
+                    setStatus('connected');
+                    setGameOver(null);
+                    setGameCode(joinedRoom.roomId);
+                    setSettings({ ...joinedRoom.state.settings }); // fixed for the game's lifetime
+                    setPhase(joinedRoom.state.phase.phase);
+                    setPhaseEndsAt(joinedRoom.state.phase.endsAt);
 
-                const $ = getStateCallbacks(joinedRoom);
-                // Position, velocity and aim change every server tick for every moving player,
-                // but the React UI (HUD, leaderboard, lobby, results) never shows them, and
-                // re-rendering everything on each tick was wasted work. So only publish a new
-                // roster when a field the UI actually displays has changed. (The Player objects
-                // are live, so a component that does re-render always reads current values.)
-                let lastSignature = '';
-                const syncPlayers = () => {
-                    const roster = Array.from(joinedRoom.state.players.values());
-                    const signature = roster
-                        .map(
-                            (p) =>
-                                `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}`
-                        )
-                        .join(';');
-                    if (signature === lastSignature) return;
-                    lastSignature = signature;
-                    setPlayers(roster);
-                };
+                    const $ = getStateCallbacks(joinedRoom);
+                    // Position, velocity and aim change every server tick for every moving player,
+                    // but the React UI (HUD, leaderboard, lobby, results) never shows them, and
+                    // re-rendering everything on each tick was wasted work. So only publish a new
+                    // roster when a field the UI actually displays has changed. (The Player objects
+                    // are live, so a component that does re-render always reads current values.)
+                    let lastSignature = '';
+                    const syncPlayers = () => {
+                        const roster = Array.from(joinedRoom.state.players.values());
+                        const signature = roster
+                            .map(
+                                (p) =>
+                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}`
+                            )
+                            .join(';');
+                        if (signature === lastSignature) return;
+                        lastSignature = signature;
+                        setPlayers(roster);
+                    };
 
-                $(joinedRoom.state).players.onAdd((player) => {
-                    $(player).onChange(syncPlayers);
-                    // Items added to or removed from this list don't fire the player's onChange.
-                    $(player).structureInventory.onAdd(syncPlayers);
-                    $(player).structureInventory.onRemove(syncPlayers);
+                    $(joinedRoom.state).players.onAdd((player) => {
+                        $(player).onChange(syncPlayers);
+                        // Items added to or removed from this list don't fire the player's onChange.
+                        $(player).structureInventory.onAdd(syncPlayers);
+                        $(player).structureInventory.onRemove(syncPlayers);
+                        syncPlayers();
+                    });
+                    $(joinedRoom.state).players.onRemove(syncPlayers);
                     syncPlayers();
-                });
-                $(joinedRoom.state).players.onRemove(syncPlayers);
-                syncPlayers();
 
-                joinedRoom.onLeave((code) => {
-                    // Ignore rooms we already walked away from (e.g. "play again" leaves the old room and
-                    // connects to a new one before the old room's close event arrives).
-                    if (roomRef.current !== joinedRoom) return;
-                    roomRef.current = null;
-                    setRoom(null);
-                    if (leavingRef.current || isNormalClose(code)) {
-                        setStatus('idle');
+                    joinedRoom.onLeave((code) => {
+                        // Ignore rooms we already walked away from (e.g. "play again" leaves the old room and
+                        // connects to a new one before the old room's close event arrives).
+                        if (roomRef.current !== joinedRoom) return;
+                        roomRef.current = null;
+                        setRoom(null);
+                        if (leavingRef.current || isNormalClose(code)) {
+                            setStatus('idle');
+                            return;
+                        }
+                        // Unexpected drop (network blip, server restart mid-session) —
+                        // keep retrying; connectToGame will use the saved reconnection
+                        // token automatically as long as one is still in sessionStorage.
+                        reconnectingRef.current = true;
+                        reconnectAttemptsRef.current = 0;
+                        setStatus('reconnecting');
+                        retryTimeoutRef.current = window.setTimeout(
+                            () => connectRef.current(),
+                            RECONNECT_RETRY_MS
+                        );
+                    });
+                })
+                .catch((err: unknown) => {
+                    // A failed reconnect (server unreachable for a moment, laptop just woke up...) is
+                    // not the end: keep trying for the length of the server's reconnect window.
+                    if (
+                        reconnectingRef.current &&
+                        reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
+                    ) {
+                        reconnectAttemptsRef.current++;
+                        setStatus('reconnecting');
+                        retryTimeoutRef.current = window.setTimeout(
+                            () => connectRef.current(),
+                            RECONNECT_RETRY_MS
+                        );
                         return;
                     }
-                    // Unexpected drop (network blip, server restart mid-session) —
-                    // keep retrying; connectToGame will use the saved reconnection
-                    // token automatically as long as one is still in sessionStorage.
-                    reconnectingRef.current = true;
-                    reconnectAttemptsRef.current = 0;
-                    setStatus('reconnecting');
-                    retryTimeoutRef.current = window.setTimeout(
-                        () => connectRef.current(),
-                        RECONNECT_RETRY_MS
+                    reconnectingRef.current = false;
+                    setStatus('error');
+                    setError(
+                        err instanceof Error ? err.message : 'Failed to connect to the game server'
                     );
+                })
+                .finally(() => {
+                    connectingRef.current = false;
                 });
-            })
-            .catch((err: unknown) => {
-                // A failed reconnect (server unreachable for a moment, laptop just woke up...) is
-                // not the end: keep trying for the length of the server's reconnect window.
-                if (
-                    reconnectingRef.current &&
-                    reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
-                ) {
-                    reconnectAttemptsRef.current++;
-                    setStatus('reconnecting');
-                    retryTimeoutRef.current = window.setTimeout(
-                        () => connectRef.current(),
-                        RECONNECT_RETRY_MS
-                    );
-                    return;
-                }
-                reconnectingRef.current = false;
-                setStatus('error');
-                setError(
-                    err instanceof Error ? err.message : 'Failed to connect to the game server'
-                );
-            })
-            .finally(() => {
-                connectingRef.current = false;
-            });
-    }, [pushNotice]);
+        },
+        [pushNotice]
+    );
 
     useEffect(() => {
-        connectRef.current = connect;
+        connectRef.current = () => {
+            if (targetRef.current) connect(targetRef.current);
+        };
     }, [connect]);
 
     // A hidden tab has its timers throttled (or is frozen outright), so a dropped connection can sit
@@ -313,11 +330,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
         setGameOver(null);
     }, [leave]);
 
+    // After the results: back to the game list (App navigates) to join or create the next one.
     const playAgain = useCallback(() => {
         leave();
         setGameOver(null);
-        connect();
-    }, [leave, connect]);
+    }, [leave]);
 
     useEffect(() => {
         return () => {
@@ -413,6 +430,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
             phaseEndsAt,
             players,
             gameOver,
+            gameCode,
+            settings,
             connect,
             leave,
             input,
@@ -437,6 +456,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
             phaseEndsAt,
             players,
             gameOver,
+            gameCode,
+            settings,
             connect,
             leave,
             input,

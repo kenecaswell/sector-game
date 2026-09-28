@@ -32,7 +32,16 @@ import type {
     JoinOptions,
     EquipUpgradeMessage,
 } from '../types/shared';
-import { GUN_DAMAGE, isGunId, isStructureType } from '../types/shared';
+import {
+    GUN_DAMAGE,
+    MAP_SIZES,
+    isGunId,
+    isStructureType,
+    normalizeGameSettings,
+    type GamePhase,
+    type MapSizeId,
+} from '../types/shared';
+import { uniqueGameCode, type GameMetadata } from '../games';
 
 export class GameRoom extends Room<GameState> {
     maxClients = 10;
@@ -44,11 +53,25 @@ export class GameRoom extends Room<GameState> {
     private matchFinished = false;
     private closing = false;
     private nextProjectileId = 0;
+    private listedPhase: GamePhase = 'lobby';
 
     private readonly broadcastEvent: Broadcast = (type, payload) => this.broadcast(type, payload);
 
-    onCreate(): void {
+    /**
+     * A new game, with the settings from the Create game screen (`options.game`, cleaned up by
+     * normalizeGameSettings; a plain joinOrCreate gets the defaults). Its code (the room id) is a
+     * short one for URLs and the game list.
+     */
+    async onCreate(options?: JoinOptions): Promise<void> {
+        this.roomId = await uniqueGameCode();
+        const settings = normalizeGameSettings(options?.game);
+        if (!settings.name) settings.name = `Game ${this.roomId}`;
+
         const state = new GameState();
+        Object.assign(state.settings, settings);
+        state.settings.pods = settings.pods && PICKUPS_ENABLED; // the server flag can veto pods
+        state.mapWidth = MAP_SIZES[settings.mapSize].cols;
+        state.mapHeight = MAP_SIZES[settings.mapSize].rows;
         // A fresh random layout for every match (the seed only matters for reproducing one).
         const random = seededRandom(Math.floor(Math.random() * 2 ** 32));
         const { terrain } = generateTerrain(state.mapWidth, state.mapHeight, random);
@@ -57,13 +80,14 @@ export class GameRoom extends Room<GameState> {
             tile.terrain = terrain[i];
             state.tiles.push(tile);
         }
-        // Items scattered on the map (feature flag PICKUPS_ENABLED; see pickups.ts).
-        if (PICKUPS_ENABLED) {
+        // Drop pods (the game's setting, and the PICKUPS_ENABLED feature flag; see pickups.ts).
+        if (state.settings.pods) {
             for (const spot of generatePickups(terrain, state.mapWidth, state.mapHeight, random)) {
                 PickupSystem.addPod(state, spot);
             }
         }
         this.setState(state);
+        this.updateListing();
 
         this.setSimulationInterval((dt) => this.tick(dt / 1000), 1000 / TICK_RATE);
 
@@ -203,6 +227,20 @@ export class GameRoom extends Room<GameState> {
         }
     }
 
+    /** Keeps the matchmaker's metadata (what GET /games lists) in step with the game. */
+    private updateListing(): void {
+        const { settings, phase } = this.state;
+        void this.setMetadata({
+            name: settings.name,
+            mapSize: settings.mapSize as MapSizeId,
+            teams: settings.teams,
+            pods: settings.pods,
+            matchMinutes: settings.matchMinutes,
+            phase: phase.phase,
+        } satisfies GameMetadata);
+        this.listedPhase = phase.phase;
+    }
+
     private tick(dt: number): void {
         LobbySystem.update(this.state, this.broadcastEvent);
         MovementSystem.update(this.state, this.playerInputs, dt);
@@ -212,6 +250,7 @@ export class GameRoom extends Room<GameState> {
         PhaseSystem.update(this.state, this.broadcastEvent);
         this.closeFinishedMatch();
         ScoreSystem.update(this.state);
+        if (this.state.phase.phase !== this.listedPhase) this.updateListing();
     }
 
     private handleInput(client: Client, msg: InputMessage): void {

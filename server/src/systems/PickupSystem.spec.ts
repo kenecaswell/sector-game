@@ -1,13 +1,9 @@
+import { PhaseSystem } from './PhaseSystem';
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '../state/GameState';
 import { PickupSystem } from './PickupSystem';
 import { addPlayerAt, addStructure, world } from '../test/world';
-import {
-    MATCH_DURATION_MS,
-    PICKUP_GRID,
-    PICKUP_RESPAWN_DELAY_MAX_MS,
-    PICKUP_RESPAWN_MS,
-} from '../constants';
+import { PICKUP_GRID, PICKUP_RESPAWN_DELAY_MAX_MS, PICKUP_RESPAWN_MS } from '../constants';
 import type { PickupCollectedEvent } from '../types/shared';
 
 const START = 1_000_000; // when the test match started (server ms)
@@ -15,7 +11,7 @@ const START = 1_000_000; // when the test match started (server ms)
 /** A match that started at START; `tiles` for the respawn tests, which place pods on ground. */
 function match(tiles = false): GameState {
     const state = world('playing', { tiles });
-    state.phase.endsAt = START + MATCH_DURATION_MS;
+    state.phase.endsAt = START + PhaseSystem.matchDurationMs(state);
     return state;
 }
 

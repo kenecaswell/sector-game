@@ -1,13 +1,9 @@
 import { Pickup, type GameState, type Player } from '../state/GameState';
 import { inStructureFootprint, pixelToHex, type HexCoord } from '../hex';
-import {
-    MATCH_DURATION_MS,
-    PICKUP_GRID,
-    PICKUP_RESPAWN_DELAY_MAX_MS,
-    PICKUP_RESPAWN_MS,
-} from '../constants';
+import { PICKUP_RESPAWN_DELAY_MAX_MS, PICKUP_RESPAWN_MS } from '../constants';
 import {
     generatePickups,
+    pickupGrid,
     rollPickup,
     scoreTier,
     type PickupContents,
@@ -15,6 +11,7 @@ import {
 } from '../pickups';
 import { isShopItemId, type PickupCollectedEvent } from '../types/shared';
 import { ShopSystem } from './ShopSystem';
+import { PhaseSystem } from './PhaseSystem';
 import type { Broadcast } from './Broadcast';
 
 /** Puts a drop pod on the map (at the start of a match, or when a respawned one appears). */
@@ -50,7 +47,7 @@ function blockedForPods(state: GameState): (h: HexCoord) => boolean {
  * their time comes, unless their hex has been taken since (by a structure or another pod).
  */
 function respawn(state: GameState, now: number, random: () => number): void {
-    const matchStart = state.phase.endsAt - MATCH_DURATION_MS;
+    const matchStart = state.phase.endsAt - PhaseSystem.matchDurationMs(state);
     if (state.nextPodWaveAt === 0) state.nextPodWaveAt = matchStart + PICKUP_RESPAWN_MS;
 
     if (now >= state.nextPodWaveAt) {
@@ -60,7 +57,8 @@ function respawn(state: GameState, now: number, random: () => number): void {
             ...state.pendingPods.map((pod) => pod.cell),
         ]);
         const cells: number[] = [];
-        for (let cell = 0; cell < PICKUP_GRID.cols * PICKUP_GRID.rows; cell++) {
+        const grid = pickupGrid(state.mapWidth, state.mapHeight);
+        for (let cell = 0; cell < grid.cols * grid.rows; cell++) {
             if (!filled.has(cell)) cells.push(cell);
         }
         const terrain = Array.from(state.tiles, (tile) => tile.terrain);

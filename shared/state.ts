@@ -7,7 +7,7 @@
 // satisfy `ReadonlyMap` / `readonly T[]` structurally, so a straight cast is safe.
 // (A field the server adds but these don't list isn't flagged — add it here when the client needs it.)
 
-import type { GamePhase, Terrain } from './types';
+import type { GamePhase, MapSizeId, Terrain } from './types';
 
 export interface PlayerState {
     id: string;
@@ -73,6 +73,15 @@ export interface PickupState {
     tileY: number;
 }
 
+// The game's settings, fixed when it's created (see GameSettings in types.ts).
+export interface GameSettingsState {
+    name: string;
+    mapSize: MapSizeId | string;
+    teams: boolean;
+    pods: boolean;
+    matchMinutes: number;
+}
+
 export interface GamePhaseStateShape {
     phase: GamePhase;
     endsAt: number;
@@ -85,6 +94,7 @@ export interface GameStateShape {
     pickups: ReadonlyMap<string, PickupState>; // empty when the PICKUPS_ENABLED flag is off
     tiles: readonly TileState[];
     phase: GamePhaseStateShape;
+    settings: GameSettingsState;
     mapWidth: number;
     mapHeight: number;
 }

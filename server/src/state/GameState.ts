@@ -9,6 +9,7 @@ import {
 } from '../types/shared';
 import type {
     GamePhaseStateShape,
+    GameSettingsState,
     GameStateShape,
     PickupState,
     PlayerState,
@@ -103,6 +104,15 @@ export interface PendingPod {
     appearsAt: number; // server ms
 }
 
+/** The game's settings, fixed when it's created (see GameSettings in shared/types.ts). */
+export class GameSettingsSchema extends Schema implements GameSettingsState {
+    @type('string') name: string = '';
+    @type('string') mapSize: string = 'small'; // a MapSizeId
+    @type('boolean') teams: boolean = false;
+    @type('boolean') pods: boolean = true;
+    @type('uint8') matchMinutes: number = 5;
+}
+
 export class GamePhaseState extends Schema implements GamePhaseStateShape {
     @type('string') phase: GamePhase = 'lobby'; // lobby | countdown | playing | results
     @type('number') endsAt: number = 0; // server timestamp ms
@@ -121,6 +131,7 @@ export class GameState
     @type({ map: Pickup }) pickups = new MapSchema<Pickup>(); // see pickups.ts; empty if the flag is off
     @type([Tile]) tiles = new ArraySchema<Tile>(); // flat array, index = y*width+x
     @type(GamePhaseState) phase = new GamePhaseState();
+    @type(GameSettingsSchema) settings = new GameSettingsSchema();
     @type('number') mapWidth: number = 64;
     @type('number') mapHeight: number = 64;
     // Server only (not synced): pod respawn waves (PickupSystem). 0 = not scheduled yet.

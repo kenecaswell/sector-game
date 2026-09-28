@@ -14,8 +14,12 @@ export const MAP_SIZE = 64;
  * creating the 4,096 tiles when only movement or combat is under test (they never read tiles) —
  * it keeps loops that build hundreds of worlds fast.
  */
-export function world(phase: GamePhase = 'playing', { tiles = true } = {}): GameState {
+export function world(
+    phase: GamePhase = 'playing',
+    { tiles = true, teams = true } = {}
+): GameState {
     const state = new GameState();
+    state.settings.teams = teams; // most specs exercise teammates; games default to teams off
     state.mapWidth = MAP_SIZE;
     state.mapHeight = MAP_SIZE;
     state.phase.phase = phase;

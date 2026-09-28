@@ -74,6 +74,8 @@ export const UNIFORM_SCREEN_SPEED = true;
 // The claim (ownership) layer is split into square RenderTexture chunks this many scene pixels
 // wide, so a change re-bakes only the chunk(s) it touches rather than every claimed hex.
 export const CLAIM_CHUNK_SIZE = 512;
+// The baked terrain is split into textures at most this big (safe on every WebGL device).
+export const BASE_TILE_SIZE = 2048;
 
 // --- Colors ---
 export const BACKGROUND_COLOR = 0x1a1a2e;

@@ -143,7 +143,8 @@ async function lobby() {
     section('The lobby (real phase times)');
     await withServer(1, async () => {
         const client = new Client(URL);
-        const a = await join(client);
+        // Teams on, so picking a teammate's color can be checked below.
+        const a = await join(client, { game: { teams: true } });
         const b = await join(client);
         const terrainShare =
             Array.from(a.state.tiles).filter((t) => t.terrain !== shared.TERRAIN.ground).length /
@@ -562,6 +563,90 @@ async function pickups() {
     );
 }
 
+/** GET /games on the test server. */
+function fetchGames() {
+    return new Promise((resolve, reject) => {
+        http.get({ host: 'localhost', port: PORT, path: '/games' }, (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => resolve(JSON.parse(body)));
+        }).on('error', reject);
+    });
+}
+
+async function games() {
+    section('Creating, listing and joining games');
+    await withServer(0.2, async () => {
+        const client = new Client(URL);
+        const settings = { name: 'E2E game', mapSize: 'big', teams: false, pods: false, matchMinutes: 10 };
+        const a = await client.create('GameRoom', { name: 'Host', game: settings });
+        if (!a.state?.phase) await new Promise((resolve) => a.onStateChange.once(resolve));
+        const code = a.roomId;
+        check(
+            'a created game gets a short code as its id, and the settings it was created with',
+            shared.normalizeGameCode(code) === code &&
+                a.state.settings.name === 'E2E game' &&
+                a.state.settings.matchMinutes === 10 &&
+                a.state.settings.teams === false &&
+                a.state.mapWidth === shared.MAP_SIZES.big.cols &&
+                a.state.tiles.length === shared.MAP_SIZES.big.cols * shared.MAP_SIZES.big.rows,
+            code
+        );
+        check('...drop pods off means no pods on the map', a.state.pickups.size === 0);
+
+        const other = await client.create('GameRoom', {});
+        let listed = await fetchGames();
+        const ours = listed.find((g) => g.code === code);
+        check(
+            'GET /games lists open games with their settings and player counts',
+            listed.length === 2 &&
+                !!ours &&
+                ours.name === 'E2E game' &&
+                ours.mapSize === 'big' &&
+                ours.players === 1 &&
+                ours.phase === 'lobby' &&
+                listed.some((g) => g.code === other.roomId && g.name === `Game ${other.roomId}`),
+            JSON.stringify(listed.map((g) => [g.code, g.name, g.players]))
+        );
+
+        const b = await client.joinById(code, { name: 'Guest' });
+        if (!b.state?.phase) await new Promise((resolve) => b.onStateChange.once(resolve));
+        await waitFor(() => a.state.players.size === 2, 2000);
+        check('joining by code puts you in that game', b.roomId === code && a.state.players.size === 2);
+
+        const teamBefore = b.state.players.get(b.sessionId).teamId;
+        b.send('selectTeam', { teamId: me(a).teamId });
+        await sleep(300);
+        check(
+            "with teams off, a color someone else has can't be picked",
+            b.state.players.get(b.sessionId).teamId === teamBefore && teamBefore !== me(a).teamId
+        );
+        const free = shared.TEAM_IDS.find((id) => id !== me(a).teamId && id !== teamBefore);
+        b.send('selectTeam', { teamId: free });
+        await waitFor(() => b.state.players.get(b.sessionId).teamId === free, 2000);
+        check(
+            '...but a free color can',
+            b.state.players.get(b.sessionId).color === shared.TEAMS[free].color
+        );
+
+        a.send('setReady', { ready: true });
+        b.send('setReady', { ready: true });
+        await waitFor(() => phaseOf(a) === 'playing', 5000);
+        const length = a.state.phase.endsAt - Date.now();
+        check(
+            'the match lasts the chosen length (10 minutes, scaled)',
+            Math.abs(length - 10 * 60_000 * 0.2) < 2000,
+            `${Math.round(length)} ms`
+        );
+        listed = await fetchGames();
+        check(
+            'the list shows a game in play as playing',
+            listed.find((g) => g.code === code)?.phase === 'playing'
+        );
+        await other.leave();
+    });
+}
+
 async function edges() {
     // A map of plain ground: this walks from the spawn to the edges, and terrain in the way
     // would stop it (terrain movement is unit-tested in server/src/systems/terrainRules.spec.ts).
@@ -615,6 +700,7 @@ async function edges() {
         await shop();
         await connection();
         await pickups();
+        await games();
         await edges();
     } catch (error) {
         check('the e2e run completed without an error', false, error.message);

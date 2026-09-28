@@ -10,6 +10,8 @@ import {
     activeUpgradeLevel,
     normalizePlayerName,
     ownsShopItem,
+    normalizeGameSettings,
+    DEFAULT_GAME_SETTINGS,
     pickupLabel,
     shopItemDescription,
     shopItemTitle,
@@ -148,5 +150,40 @@ describe('pickupLabel', () => {
         expect(pickupLabel('item', 'wings', 0)).toBe('Wings');
         expect(pickupLabel('item', 'bigGun', 0)).toBe('Big gun');
         expect(pickupLabel('item', 'fort', 0)).toBe('Fort');
+    });
+});
+
+describe('normalizeGameSettings', () => {
+    it('keeps valid settings and tidies the name', () => {
+        expect(
+            normalizeGameSettings({
+                name: '  Friday   night ',
+                mapSize: 'large',
+                teams: true,
+                pods: false,
+                matchMinutes: 10,
+            })
+        ).toEqual({
+            name: 'Friday night',
+            mapSize: 'large',
+            teams: true,
+            pods: false,
+            matchMinutes: 10,
+        });
+    });
+
+    it('falls back to the defaults for anything missing or invalid', () => {
+        expect(normalizeGameSettings(undefined)).toEqual(DEFAULT_GAME_SETTINGS);
+        expect(
+            normalizeGameSettings({
+                mapSize: 'huge',
+                teams: 'yes',
+                pods: 1,
+                matchMinutes: 8,
+                name: 5,
+            })
+        ).toEqual(DEFAULT_GAME_SETTINGS);
+        expect(normalizeGameSettings({ name: 'x'.repeat(50) }).name).toHaveLength(30);
+        expect(normalizeGameSettings({ matchMinutes: 7 }).matchMinutes).toBe(7);
     });
 });

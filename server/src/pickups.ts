@@ -112,7 +112,18 @@ export function rollPickup(
     }
 }
 
-/** A pod's place: its hex and which PICKUP_GRID cell (row-major) it belongs to. */
+/**
+ * The pod grid for a cols x rows map: PICKUP_GRID (4 x 3) on the 64 x 64 Small map, scaled with
+ * the map's size, so pods are about as far apart on every map.
+ */
+export function pickupGrid(cols: number, rows: number): { cols: number; rows: number } {
+    return {
+        cols: Math.max(1, Math.round((PICKUP_GRID.cols * cols) / 64)),
+        rows: Math.max(1, Math.round((PICKUP_GRID.rows * rows) / 64)),
+    };
+}
+
+/** A pod's place: its hex and which grid cell (row-major, see pickupGrid) it belongs to. */
 export interface PodSpot extends HexCoord {
     cell: number;
 }
@@ -125,7 +136,7 @@ export interface PodPlacementOptions {
 }
 
 /**
- * Places drop pods, one per grid cell (PICKUP_GRID.cols x PICKUP_GRID.rows): at the cell's center
+ * Places drop pods, one per grid cell (`pickupGrid`): at the cell's center
  * nudged by up to PICKUP_JITTER hexes, then moved to the nearest hex that's ground, outside every
  * spawn area, not `blocked`, and not already holding one. Each cell has a PICKUP_EMPTY_CHANCE %
  * chance of getting no pod. Used at the start of a match (all cells) and by respawn waves (the
@@ -147,15 +158,16 @@ export function generatePickups(
         !blocked(h) &&
         spawns.every((spawn) => hexDistance(h, spawn) > SPAWN_CLEAR_RADIUS);
 
-    const all = Array.from({ length: PICKUP_GRID.cols * PICKUP_GRID.rows }, (_, cell) => cell);
+    const grid = pickupGrid(cols, rows);
+    const all = Array.from({ length: grid.cols * grid.rows }, (_, cell) => cell);
     const pods: PodSpot[] = [];
     for (const cell of cells ?? all) {
-        const gx = cell % PICKUP_GRID.cols;
-        const gy = Math.floor(cell / PICKUP_GRID.cols);
+        const gx = cell % grid.cols;
+        const gy = Math.floor(cell / grid.cols);
         const clamp = (value: number, max: number) => Math.min(max - 1, Math.max(0, value));
         const start = {
-            col: clamp(Math.floor(((gx + 0.5) * cols) / PICKUP_GRID.cols) + jitter(), cols),
-            row: clamp(Math.floor(((gy + 0.5) * rows) / PICKUP_GRID.rows) + jitter(), rows),
+            col: clamp(Math.floor(((gx + 0.5) * cols) / grid.cols) + jitter(), cols),
+            row: clamp(Math.floor(((gy + 0.5) * rows) / grid.rows) + jitter(), rows),
         };
         if (random() * 100 < PICKUP_EMPTY_CHANCE) continue; // no pod here this time
         const at = nearest(start, cols, rows, fits);
