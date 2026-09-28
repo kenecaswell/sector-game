@@ -1,5 +1,5 @@
 import { Room, Client } from 'colyseus';
-import { GameState, Player, Tile, Projectile, Structure, Pickup } from '../state/GameState';
+import { GameState, Player, Tile, Projectile, Structure } from '../state/GameState';
 import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
@@ -13,7 +13,7 @@ import { StructureSystem } from '../systems/StructureSystem';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { PickupSystem } from '../systems/PickupSystem';
 import { generatePickups } from '../pickups';
-import { freeSpawnSlot, generateTerrain, seededRandom, spawnPoint } from '../terrain';
+import { freeSpawnSlot, generateTerrain, seededRandom, spawnHex, spawnPoint } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
 import { TICK_RATE, RECONNECT_WINDOW_SECONDS, SCREEN_Y_SCALE, PICKUPS_ENABLED } from '../constants';
 import type {
@@ -59,16 +59,9 @@ export class GameRoom extends Room<GameState> {
         }
         // Items scattered on the map (feature flag PICKUPS_ENABLED; see pickups.ts).
         if (PICKUPS_ENABLED) {
-            generatePickups(terrain, state.mapWidth, state.mapHeight, random).forEach((spec, i) => {
-                const pickup = new Pickup();
-                pickup.id = `pickup-${i}`;
-                pickup.kind = spec.kind;
-                pickup.itemId = spec.itemId;
-                pickup.amount = spec.amount;
-                pickup.tileX = spec.col;
-                pickup.tileY = spec.row;
-                state.pickups.set(pickup.id, pickup);
-            });
+            for (const spot of generatePickups(terrain, state.mapWidth, state.mapHeight, random)) {
+                PickupSystem.addPod(state, spot);
+            }
         }
         this.setState(state);
 
@@ -119,6 +112,9 @@ export class GameRoom extends Room<GameState> {
         const start = spawnPoint(this.state, player.spawnSlot);
         player.x = start.x;
         player.y = start.y;
+        const spawn = spawnHex(this.state.mapWidth, this.state.mapHeight, player.spawnSlot);
+        player.spawnTileX = spawn.col;
+        player.spawnTileY = spawn.row;
 
         this.state.players.set(client.sessionId, player);
     }

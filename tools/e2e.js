@@ -532,17 +532,21 @@ async function pickups() {
             let event = null;
             a.onMessage('pickupCollected', (e) => (event = e));
             const before = { ammo: me(a).ammo };
-            // A fresh Farmer (unarmed, no upgrades) can take any kind of pickup.
+            // Every pod is the same on the map; its contents come with pickupCollected.
+            check(
+                'pods carry no contents in the synced state',
+                Object.keys(nearest.toJSON()).sort().join() === 'id,tileX,tileY'
+            );
             await goTo(a, hexCenter(nearest.tileX, nearest.tileY), 15000);
             await waitFor(() => !a.state.pickups.has(nearest.id), 2000);
             check(
                 'walking onto a pickup takes it: it leaves the map and pickupCollected is sent',
                 !a.state.pickups.has(nearest.id) && event?.playerId === a.sessionId,
-                `${nearest.kind} ${nearest.itemId || nearest.amount}`
+                event ? `${event.kind} ${event.itemId || event.amount}` : 'no event'
             );
-            if (nearest.kind === 'ammo') {
+            if (event?.kind === 'ammo') {
                 const ammo = me(a).ammo;
-                check('...an ammo pile adds its shots', ammo === before.ammo + nearest.amount);
+                check('...an ammo pile adds its shots', ammo === before.ammo + event.amount);
             }
         },
         { TERRAIN_COVERAGE: '0' }

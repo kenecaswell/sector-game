@@ -31,6 +31,8 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         armorLevel: 0,
         wingsLevel: 0,
         equippedUpgrade: '',
+        spawnTileX: 0,
+        spawnTileY: 0,
         ...overrides,
     };
 }

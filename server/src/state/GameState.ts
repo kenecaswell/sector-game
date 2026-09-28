@@ -51,6 +51,9 @@ export class Player extends Schema implements PlayerState {
     @type('uint8') armorLevel: number = 0;
     @type('uint8') wingsLevel: number = 0;
     @type('string') equippedUpgrade: string = ''; // an UpgradeId with `slot: true`, or '' for none
+    // The hex this player starts and respawns on, for the client's spawn platform.
+    @type('uint8') spawnTileX: number = 0;
+    @type('uint8') spawnTileY: number = 0;
     // Server only (not synced): which spawn-line slot this player starts and respawns at.
     spawnSlot: number = 0;
 }
@@ -85,11 +88,19 @@ export class Structure extends Schema implements StructureState {
 
 export class Pickup extends Schema implements PickupState {
     @type('string') id: string = '';
-    @type('string') kind: string = 'materials'; // a PickupKind
-    @type('string') itemId: string = ''; // a ShopItemId for kind 'item', else ''
-    @type('number') amount: number = 0; // materials or shots
     @type('number') tileX: number = 0;
     @type('number') tileY: number = 0;
+    // Server only (not synced): which PICKUP_GRID cell it belongs to, so a respawn wave refills
+    // only the cells that are empty.
+    cell: number = -1;
+}
+
+/** A pod waiting to appear in a respawn wave (server only). */
+export interface PendingPod {
+    col: number;
+    row: number;
+    cell: number;
+    appearsAt: number; // server ms
 }
 
 export class GamePhaseState extends Schema implements GamePhaseStateShape {
@@ -112,4 +123,8 @@ export class GameState
     @type(GamePhaseState) phase = new GamePhaseState();
     @type('number') mapWidth: number = 64;
     @type('number') mapHeight: number = 64;
+    // Server only (not synced): pod respawn waves (PickupSystem). 0 = not scheduled yet.
+    nextPodWaveAt: number = 0;
+    pendingPods: PendingPod[] = [];
+    podsMade: number = 0; // for unique pod ids
 }

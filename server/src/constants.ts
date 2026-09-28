@@ -28,7 +28,7 @@ export const PROJECTILE_LIFETIME_MS = 2000;
 // Phase lengths. PHASE_TIME_SCALE (an environment variable, dev/testing only) shrinks them all so
 // a whole match can be run in seconds, e.g. PHASE_TIME_SCALE=0.02 npm run dev. Leave it unset normally.
 const requestedScale = Number(process.env.PHASE_TIME_SCALE);
-const PHASE_TIME_SCALE = requestedScale > 0 ? requestedScale : 1;
+export const PHASE_TIME_SCALE = requestedScale > 0 ? requestedScale : 1;
 // Once everyone in the lobby is ready (see LobbySystem).
 export const COUNTDOWN_DURATION_MS = 3_000 * PHASE_TIME_SCALE;
 export const MATCH_DURATION_MS = 5 * 60_000 * PHASE_TIME_SCALE; // the `playing` phase
@@ -108,16 +108,30 @@ export const PICKUPS_ENABLED =
 // its cell's center nudged up to PICKUP_JITTER hexes, then moved to the nearest hex that's ground
 // and outside every spawn area.
 export const PICKUP_GRID = { cols: 4, rows: 3 };
+// Chance (%) that a location gets no pod at all, at the start and at each respawn wave.
+export const PICKUP_EMPTY_CHANCE = 5;
+// Respawn waves: every PICKUP_RESPAWN_MS into the match (2:50; one wave in a 5-minute match), each
+// grid cell with no pod left gets a new one (placed the same way, same empty chance), appearing after
+// its own random 0 - PICKUP_RESPAWN_DELAY_MAX_MS delay. Both scale with PHASE_TIME_SCALE.
+export const PICKUP_RESPAWN_MS = 170_000 * PHASE_TIME_SCALE;
+export const PICKUP_RESPAWN_DELAY_MAX_MS = 15_000 * PHASE_TIME_SCALE;
 export const PICKUP_JITTER = 2;
-// What each location gets. Weights are percentages and add up to 100.
-export const PICKUP_CHANCES = {
-    materials: 40, // a pile of PICKUP_MATERIALS materials
-    ammo: 25, // a pile of PICKUP_AMMO shots
-    upgrade: 10, // level 1 of a random upgrade (Booster, Expander, Armor, Wings)
-    basicGun: 10,
-    bigGun: 5,
-    structure: 5, // one random structure type
-    nothing: 5,
-};
+// Every location holds an identical drop pod; what's inside is rolled when a player collects it,
+// from the table for that player's score tier (see pickups.ts → scoreTier): tier 1 is the leader,
+// tier 4 is at the back. Leaders mostly get materials and ammo; players further behind get better
+// odds of guns, upgrades and structures. Each row's weights are percentages and add up to 100.
+// An item the collector can't use (a gun no better than theirs, an upgrade they all have) is left
+// out and the rest of that row shares its chance.
+export type PickupOutcome = 'materials' | 'ammo' | 'upgrade' | 'basicGun' | 'bigGun' | 'structure';
+export const PICKUP_TIER_CHANCES: Record<PickupOutcome, number>[] = [
+    // tier 1: the leader(s)
+    { materials: 50, ammo: 35, upgrade: 5, basicGun: 5, bigGun: 3, structure: 2 },
+    // tier 2
+    { materials: 42, ammo: 30, upgrade: 10, basicGun: 8, bigGun: 5, structure: 5 },
+    // tier 3
+    { materials: 32, ammo: 25, upgrade: 15, basicGun: 10, bigGun: 8, structure: 10 },
+    // tier 4: at the back
+    { materials: 22, ammo: 20, upgrade: 20, basicGun: 10, bigGun: 10, structure: 18 },
+];
 export const PICKUP_MATERIALS = { min: 10, max: 50 };
 export const PICKUP_AMMO = { min: 10, max: 30 };

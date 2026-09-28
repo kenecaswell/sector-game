@@ -109,24 +109,25 @@ export const BUILD_PREVIEW_OK_COLOR = 0xf1c40f;
 export const BUILD_PREVIEW_BAD_COLOR = 0xe74c3c;
 export const BUILD_PREVIEW_TAP_MS = 1200; // touch has no hover: a refused tap shows its outline this long
 
-// Pickups (placeholder shapes until there's art; see game/pickups.ts). Each is small enough to sit
-// on one hex, floats PICKUP_LIFT px up and bobs PICKUP_BOB px every PICKUP_BOB_MS.
+// Pickups: every one is the same drop pod until it's opened (placeholder art; see game/pickups.ts),
+// small enough to sit on one hex. It floats PICKUP_LIFT px up, bobs PICKUP_BOB px every
+// PICKUP_BOB_MS, and its light band pulses every POD_GLOW_MS.
 export const PICKUP_LIFT = 10;
-export const PICKUP_SCALE = 1.6; // drawPickup's shapes (~26 px) scaled to ~42 px: a hex top is ~64 px wide
+export const PICKUP_SCALE = 1.6; // drawDropPod's ~26 px shape scaled to ~42 px: a hex top is ~64 px wide
 export const PICKUP_BOB = 3;
 export const PICKUP_BOB_MS = 900;
-export const PICKUP_CRATE_COLOR = 0xc08a4a; // a wooden crate of materials
-export const PICKUP_CRATE_EDGE_COLOR = 0x6e4a22; // its planks' edges and cross brace
-export const PICKUP_AMMO_COLOR = 0xc9a227; // brass casings
-export const PICKUP_AMMO_TIP_COLOR = 0x8d8d8d; // lead tips
-export const PICKUP_GUN_COLORS: Record<string, number> = {
-    basicGun: 0xeeeeee, // white, like its shots
-    bigGun: 0xf1c40f, // yellow, like its shots
-};
-export const PICKUP_UPGRADE_COLORS: Record<string, number> = {
+export const POD_BODY_COLOR = 0x8c97a3; // brushed steel
+export const POD_SHADE_COLOR = 0x5f6873; // its shadowed side
+export const POD_HIGHLIGHT_COLOR = 0xd5dde4;
+export const POD_FIN_COLOR = 0x3f464f;
+export const POD_LIGHT_COLOR = 0x3fe0ff; // the glowing band
+export const POD_OUTLINE_COLOR = 0x1b1b1b;
+export const POD_GLOW_MS = 1100;
+
+// Upgrade colors for the inventory bar's icons (components/ItemIcon.tsx).
+export const UPGRADE_ICON_COLORS: Record<string, number> = {
     booster: 0xff8c1a, // orange: speed
     expander: 0x1abc9c, // teal: reach
     armor: 0x9aa7b0, // steel
     wings: 0xbfe3ff, // sky
 };
-export const PICKUP_OUTLINE_COLOR = 0x1b1b1b;

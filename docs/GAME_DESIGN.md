@@ -98,7 +98,7 @@ Implementation: [Game Phases](ARCHITECTURE.md#game-phases), [Room Lifecycle](ARC
 - **Size in play:** crossing the map takes about **15 s left to right** and **11 s top to bottom** at normal speed. (The vertical trip is shorter because the tilted view squashes the map vertically and speed is measured on screen.)
 - **Edges:** you can walk right up to the edge but not off it. The camera always keeps you centered, even at the edge.
 - **Corners:** the map's outline is jagged (it's made of hexes), so at a few edge spots you can stand over no hex at all. Those spots can't be claimed.
-- **Spawning:** ✅ players start on a **spawn line near the right-hand (east) edge**, as if "going west": one spot per player, in a column 3 hexes in from the edge (`SPAWN_EDGE_INSET`). The first player to join gets the middle spot; each later one goes alternately above and below, 6 rows further out each pair (`SPAWN_ROW_SPACING`), so the more players there are, the further toward the top and bottom they start. You keep your spot for the match (through a reconnect) and **respawn there**; a spot is freed when its player leaves for good, and the next to join takes the lowest free one. 🧪 The spacing and inset are first-pass.
+- **Spawning:** ✅ players start on a **spawn line near the right-hand (east) edge**, as if "going west": one spot per player, in a column 3 hexes in from the edge (`SPAWN_EDGE_INSET`). The first player to join gets the middle spot; each later one goes alternately above and below, 6 rows further out each pair (`SPAWN_ROW_SPACING`), so the more players there are, the further toward the top and bottom they start. You keep your spot for the match (through a reconnect) and **respawn there**. Each spot shows a **spawn platform**, a low round metal pad with a light in the player's team color; a spot is freed when its player leaves for good, and the next to join takes the lowest free one. 🧪 The spacing and inset are first-pass.
 
 Implementation: [Map — hex grid and coordinate spaces](ARCHITECTURE.md#map--hex-grid-and-coordinate-spaces).
 
@@ -256,25 +256,25 @@ Implementation: [Structures: footprint and shape](ARCHITECTURE.md#structures-foo
 
 ### Pickups
 
-🧪 Items lying on the map, to be picked up by walking onto their hex. **Behind a feature flag** (`PICKUPS_ENABLED` in `server/src/constants.ts`, or `PICKUPS=0` / `PICKUPS=1` when starting the server), so they can be switched off.
+🧪 **Drop pods** lying on the map. They all look the same, so you can't tell what's inside until you open one by walking onto its hex. **Behind a feature flag** (`PICKUPS_ENABLED` in `server/src/constants.ts`, or `PICKUPS=0` / `PICKUPS=1` when starting the server), so they can be switched off.
 
-- **Where:** **12 locations** per match, spread evenly: the map is split into a 4 × 3 grid and each cell gets one, near its center (nudged up to 2 hexes at random). A location on a mountain or water, or inside a spawn area, moves to the nearest ground hex outside the spawn areas. A new layout every match, with the terrain.
-- **What** each location gets:
+- **Where:** up to **12 pods** per match, spread evenly: the map is split into a 4 × 3 grid and each cell gets one, near its center (nudged up to 2 hexes at random). Each cell has a **5% chance of getting no pod** (`PICKUP_EMPTY_CHANCE`). A pod on a mountain or water, or inside a spawn area, moves to the nearest ground hex outside the spawn areas. A new layout every match, with the terrain.
+- **What's inside** is decided **when you open it**, from your **score tier** at that moment. Everyone is ranked by current score and split into **four tiers**: tier 1 is the leader, tier 4 is at the back. Tied players share the average of their places, so at the start, when everyone is on 0, everyone is in the middle (tier 3). With two players, the leader is tier 1 and the other tier 4. The further behind you are, the better your odds (`PICKUP_TIER_CHANCES`; 🧪 first-pass numbers, to tune):
 
-| Item | Chance | Gives |
-|---|---|---|
-| Pile of materials | 40% | 10–50 materials |
-| Pile of ammo | 25% | 10–30 shots |
-| Upgrade | 10% | Level 1 of a random upgrade (Booster, Expander, Armor or Wings) |
-| Basic gun | 10% | The Basic gun |
-| Big gun | 5% | The Big gun |
-| Structure | 5% | One random structure type, added to your inventory |
-| Nothing | 5% | — |
+| Contents | Tier 1 (leader) | Tier 2 | Tier 3 | Tier 4 (back) | Gives |
+|---|---|---|---|---|---|
+| Materials | 50% | 42% | 32% | 22% | 10–50 materials |
+| Ammo | 35% | 30% | 25% | 20% | 10–30 shots |
+| Upgrade | 5% | 10% | 15% | 20% | Level 1 of an upgrade you don't have yet |
+| Basic gun | 5% | 8% | 10% | 10% | The Basic gun |
+| Big gun | 3% | 5% | 8% | 10% | The Big gun |
+| Structure | 2% | 5% | 10% | 18% | One random structure type |
 
-- **Taking one:** stand on its hex during the match. It's gone for everyone once taken, and doesn't come back. You get a notice ("Picked up 30 materials").
-- **Only what you can use:** materials, ammo and structures always; a gun only if it's better than yours (the Fabricator's no-downgrade rule); an upgrade only if you don't have it yet (it's level 1). Anything else stays on the map for someone else.
-- An upgrade from a pickup behaves like a fabricated one: into an empty slot it's equipped at once; Armor adds its health straight away.
-- **Look** (until art): a wooden crate (materials), three brass rounds (ammo), a pistol shape in white or a larger yellow one (Basic / Big gun, like their shots), a diamond in the upgrade's color (Booster orange, Expander teal, Armor steel, Wings sky blue), a tiny slab in the structure type's color. Each floats over its hex with a shadow and bobs gently.
+- **Always something useful:** anything you couldn't use (a Basic gun when you're armed, the Big gun when you have it, an upgrade when you have them all) is left out of your roll and the rest share its chance. A pod is never empty (the 5% chance is of no pod at all).
+- **Respawning:** 🧪 **2:50 into the match** (`PICKUP_RESPAWN_MS`), every grid cell that has no pod left gets a new one, placed the same way (and with the same 5% chance of none), each appearing after its own random **0–15 s** delay. New pods avoid structures and other pods. In a 5-minute match that's one wave; it repeats every 2:50 if matches get longer.
+- **Taking one:** stand on its hex during the match. It's gone for everyone once opened (its cell can get a new pod in the next respawn wave). You get a notice with what was inside ("Picked up 30 materials").
+- An upgrade from a pod behaves like a fabricated one: into an empty slot it's equipped at once; Armor adds its health straight away.
+- **Look** (until art): a small steel drop pod with fins and a glowing cyan band that pulses. It floats over its hex with a shadow and bobs gently.
 
 Implementation: [Pickups](ARCHITECTURE.md#pickups).
 
@@ -353,7 +353,8 @@ Implementation: [Input — desktop and mobile share one message contract](ARCHIT
   - **Mountain:** off-white, with a thin gray border.
   - **Water:** dark blue when deep, a lighter blue when shallow (wadeable), with a dotted border in the normal border color.
 - **Hexes:** claimed hexes are tinted in the owner's color, with a slightly darker border so neighboring hexes of one color stay distinguishable.
-- **Pickups:** small shapes floating over a hex; see [Pickups](#pickups).
+- **Pickups:** identical drop pods floating over a hex; see [Pickups](#pickups).
+- **Spawn platforms:** a low round metal pad on each player's spawn hex, with a small light in their team color.
 - **Structures:** a raised hexagonal slab. The **top shows the type** (farm pale lime, fabricator dark brown, fort sandstone, power plant pale cyan, muted so they don't read as team colors) and the **sides and border show the owner's team color**.
 - **Shots:** Basic-gun shots are small white bolts; Big-gun shots are larger yellow bolts.
 - **Expander:** a translucent circle in the owner's color on the ground, showing their claim radius.
@@ -382,7 +383,7 @@ Things that need a design decision, not just code. Where one is also tracked in 
 - **Shopping risk:** maybe only allow buying while standing on your own territory (or near a city hall). Not decided.
 - **Snowballing:** territory income and purchases compound for whoever is ahead. The Expander in particular is strong (up to 9 hexes at a time) for 100 materials. Options: rising prices, a radius cap, or stackable upgrades with rising costs.
 - **Early game:** nothing but ammo is affordable at the start; at 1 material a fresh hex, a 100-material item is about 50 new hexes away (starting materials cover the rest), so pickups matter. Check whether that feels right.
-- **Pickups:** should they respawn during a match? Should players see where they are from afar (a minimap or edge markers)? Is a gun pickup too strong early for whoever reaches it first?
+- **Pickups:** should players see where they are from afar (a minimap or edge markers)? Tune the tier odds (and maybe the amounts per tier) in playtests. Is a gun too strong early for whoever reaches a pod first?
 
 ### Map and spawning
 - **Starting positions:** ✅ decided 2026-09-26 (spawn line, see [The map](#the-map)). Still open: should teammates start next to each other rather than in join order?
@@ -490,3 +491,5 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Smuggler renamed Explorer | The armed starting character is the **Explorer** (id `explorer`); same kit (Basic gun, 15 ammo, 15 materials) and description. Older text was reworded | Keep the id `smuggler` and change only the name | Requested (2026-09-27). Renaming the id too keeps code and game in step, as with mine → fabricator |
 | Inventory bar | Structures and upgrades as icons down the right side; clicking a structure starts building it, clicking an upgrade switches to it; the Build button is removed and `B` stays; the left HUD drops its Structures and Upgrade lines | Keeping the Build button alongside; a bottom bar | Requested (2026-09-27). The right side is free on desktop and phones (the joystick and FIRE hold the bottom corners). A bottom hint replaces the Build button's "Pick a spot" text. The Inventory popup stays for now |
 | Inventory popup removed; `F`, `I`, `Tab` | The Inventory popup and its button are gone (the inventory bar covers structures and upgrades; gun and ammo are in the top-left HUD). `F` opens the Fabricator, `I` hides/shows the inventory bar, `Tab` in build mode cycles structure types | Keeping the popup for gun and ammo | Requested (2026-09-27). `Shift+Tab` going backwards is my addition. Tab only does this in build mode, so it's left alone otherwise |
+| Mystery drop pods, tiered odds | Every pickup is the same drop pod; its contents are rolled when opened, from the opener's score tier (four tiers by rank; ties share the average place), with better odds further behind; unusable outcomes are dropped from the roll; no empty pods | Contents fixed at generation (previous); tiers by fixed score bands | Requested (2026-09-27): surprise, and a catch-up mechanism for losing players. Ranking (not score bands) works at any score scale; my choices: ties averaging (so everyone at 0 lands mid-table, not top), dropping unusable outcomes rather than leaving the pod, and removing the 5% empty pod |
+| Empty locations, pod respawns, spawn platforms | 5% of locations get no pod (back from before the drop pods); a respawn wave at 2:50 refills empty cells the same way, each pod after a 0–15 s delay, avoiding structures; a metal platform with a team-colored light marks each player's spawn | Respawning each opened pod in place; a fixed respawn position | Requested (2026-09-27). My reading: the wave refills only cells whose pod was opened (or never appeared), and repeats every 2:50; the team light is my addition so players can tell whose pad is whose |

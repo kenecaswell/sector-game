@@ -1,13 +1,8 @@
-import {
-    PICKUP_UPGRADE_COLORS,
-    STRUCTURE_COLORS,
-    STRUCTURE_DEFAULT_COLOR,
-} from '../game/constants';
+import { UPGRADE_ICON_COLORS, STRUCTURE_COLORS, STRUCTURE_DEFAULT_COLOR } from '../game/constants';
 import type { StructureType, UpgradeId } from '../types/shared';
 
-// Placeholder icons for the on-screen inventory, matching the pickups on the map (game/pickups.ts)
-// until there's art: a structure is a tiny hexagonal slab in its type's color, an upgrade a diamond
-// in its own color.
+// Placeholder icons for the on-screen inventory until there's art: a structure is a tiny hexagonal
+// slab in its type's color (like the real ones), an upgrade a diamond in its own color.
 
 const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
@@ -37,7 +32,7 @@ export function ItemIcon(props: ItemIconProps) {
                 <>
                     <polygon
                         points="0,-10 8,0 0,10 -8,0"
-                        fill={css(PICKUP_UPGRADE_COLORS[props.id] ?? 0xffffff)}
+                        fill={css(UPGRADE_ICON_COLORS[props.id] ?? 0xffffff)}
                         stroke="#1b1b1b"
                         strokeWidth={1.2}
                     />

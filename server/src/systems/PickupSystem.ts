@@ -1,59 +1,121 @@
-import type { GameState, Player, Pickup } from '../state/GameState';
-import { pixelToHex } from '../hex';
+import { Pickup, type GameState, type Player } from '../state/GameState';
+import { inStructureFootprint, pixelToHex, type HexCoord } from '../hex';
 import {
-    SHOP_ITEMS,
-    isShopItemId,
-    ownsShopItem,
-    upgradeLevel,
-    type PickupCollectedEvent,
-    type PickupKind,
-} from '../types/shared';
+    MATCH_DURATION_MS,
+    PICKUP_GRID,
+    PICKUP_RESPAWN_DELAY_MAX_MS,
+    PICKUP_RESPAWN_MS,
+} from '../constants';
+import {
+    generatePickups,
+    rollPickup,
+    scoreTier,
+    type PickupContents,
+    type PodSpot,
+} from '../pickups';
+import { isShopItemId, type PickupCollectedEvent } from '../types/shared';
 import { ShopSystem } from './ShopSystem';
 import type { Broadcast } from './Broadcast';
 
-/**
- * Whether `player` can take this pickup. Materials, ammo and structures always; a gun only if it's
- * better than theirs (the shop's rule: no downgrades); an upgrade only if they don't have it yet
- * (a pickup is level 1). One they can't use stays on the map for someone else.
- */
-function canCollect(player: Player, pickup: Pickup): boolean {
-    if (pickup.kind !== 'item') return true;
-    if (!isShopItemId(pickup.itemId)) return false;
-    const item = SHOP_ITEMS[pickup.itemId];
-    if (item.upgrade) return upgradeLevel(player, item.upgrade) === 0;
-    return !ownsShopItem(player, pickup.itemId);
+/** Puts a drop pod on the map (at the start of a match, or when a respawned one appears). */
+function addPod(state: GameState, spot: PodSpot): Pickup {
+    const pod = new Pickup();
+    pod.id = `pod-${state.podsMade++}`;
+    pod.tileX = spot.col;
+    pod.tileY = spot.row;
+    pod.cell = spot.cell;
+    state.pickups.set(pod.id, pod);
+    return pod;
 }
 
-function collect(player: Player, pickup: Pickup): void {
-    if (pickup.kind === 'materials') player.materials += pickup.amount;
-    else if (pickup.kind === 'ammo') player.ammo += pickup.amount;
-    else if (isShopItemId(pickup.itemId)) ShopSystem.grant(player, pickup.itemId);
+function apply(player: Player, contents: PickupContents): void {
+    if (contents.kind === 'materials') player.materials += contents.amount;
+    else if (contents.kind === 'ammo') player.ammo += contents.amount;
+    else if (isShopItemId(contents.itemId)) ShopSystem.grant(player, contents.itemId);
+}
+
+/** A hex a respawned pod can't use: one with a pod on it, or under a structure. */
+function blockedForPods(state: GameState): (h: HexCoord) => boolean {
+    return (h) =>
+        Array.from(state.pickups.values()).some((p) => p.tileX === h.col && p.tileY === h.row) ||
+        Array.from(state.structures.values()).some((s) =>
+            inStructureFootprint(h.col, h.row, s.tileX, s.tileY)
+        );
 }
 
 /**
- * During `playing`, a connected player standing on a pickup's hex takes it (if they can use it):
- * it's applied, removed from state, and announced with a `pickupCollected` broadcast.
+ * Respawn waves: every PICKUP_RESPAWN_MS into the match, each grid cell with no pod (on the map or
+ * waiting) is refilled by `generatePickups` (same placement and empty chance as the start), each new
+ * pod appearing after its own random 0 - PICKUP_RESPAWN_DELAY_MAX_MS delay. Waiting pods appear when
+ * their time comes, unless their hex has been taken since (by a structure or another pod).
  */
-function update(state: GameState, broadcast: Broadcast): void {
-    if (state.phase.phase !== 'playing' || state.pickups.size === 0) return;
+function respawn(state: GameState, now: number, random: () => number): void {
+    const matchStart = state.phase.endsAt - MATCH_DURATION_MS;
+    if (state.nextPodWaveAt === 0) state.nextPodWaveAt = matchStart + PICKUP_RESPAWN_MS;
 
+    if (now >= state.nextPodWaveAt) {
+        state.nextPodWaveAt += PICKUP_RESPAWN_MS;
+        const filled = new Set([
+            ...Array.from(state.pickups.values(), (pod) => pod.cell),
+            ...state.pendingPods.map((pod) => pod.cell),
+        ]);
+        const cells: number[] = [];
+        for (let cell = 0; cell < PICKUP_GRID.cols * PICKUP_GRID.rows; cell++) {
+            if (!filled.has(cell)) cells.push(cell);
+        }
+        const terrain = Array.from(state.tiles, (tile) => tile.terrain);
+        const spots = generatePickups(terrain, state.mapWidth, state.mapHeight, random, {
+            cells,
+            blocked: blockedForPods(state),
+        });
+        for (const spot of spots) {
+            state.pendingPods.push({
+                ...spot,
+                appearsAt: now + random() * PICKUP_RESPAWN_DELAY_MAX_MS,
+            });
+        }
+    }
+
+    if (state.pendingPods.length === 0) return;
+    const blocked = blockedForPods(state);
+    state.pendingPods = state.pendingPods.filter((pending) => {
+        if (pending.appearsAt > now) return true;
+        if (!blocked(pending)) addPod(state, pending);
+        return false;
+    });
+}
+
+/**
+ * During `playing`: runs respawn waves, then a connected player standing on a drop pod's hex opens
+ * it. What's inside is rolled there and then for that player's score tier (`scoreTier` over
+ * everyone's current scores, then `rollPickup`), applied, and announced with a `pickupCollected`
+ * broadcast; the pod is removed. Clients never see a pod's contents before that. Nothing happens
+ * if the map never had pods (the PICKUPS_ENABLED flag is off). `random` and `now` are for tests.
+ */
+function update(
+    state: GameState,
+    broadcast: Broadcast,
+    random: () => number = Math.random,
+    now: number = Date.now()
+): void {
+    if (state.phase.phase !== 'playing' || state.podsMade === 0) return;
+    respawn(state, now, random);
+
+    const scores = Array.from(state.players.values(), (player) => player.score);
     state.players.forEach((player) => {
         if (!player.connected) return;
         const { col, row } = pixelToHex(player.x, player.y);
-        state.pickups.forEach((pickup, id) => {
-            if (pickup.tileX !== col || pickup.tileY !== row || !canCollect(player, pickup)) {
-                return;
-            }
-            collect(player, pickup);
+        state.pickups.forEach((pod, id) => {
+            if (pod.tileX !== col || pod.tileY !== row) return;
+            const contents = rollPickup(scoreTier(scores, player.score), player, random);
+            apply(player, contents);
             state.pickups.delete(id);
             broadcast('pickupCollected', {
                 playerId: player.id,
-                kind: pickup.kind as PickupKind,
-                itemId: isShopItemId(pickup.itemId) ? pickup.itemId : '',
-                amount: pickup.amount,
+                ...contents,
             } satisfies PickupCollectedEvent);
         });
     });
 }
 
-export const PickupSystem = { update, canCollect };
+export const PickupSystem = { update, addPod };

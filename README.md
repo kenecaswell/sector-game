@@ -84,7 +84,7 @@ Before committing, run `npm run build && npm run lint` in whichever folder you c
 
 Health check: `GET http://localhost:2567/health` returns `{"status":"ok"}`.
 
-Gameplay tunables (tick rate, speeds, damage, hex size, materials per claim, pickup chances, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
+Gameplay tunables (tick rate, speeds, damage, hex size, materials per claim, drop-pod odds per score tier, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
 
 ### Testing on a phone or another machine
 
@@ -156,9 +156,9 @@ The Fabricator offers your next level of each upgrade. Levels last the whole mat
 
 **Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Materials aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you place it on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, fabricator: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
-The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Pickups** are scattered on the map: piles of materials (a wooden crate) and ammo (brass rounds), guns, level-1 upgrades (a colored diamond) and structures (a tiny slab). Walk onto one to take it; you only take what you can use. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
+The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Drop pods** are scattered on the map, all looking the same: walk onto one to open it and find out what's inside (materials, ammo, a gun, an upgrade or a structure). The further behind you are on score, the better your odds. About 2:50 into the match, empty spots get new pods over the following 15 seconds. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
-Players start on a line near the right-hand edge of the map: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
+Players start on a line near the right-hand edge of the map, each on a round metal spawn platform: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
 
 ## Project layout
 

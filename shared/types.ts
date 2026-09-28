@@ -502,12 +502,13 @@ export const TERRAIN = { ground: 0, mountain: 1, water: 2 } as const;
 export type Terrain = (typeof TERRAIN)[keyof typeof TERRAIN];
 
 // --- Pickups -----------------------------------------------------------------------------------
-// Items lying on the map, placed when the room is created (server/src/pickups.ts) when the
-// PICKUPS_ENABLED feature flag is on. Walk onto one's hex to take it (see PickupSystem). A pile of
-// materials or ammo has an `amount`; an item pickup gives what its shop item gives, for free.
+// Identical drop pods lying on the map, placed when the room is created (server/src/pickups.ts)
+// when the PICKUPS_ENABLED feature flag is on. Walk onto one's hex to open it (see PickupSystem):
+// its contents are rolled then, for your score tier, and only then sent to clients. A pile of
+// materials or ammo has an `amount`; an item gives what its Fabricator item gives, for free.
 export type PickupKind = 'materials' | 'ammo' | 'item';
 
-// Server -> Client: a player took a pickup (it has also gone from `state.pickups`).
+// Server -> Client: a player opened a drop pod, and what was inside (it has gone from `state.pickups`).
 export interface PickupCollectedEvent {
     playerId: string;
     kind: PickupKind;

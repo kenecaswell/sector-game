@@ -37,6 +37,8 @@ export interface PlayerState {
     armorLevel: number;
     wingsLevel: number;
     equippedUpgrade: string; // the slot upgrade in effect: an UpgradeId, or '' for none
+    spawnTileX: number; // the hex they start and respawn on (col, row): drawn as a spawn platform
+    spawnTileY: number;
 }
 
 export interface TileState {
@@ -67,9 +69,6 @@ export interface StructureState {
 
 export interface PickupState {
     id: string;
-    kind: string; // a PickupKind: 'materials' | 'ammo' | 'item'
-    itemId: string; // a ShopItemId for kind 'item' (a gun, a level-1 upgrade or a structure), else ''
-    amount: number; // materials or shots, for 'materials' and 'ammo'
     tileX: number; // the hex it lies on (col, row)
     tileY: number;
 }
