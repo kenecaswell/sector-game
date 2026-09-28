@@ -75,9 +75,18 @@ function setName(state: GameState, player: Player, name: unknown): boolean {
     return true;
 }
 
-/** Team and character are locked while ready, so what everyone saw when they readied holds. */
+/**
+ * Team and character are locked while ready, so what everyone saw when they readied holds. In a
+ * game with teams off a team is just a color: you can pick any color no other player has (and
+ * nobody is anyone's ally either way, see areAllies).
+ */
 function selectTeam(state: GameState, player: Player, teamId: unknown): boolean {
     if (!inLobby(state) || player.ready || !isTeamId(teamId)) return false;
+    if (!state.settings.teams) {
+        for (const other of state.players.values()) {
+            if (other !== player && other.teamId === teamId) return false; // taken
+        }
+    }
     setTeam(player, teamId);
     return true;
 }

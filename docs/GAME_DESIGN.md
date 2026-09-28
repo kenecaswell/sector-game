@@ -73,13 +73,30 @@ This is the section to grow as the world takes shape.
 
 ## Match flow
 
+### Getting into a game ✅
+
+- **Start screen:** the title over (placeholder) art and one big **Play** button. Nothing connects to the server until you pick a game.
+- **Game list** (after Play, `/play`): **Create game** at the top, a **find** box (code or name), then the open games, refreshed every few seconds: name, code, players (of 10), settings, and whether it's in the lobby or in play. Full games can't be picked. Finished games aren't listed. Typing a full code that isn't listed offers "Join game CODE" anyway.
+- **Every game has a code**: 4 characters, without look-alikes (no 0/O, 1/I). **`/game/CODE`** in the address bar goes straight to that game, so a link can be shared. The lobby shows the code with a **Copy link** button.
+- **Create game** (`/play/new`) sets the game's name (default "Name's game") and its settings, fixed for that game:
+
+| Setting | Options | Default |
+|---|---|---|
+| Map size | Small 64 × 64, Big 80 × 80, Large 96 × 96 | Small |
+| Teams | On (players pick a team color and play as allies) / Off (everyone for themselves) | Off |
+| Drop pods | On / Off ([Pickups](#pickups)) | On |
+| Game length | 5, 7 or 10 minutes | 5 |
+
+- **With teams off** the lobby's Team picker becomes a **Color** picker: you can take any of the 8 colors nobody else has (others show "(taken)"). Everyone starts on their own color, and nobody is anyone's ally (with more than 8 players, colors repeat, but they're still enemies). 📝 A better color/team picker is planned (Planned Features #10).
+- **Bigger maps** get more drop pods (a 5 × 4 grid on Big, 6 × 5 on Large) and a respawn wave every 2:50 whatever the length (two in a 7-minute game, three in a 10-minute one).
+
 A match moves through four phases. ✅
 
 | Phase | What happens | How long |
 |---|---|---|
-| **Lobby** | Players join, set a name, pick a team color and a character, and press **Ready**. | Until every connected player is ready |
+| **Lobby** | Players join, set a name, pick a character (and a team color, if the game has teams on), and press **Ready**. | Until every connected player is ready |
 | **Countdown** | Everyone is ready: "Starting in 3…". Nobody can move yet. If anyone un-readies or a new player joins, it cancels back to the lobby. | 3 s (`COUNTDOWN_DURATION_MS`) |
-| **Playing** | The whole match. Claiming, shooting, fabricating and gathering all happen at once. | 5 min (`MATCH_DURATION_MS`) |
+| **Playing** | The whole match. Claiming, shooting, fabricating and gathering all happen at once. | 5, 7 or 10 min (the game's setting) |
 | **Results** | Final standings and the winner. No new players can join. The room closes when the timer ends (or when the last player leaves), but each player's results stay on screen until they choose **Play again** or **Main menu**. | 60 s (`RESULTS_DURATION_MS`) |
 
 - **Nobody is in charge.** There is no host and no Start button: the match starts itself once everyone is ready.
@@ -87,18 +104,18 @@ A match moves through four phases. ✅
 - **Team and character are locked while you're ready.** Un-ready to change them, so what everyone saw when they readied is what starts. Your name can still change while you're ready, but not once the match starts.
 - **Players who drop don't hold up the lobby.** A disconnected player is left out of the ready check.
 - **Joining mid-match** is allowed during the playing phase. The newcomer plays the default character (Farmer).
-- **Play again** puts you in a fresh lobby (not a rematch in the same room).
+- **Play again** takes you back to the game list (**Main menu** to the start screen); the finished game is closed.
 
 Implementation: [Game Phases](ARCHITECTURE.md#game-phases), [Room Lifecycle](ARCHITECTURE.md#room-lifecycle).
 
 ## The map
 
-✅ A **64 × 64 grid of flat-top hexes**, viewed at an isometric tilt, all at one flat height (no elevation). 📝 Each match gets a freshly generated layout of ground, mountains and water; see [Terrain](#terrain).
+✅ A **grid of flat-top hexes**: 64 × 64 (Small, the default), 80 × 80 (Big) or 96 × 96 (Large), picked when the game is created,, viewed at an isometric tilt, all at one flat height (no elevation). 📝 Each match gets a freshly generated layout of ground, mountains and water; see [Terrain](#terrain).
 
 - **Size in play:** crossing the map takes about **15 s left to right** and **11 s top to bottom** at normal speed. (The vertical trip is shorter because the tilted view squashes the map vertically and speed is measured on screen.)
 - **Edges:** you can walk right up to the edge but not off it. The camera always keeps you centered, even at the edge.
 - **Corners:** the map's outline is jagged (it's made of hexes), so at a few edge spots you can stand over no hex at all. Those spots can't be claimed.
-- **Spawning:** ✅ players start on a **spawn line near the right-hand (east) edge**, as if "going west": one spot per player, in a column 3 hexes in from the edge (`SPAWN_EDGE_INSET`). The first player to join gets the middle spot; each later one goes alternately above and below, 6 rows further out each pair (`SPAWN_ROW_SPACING`), so the more players there are, the further toward the top and bottom they start. You keep your spot for the match (through a reconnect) and **respawn there**; a spot is freed when its player leaves for good, and the next to join takes the lowest free one. 🧪 The spacing and inset are first-pass.
+- **Spawning:** ✅ players start on a **spawn line near the right-hand (east) edge**, as if "going west": one spot per player, in a column 3 hexes in from the edge (`SPAWN_EDGE_INSET`). The first player to join gets the middle spot; each later one goes alternately above and below, 6 rows further out each pair (`SPAWN_ROW_SPACING`), so the more players there are, the further toward the top and bottom they start. You keep your spot for the match (through a reconnect) and **respawn there**. Each spot shows a **spawn platform**, a low round metal pad with a light in the player's team color; a spot is freed when its player leaves for good, and the next to join takes the lowest free one. 🧪 The spacing and inset are first-pass.
 
 Implementation: [Map — hex grid and coordinate spaces](ARCHITECTURE.md#map--hex-grid-and-coordinate-spaces).
 
@@ -232,7 +249,7 @@ Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detecti
 
 - **Getting them:** each structure-starting character begins with one, and you can fabricate more (100 materials each). You hold them in a **structure inventory** until you place them.
 - **Footprint:** a structure sits on a center hex and **covers that hex plus its 6 neighbors**.
-- **Placing:** press **Build** (the button, or `B`), then pick a spot. It places the structure you picked in the **inventory** (each structure type there has a **Select** button; the picked one shows **Selected**), or, until you pick one or once you've run out of it, the first in your inventory. The Build button names it and how many of that type you have ("Build Fort (2)"). **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can place it there, red if not.
+- **Placing:** click a structure's icon in the **inventory bar** on the right of the screen ([Inventory bar](#inventory-bar)), then pick a spot. `B` does the same for the structure you picked last, or the first you have. While placing, **`Tab` switches to the next structure type you hold** (`Shift+Tab` the previous), in catalog order. A hint at the bottom says what you're placing. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can place it there, red if not.
 - **Solid:** enemies can't walk through your structure; they slide around it. You and your teammates can walk over it.
 - **Protection:** enemies can't claim any of its 7 hexes.
 - **Health and destruction:** 🧪 100 health. Enemy shots damage it, and at 0 it's destroyed and removed. 📝 There's no visible damage state yet (planned: intact → cracked → heavily damaged).
@@ -256,31 +273,31 @@ Implementation: [Structures: footprint and shape](ARCHITECTURE.md#structures-foo
 
 ### Pickups
 
-🧪 Items lying on the map, to be picked up by walking onto their hex. **Behind a feature flag** (`PICKUPS_ENABLED` in `server/src/constants.ts`, or `PICKUPS=0` / `PICKUPS=1` when starting the server), so they can be switched off.
+🧪 **Drop pods** lying on the map. They all look the same, so you can't tell what's inside until you open one by walking onto its hex. **Behind a feature flag** (`PICKUPS_ENABLED` in `server/src/constants.ts`, or `PICKUPS=0` / `PICKUPS=1` when starting the server), so they can be switched off.
 
-- **Where:** **12 locations** per match, spread evenly: the map is split into a 4 × 3 grid and each cell gets one, near its center (nudged up to 2 hexes at random). A location on a mountain or water, or inside a spawn area, moves to the nearest ground hex outside the spawn areas. A new layout every match, with the terrain.
-- **What** each location gets:
+- **Where:** up to **12 pods** per match, spread evenly: the map is split into a 4 × 3 grid and each cell gets one, near its center (nudged up to 2 hexes at random). Each cell has a **5% chance of getting no pod** (`PICKUP_EMPTY_CHANCE`). A pod on a mountain or water, or inside a spawn area, moves to the nearest ground hex outside the spawn areas. A new layout every match, with the terrain.
+- **What's inside** is decided **when you open it**, from your **score tier** at that moment. Everyone is ranked by current score and split into **four tiers**: tier 1 is the leader, tier 4 is at the back. Tied players share the average of their places, so at the start, when everyone is on 0, everyone is in the middle (tier 3). With two players, the leader is tier 1 and the other tier 4. The further behind you are, the better your odds (`PICKUP_TIER_CHANCES`; 🧪 first-pass numbers, to tune):
 
-| Item | Chance | Gives |
-|---|---|---|
-| Pile of materials | 40% | 10–50 materials |
-| Pile of ammo | 25% | 10–30 shots |
-| Upgrade | 10% | Level 1 of a random upgrade (Booster, Expander, Armor or Wings) |
-| Basic gun | 10% | The Basic gun |
-| Big gun | 5% | The Big gun |
-| Structure | 5% | One random structure type, added to your inventory |
-| Nothing | 5% | — |
+| Contents | Tier 1 (leader) | Tier 2 | Tier 3 | Tier 4 (back) | Gives |
+|---|---|---|---|---|---|
+| Materials | 50% | 42% | 32% | 22% | 10–50 materials |
+| Ammo | 35% | 30% | 25% | 20% | 10–30 shots |
+| Upgrade | 5% | 10% | 15% | 20% | Level 1 of an upgrade you don't have yet |
+| Basic gun | 5% | 8% | 10% | 10% | The Basic gun |
+| Big gun | 3% | 5% | 8% | 10% | The Big gun |
+| Structure | 2% | 5% | 10% | 18% | One random structure type |
 
-- **Taking one:** stand on its hex during the match. It's gone for everyone once taken, and doesn't come back. You get a notice ("Picked up 30 materials").
-- **Only what you can use:** materials, ammo and structures always; a gun only if it's better than yours (the Fabricator's no-downgrade rule); an upgrade only if you don't have it yet (it's level 1). Anything else stays on the map for someone else.
-- An upgrade from a pickup behaves like a fabricated one: into an empty slot it's equipped at once; Armor adds its health straight away.
-- **Look** (until art): a wooden crate (materials), three brass rounds (ammo), a pistol shape in white or a larger yellow one (Basic / Big gun, like their shots), a diamond in the upgrade's color (Booster orange, Expander teal, Armor steel, Wings sky blue), a tiny slab in the structure type's color. Each floats over its hex with a shadow and bobs gently.
+- **Always something useful:** anything you couldn't use (a Basic gun when you're armed, the Big gun when you have it, an upgrade when you have them all) is left out of your roll and the rest share its chance. A pod is never empty (the 5% chance is of no pod at all).
+- **Respawning:** 🧪 **2:50 into the match** (`PICKUP_RESPAWN_MS`), every grid cell that has no pod left gets a new one, placed the same way (and with the same 5% chance of none), each appearing after its own random **0–15 s** delay. New pods avoid structures and other pods. In a 5-minute match that's one wave; it repeats every 2:50 if matches get longer.
+- **Taking one:** stand on its hex during the match. It's gone for everyone once opened (its cell can get a new pod in the next respawn wave). You get a notice with what was inside ("Picked up 30 materials").
+- An upgrade from a pod behaves like a fabricated one: into an empty slot it's equipped at once; Armor adds its health straight away.
+- **Look** (until art): a small steel drop pod with fins and a glowing cyan band that pulses. It floats over its hex with a shadow and bobs gently.
 
 Implementation: [Pickups](ARCHITECTURE.md#pickups).
 
 ### Fabricator
 
-🧪 Items aren't bought, they're **fabricated** from materials. Open the **Fabricator** any time during the match with the **Fabricator** button (it was the Shop, on `E`, until 2026-09-27; `E` is now unbound, kept for something later). Placing a structure you have is still **Build** (`B`). The game keeps running while it's open, so fabricating in the middle of a fight is risky. The catalog is `SHOP_ITEMS` in `shared/types.ts` (the code keeps its shop names). Prices show as "100 mat".
+🧪 Items aren't bought, they're **fabricated** from materials. Open the **Fabricator** any time during the match with the **Fabricator** button or **`F`** (it was the Shop, on `E`, until 2026-09-27; `E` is now unbound, kept for something later). Placing a structure you have is still **Build** (`B`). The game keeps running while it's open, so fabricating in the middle of a fight is risky. The catalog is `SHOP_ITEMS` in `shared/types.ts` (the code keeps its shop names). Prices show as "100 mat".
 
 | Category | Item | Cost | What it does | Limit |
 |---|---|---|---|---|
@@ -306,11 +323,18 @@ Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materia
 - **Levels.** Booster, Expander and Armor go up to level 3, Wings has one level. Each level costs 100 materials, fabricated one at a time, and is kept all match (respawns included).
 - **One upgrade slot.** Booster, Expander and Wings are *slot* upgrades: you can own all of them, but **only the equipped one works**. Armor isn't a slot upgrade: it always works once bought.
 - **Equipping.** A slot upgrade you fabricate with the slot empty equips itself; otherwise it waits in your inventory. Fabricating the next level of the upgrade you have equipped takes effect at once.
-- **Switching** in the **inventory** (`I`, or the Inventory button under Fabricator): change the equipped upgrade any time during the match, **instantly and as often as you like** (a 5-second cooldown was removed 2026-09-27). You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
-- **The inventory** also shows your gun, ammo and structures by type, and your Armor level. Each owned slot upgrade has an **Equip** button; the equipped one's is a disabled **Equipped** (you switch by equipping another, not by emptying the slot). While you're over a mountain or deep water with Wings on, the buttons are disabled and it says why.
-- The HUD shows your equipped upgrade with its level ("Upgrade: Booster 2") and your Armor level.
+- **Switching** by clicking an upgrade in the [inventory bar](#inventory-bar): change the equipped upgrade any time during the match, **instantly and as often as you like** (a 5-second cooldown was removed 2026-09-27). You can't empty the slot, only switch to another. You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
 
-## Scoring and winning
+### Inventory bar
+
+✅ Your structures and upgrades are shown **on screen, down the right side** (under the Leaderboard and Fabricator buttons), as clickable icons. It replaced the Build button and the Inventory popup (2026-09-27). **`I` hides and shows it.**
+
+- **Structures:** one icon per type you hold, with how many (a Farm icon with "2"), in catalog order. **Click one to build it**: build mode starts with that type and a hint appears at the bottom ("Pick a spot for the Farm…"). Click it again, press `Esc` or `B` to stop. The icon being built is outlined in yellow.
+- **Upgrades:** one icon per upgrade you own, with its level for the three-level ones. **Click one to switch to it**, instantly. The one in use is outlined and can't be clicked. Armor is shown, outlined, because it's always on. While you're over a mountain or deep water with Wings on, the others are disabled.
+- Hidden when you hold no structures or upgrades. Hover an icon for its name and effect.
+- **Look** (until art): the pickup shapes — a tiny slab in the structure's color, a diamond in the upgrade's color.
+
+
 
 ✅ first version. Your score is shown at the top of the screen all match and recalculated continuously (`TILE_POINTS`, `KILL_POINTS`, `STRUCTURE_POINTS`):
 
@@ -330,8 +354,8 @@ The full list of controls for players is in the README's [Controls](../README.md
 - **Movement keys move in fixed on-screen directions** (`W`/`A`/`S`/`D` or arrows = up, left, down, right), and the mouse only aims and shoots. The first prototype moved you "forward" toward the cursor instead; it felt like chasing the mouse, because the camera follows you while the cursor stays still.
 - **Right-click to walk to a spot** on desktop. Any movement key cancels it.
 - **Shooting:** Space (hold to keep firing) or click, toward the mouse. On touch, the **FIRE** button fires along your movement direction, and tapping the map fires toward that spot.
-- **Touch:** a virtual joystick (bottom left) and FIRE and Build buttons (bottom right). The FIRE button only appears once you have a gun.
-- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it), `I` inventory, `E` unused (it opened the Shop; kept free for something later), `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout. `M` (dev builds only, temporary) adds 500 materials.
+- **Touch:** a virtual joystick (bottom left), the FIRE button (bottom right), and the inventory bar's icons (right side) for building and switching upgrades. The FIRE button only appears once you have a gun.
+- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it; `Tab` / `Shift+Tab` switch structure while in it), `F` the Fabricator, `I` hides/shows the inventory bar, `E` unused (it opened the Shop; kept free for something later), `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout. `M` (dev builds only, temporary) adds 500 materials.
 - 📝 **Touch aiming** is limited to your movement direction or a tapped spot; there's no second aiming stick.
 
 Implementation: [Input — desktop and mobile share one message contract](ARCHITECTURE.md#input--desktop-and-mobile-share-one-message-contract), [Movement](ARCHITECTURE.md#movement).
@@ -346,7 +370,8 @@ Implementation: [Input — desktop and mobile share one message contract](ARCHIT
   - **Mountain:** off-white, with a thin gray border.
   - **Water:** dark blue when deep, a lighter blue when shallow (wadeable), with a dotted border in the normal border color.
 - **Hexes:** claimed hexes are tinted in the owner's color, with a slightly darker border so neighboring hexes of one color stay distinguishable.
-- **Pickups:** small shapes floating over a hex; see [Pickups](#pickups).
+- **Pickups:** identical drop pods floating over a hex; see [Pickups](#pickups).
+- **Spawn platforms:** a low round metal pad on each player's spawn hex, with a small light in their team color.
 - **Structures:** a raised hexagonal slab. The **top shows the type** (farm pale lime, fabricator dark brown, fort sandstone, power plant pale cyan, muted so they don't read as team colors) and the **sides and border show the owner's team color**.
 - **Shots:** Basic-gun shots are small white bolts; Big-gun shots are larger yellow bolts.
 - **Expander:** a translucent circle in the owner's color on the ground, showing their claim radius.
@@ -375,7 +400,7 @@ Things that need a design decision, not just code. Where one is also tracked in 
 - **Shopping risk:** maybe only allow buying while standing on your own territory (or near a city hall). Not decided.
 - **Snowballing:** territory income and purchases compound for whoever is ahead. The Expander in particular is strong (up to 9 hexes at a time) for 100 materials. Options: rising prices, a radius cap, or stackable upgrades with rising costs.
 - **Early game:** nothing but ammo is affordable at the start; at 1 material a fresh hex, a 100-material item is about 50 new hexes away (starting materials cover the rest), so pickups matter. Check whether that feels right.
-- **Pickups:** should they respawn during a match? Should players see where they are from afar (a minimap or edge markers)? Is a gun pickup too strong early for whoever reaches it first?
+- **Pickups:** should players see where they are from afar (a minimap or edge markers)? Tune the tier odds (and maybe the amounts per tier) in playtests. Is a gun too strong early for whoever reaches a pod first?
 
 ### Map and spawning
 - **Starting positions:** ✅ decided 2026-09-26 (spawn line, see [The map](#the-map)). Still open: should teammates start next to each other rather than in join order?
@@ -386,11 +411,8 @@ Things that need a design decision, not just code. Where one is also tracked in 
   - Should maps be shareable or replayable (a visible seed)?
 - **Map outline:** the jagged hex edge versus the rectangular walkable area could be fixed at the same time.
 
-### Inventory on the HUD (planned, deferred)
-Requested 2026-09-27, not built yet. Show the player's inventory **on screen, on the right, as part of the HUD**, instead of only in the Inventory popup:
-- **Structures:** an icon per type you own with its count (a Farm icon with "2"). **Clicking it starts building that structure** (build mode with that type), which replaces the **Build** button; the button goes away once this exists.
-- **Upgrades:** an icon per owned upgrade; **clicking one switches to it** (the 5-second switching cooldown was already removed to make this work).
-- Open: what the Inventory popup keeps (gun and ammo, or nothing), how the icons look before there's art (reuse the pickup shapes?), touch sizing, and keyboard shortcuts (number keys?).
+### Inventory bar (follow-ups)
+Built 2026-09-27 (see [Inventory bar](#inventory-bar)). Still open: number-key shortcuts for the icons; showing gun and ammo in the bar too; real icons once there's art.
 
 ### Art and presentation (Planned Features #7, #10)
 - Real art for hexes, terrain, structures and characters, including characters that face six directions to match the hex grid.
@@ -484,3 +506,10 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Fabricator, Build and `E` (revised) | The menu is the **Fabricator** (button only; `E` is unbound and kept for later); placing a structure is **Build** on `B` again | "Fabricate" for both, with `F` for placing (previous, same day) | Requested (2026-09-27). The menu shares its name with the Fabricator structure for now |
 | No switching cooldown | Switch the equipped upgrade instantly, as often as you like; the Wings-over-terrain rule stays | At most once every 5 s (previous) | Requested (2026-09-27), ahead of the planned HUD inventory where clicking an upgrade switches to it. This allows flicking Wings on to cross a river mid-chase; revisit if it's abused |
 | Smuggler renamed Explorer | The armed starting character is the **Explorer** (id `explorer`); same kit (Basic gun, 15 ammo, 15 materials) and description. Older text was reworded | Keep the id `smuggler` and change only the name | Requested (2026-09-27). Renaming the id too keeps code and game in step, as with mine → fabricator |
+| Inventory bar | Structures and upgrades as icons down the right side; clicking a structure starts building it, clicking an upgrade switches to it; the Build button is removed and `B` stays; the left HUD drops its Structures and Upgrade lines | Keeping the Build button alongside; a bottom bar | Requested (2026-09-27). The right side is free on desktop and phones (the joystick and FIRE hold the bottom corners). A bottom hint replaces the Build button's "Pick a spot" text. The Inventory popup stays for now |
+| Inventory popup removed; `F`, `I`, `Tab` | The Inventory popup and its button are gone (the inventory bar covers structures and upgrades; gun and ammo are in the top-left HUD). `F` opens the Fabricator, `I` hides/shows the inventory bar, `Tab` in build mode cycles structure types | Keeping the popup for gun and ammo | Requested (2026-09-27). `Shift+Tab` going backwards is my addition. Tab only does this in build mode, so it's left alone otherwise |
+| Mystery drop pods, tiered odds | Every pickup is the same drop pod; its contents are rolled when opened, from the opener's score tier (four tiers by rank; ties share the average place), with better odds further behind; unusable outcomes are dropped from the roll; no empty pods | Contents fixed at generation (previous); tiers by fixed score bands | Requested (2026-09-27): surprise, and a catch-up mechanism for losing players. Ranking (not score bands) works at any score scale; my choices: ties averaging (so everyone at 0 lands mid-table, not top), dropping unusable outcomes rather than leaving the pod, and removing the 5% empty pod |
+| Empty locations, pod respawns, spawn platforms | 5% of locations get no pod (back from before the drop pods); a respawn wave at 2:50 refills empty cells the same way, each pod after a 0–15 s delay, avoiding structures; a metal platform with a team-colored light marks each player's spawn | Respawning each opened pod in place; a fixed respawn position | Requested (2026-09-27). My reading: the wave refills only cells whose pod was opened (or never appeared), and repeats every 2:50; the team light is my addition so players can tell whose pad is whose |
+| Start screens and games | Splash (title + Play) → game list (Create game on top, find by code or name, open games) → Create game (map size, teams, drop pods, length) → lobby; every game has a 4-character code and a `/game/CODE` URL | Quick-play (join any open game); a host-controlled lobby | Requested (2026-09-27). My choices: map sizes 64/80/96 (bigger costs too much graphics memory on phones), 4-character codes without look-alike characters, a game name field (the list filters by name), "Play again" going back to the list, drop-pod grid scaled with the map, and no connection-status line on the start screen |
+| Menu header, Create buttons, 7-minute games | The game list, Create game and joining screens share a header: back on the left, "SECTOR 42" centered, the right kept free for a settings button. Create game's buttons are centered, with a plain-text Cancel left of a green Create game. Game length adds 7 minutes | — | Requested (2026-09-27) |
+| Colors with teams off; lobby header and phone layout | With teams off, players pick a color no one else has (the Team picker relabeled Color, taken colors disabled); the lobby uses the menu header (Leave left, SECTOR 42 centered); on phones the pickers sit side by side under your name | No choice of color with teams off (previous, same day) | Requested (2026-09-27). The server enforces "not taken" in `selectTeam` |

@@ -51,9 +51,81 @@ export interface SetNameMessage {
     name: string;
 }
 
-// Options sent with joinOrCreate. `name` is the player's saved name (localStorage), if any.
+// Options sent when joining or creating a game. `name` is the player's saved name (localStorage),
+// if any. `game` only matters when creating one (client.create): its settings, cleaned up by
+// normalizeGameSettings on the server.
 export interface JoinOptions {
     name?: string;
+    game?: Partial<GameSettings>;
+}
+
+// --- Games (rooms) -----------------------------------------------------------------------------
+// Each game is a room with its own settings, picked on the Create game screen. Its code is the
+// Colyseus room id (GAME_CODE_LENGTH characters from GAME_CODE_ALPHABET), shown in the game list
+// and used in its URL (/game/CODE).
+export type MapSizeId = 'small' | 'big' | 'large';
+
+export const MAP_SIZES: Record<MapSizeId, { name: string; cols: number; rows: number }> = {
+    small: { name: 'Small', cols: 64, rows: 64 },
+    big: { name: 'Big', cols: 80, rows: 80 },
+    large: { name: 'Large', cols: 96, rows: 96 },
+};
+export const MAP_SIZE_IDS = Object.keys(MAP_SIZES) as MapSizeId[];
+export const MATCH_LENGTH_OPTIONS = [5, 7, 10]; // minutes
+export const GAME_NAME_MAX_LENGTH = 30;
+export const GAME_CODE_LENGTH = 4;
+export const GAME_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I
+
+export interface GameSettings {
+    name: string; // shown in the game list; '' = the server names it
+    mapSize: MapSizeId;
+    teams: boolean; // may players team up (pick a team color)? If not, everyone is on their own
+    pods: boolean; // drop pods (also needs the server's PICKUPS_ENABLED flag)
+    matchMinutes: number; // one of MATCH_LENGTH_OPTIONS
+}
+
+export const DEFAULT_GAME_SETTINGS: GameSettings = {
+    name: '',
+    mapSize: 'small',
+    teams: false,
+    pods: true,
+    matchMinutes: 5,
+};
+
+/** Settings from untrusted input: anything missing or invalid takes its default. */
+export function normalizeGameSettings(raw: unknown): GameSettings {
+    const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const d = DEFAULT_GAME_SETTINGS;
+    const name =
+        typeof input.name === 'string'
+            ? input.name.replace(/\s+/g, ' ').trim().slice(0, GAME_NAME_MAX_LENGTH)
+            : '';
+    return {
+        name,
+        mapSize: MAP_SIZE_IDS.includes(input.mapSize as MapSizeId)
+            ? (input.mapSize as MapSizeId)
+            : d.mapSize,
+        teams: typeof input.teams === 'boolean' ? input.teams : d.teams,
+        pods: typeof input.pods === 'boolean' ? input.pods : d.pods,
+        matchMinutes: MATCH_LENGTH_OPTIONS.includes(input.matchMinutes as number)
+            ? (input.matchMinutes as number)
+            : d.matchMinutes,
+    };
+}
+
+/** Whether `value` looks like a game code (case-insensitive); returns it upper-cased, or null. */
+export function normalizeGameCode(value: string): string | null {
+    const code = value.trim().toUpperCase();
+    if (code.length !== GAME_CODE_LENGTH) return null;
+    return [...code].every((c) => GAME_CODE_ALPHABET.includes(c)) ? code : null;
+}
+
+// One game in the list (GET /games on the server): the open, unfinished ones.
+export interface GameListing extends GameSettings {
+    code: string;
+    players: number;
+    maxPlayers: number;
+    phase: GamePhase;
 }
 
 // --- Player names ------------------------------------------------------------------------------
@@ -502,12 +574,13 @@ export const TERRAIN = { ground: 0, mountain: 1, water: 2 } as const;
 export type Terrain = (typeof TERRAIN)[keyof typeof TERRAIN];
 
 // --- Pickups -----------------------------------------------------------------------------------
-// Items lying on the map, placed when the room is created (server/src/pickups.ts) when the
-// PICKUPS_ENABLED feature flag is on. Walk onto one's hex to take it (see PickupSystem). A pile of
-// materials or ammo has an `amount`; an item pickup gives what its shop item gives, for free.
+// Identical drop pods lying on the map, placed when the room is created (server/src/pickups.ts)
+// when the PICKUPS_ENABLED feature flag is on. Walk onto one's hex to open it (see PickupSystem):
+// its contents are rolled then, for your score tier, and only then sent to clients. A pile of
+// materials or ammo has an `amount`; an item gives what its Fabricator item gives, for free.
 export type PickupKind = 'materials' | 'ammo' | 'item';
 
-// Server -> Client: a player took a pickup (it has also gone from `state.pickups`).
+// Server -> Client: a player opened a drop pod, and what was inside (it has gone from `state.pickups`).
 export interface PickupCollectedEvent {
     playerId: string;
     kind: PickupKind;

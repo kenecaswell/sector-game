@@ -82,15 +82,15 @@ Vite bakes `VITE_SERVER_URL` into the bundle at build time, so changing it requi
 2. The zone is in Route 53, so Amplify creates the DNS record and the SSL certificate for you. It can take a few minutes up to about 30 minutes.
 3. ⚠️ If the portfolio app has a wildcard subdomain (`*.kenecaswell.com`) or "automatic subdomains" enabled, turn it off first or the two apps will conflict.
 
-### 1.4 SPA rewrite (when needed)
+### 1.4 SPA rewrite (required)
 
-When shareable room links like `/play/ABC123` are built, add a rewrite in **Hosting → Rewrites and redirects** so every path serves the app:
+The client has its own URLs (`/play`, `/play/new`, `/game/CODE`, since 2026-09-27), so add a rewrite in **Hosting → Rewrites and redirects** so every path serves the app:
 
 | Source | Target | Type |
 |---|---|---|
 | `</^[^.]+$\|\.(?!(css\|gif\|ico\|jpg\|js\|png\|txt\|svg\|woff\|woff2\|ttf\|map\|json\|webp)$)([^.]+$)/>` | `/index.html` | 200 (Rewrite) |
 
-Until then, the app is served from `/` and no rewrite is required.
+Without it, opening or reloading a game link gives a 404.
 
 ### 1.5 Deploys
 

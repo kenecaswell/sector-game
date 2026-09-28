@@ -9,9 +9,11 @@
 //  - colyseus.js decodes schema state by reflection, so this module never
 //    imports the server's schema classes — see src/types/gameState.ts.
 import { Client, getStateCallbacks, type Room } from 'colyseus.js';
-import { SERVER_URL } from './config';
+import { SERVER_HTTP_URL, SERVER_URL } from './config';
 import type {
+    GameListing,
     GameOverEvent,
+    GameSettings,
     InputAckEvent,
     EquipUpgradeMessage,
     InputMessage,
@@ -105,19 +107,28 @@ export function clearReconnectionToken(): void {
     }
 }
 
+/** Which game to get into: an existing one by its code, or a new one with these settings. */
+export type ConnectTarget = { join: string } | { create: Partial<GameSettings> };
+
 /**
- * Joins (or rejoins, via a saved reconnection token) the GameRoom and wires
- * up the discrete server->client message handlers passed in `handlers`. `options` go with a
- * fresh join only (a reconnect keeps the player the server already has).
+ * Joins a game (or rejoins one, via a saved reconnection token) and wires up the discrete
+ * server->client message handlers passed in `handlers`. `target` says which game: a code to join
+ * (`joinById`: the code is the room id) or settings to create one with. `options` go with a fresh
+ * join only (a reconnect keeps the player the server already has).
  * High-frequency/gameplay-critical events (movement, tile ownership) are not
  * modeled as discrete messages — they're plain Colyseus state, read directly
  * off `room.state` by the render loop.
  */
 export async function connectToGame(
     handlers: GameEventHandlers,
+    target: ConnectTarget,
     options: JoinOptions = {}
 ): Promise<GameRoom> {
     const savedToken = readReconnectionToken();
+    const fresh = () =>
+        'join' in target
+            ? client.joinById<GameStateShape>(target.join, options)
+            : client.create<GameStateShape>('GameRoom', { ...options, game: target.create });
     let room: GameRoom;
 
     if (savedToken) {
@@ -126,16 +137,23 @@ export async function connectToGame(
         } catch {
             // Token expired, room closed, or server restarted — fall back to a fresh join.
             clearReconnectionToken();
-            room = await client.joinOrCreate<GameStateShape>('GameRoom', options);
+            room = await fresh();
         }
     } else {
-        room = await client.joinOrCreate<GameStateShape>('GameRoom', options);
+        room = await fresh();
     }
 
     saveReconnectionToken(room);
     bindMessageHandlers(room, handlers);
 
     return room;
+}
+
+/** The open games (GET /games), for the game list. */
+export async function fetchGames(signal?: AbortSignal): Promise<GameListing[]> {
+    const response = await fetch(`${SERVER_HTTP_URL}/games`, { signal });
+    if (!response.ok) throw new Error(`The server answered ${response.status}`);
+    return (await response.json()) as GameListing[];
 }
 
 export function leaveGame(room: GameRoom): Promise<number> {

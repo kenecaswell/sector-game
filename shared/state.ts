@@ -7,7 +7,7 @@
 // satisfy `ReadonlyMap` / `readonly T[]` structurally, so a straight cast is safe.
 // (A field the server adds but these don't list isn't flagged — add it here when the client needs it.)
 
-import type { GamePhase, Terrain } from './types';
+import type { GamePhase, MapSizeId, Terrain } from './types';
 
 export interface PlayerState {
     id: string;
@@ -37,6 +37,8 @@ export interface PlayerState {
     armorLevel: number;
     wingsLevel: number;
     equippedUpgrade: string; // the slot upgrade in effect: an UpgradeId, or '' for none
+    spawnTileX: number; // the hex they start and respawn on (col, row): drawn as a spawn platform
+    spawnTileY: number;
 }
 
 export interface TileState {
@@ -67,11 +69,17 @@ export interface StructureState {
 
 export interface PickupState {
     id: string;
-    kind: string; // a PickupKind: 'materials' | 'ammo' | 'item'
-    itemId: string; // a ShopItemId for kind 'item' (a gun, a level-1 upgrade or a structure), else ''
-    amount: number; // materials or shots, for 'materials' and 'ammo'
     tileX: number; // the hex it lies on (col, row)
     tileY: number;
+}
+
+// The game's settings, fixed when it's created (see GameSettings in types.ts).
+export interface GameSettingsState {
+    name: string;
+    mapSize: MapSizeId | string;
+    teams: boolean;
+    pods: boolean;
+    matchMinutes: number;
 }
 
 export interface GamePhaseStateShape {
@@ -86,6 +94,7 @@ export interface GameStateShape {
     pickups: ReadonlyMap<string, PickupState>; // empty when the PICKUPS_ENABLED flag is off
     tiles: readonly TileState[];
     phase: GamePhaseStateShape;
+    settings: GameSettingsState;
     mapWidth: number;
     mapHeight: number;
 }

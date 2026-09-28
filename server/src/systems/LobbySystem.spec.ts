@@ -1,5 +1,6 @@
+import { PhaseSystem } from './PhaseSystem';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { COUNTDOWN_DURATION_MS, MATCH_DURATION_MS } from '../constants';
+import { COUNTDOWN_DURATION_MS } from '../constants';
 import { GameState } from '../state/GameState';
 import { addPlayer } from '../test/world';
 import { TEAMS, TEAM_IDS } from '../types/shared';
@@ -14,6 +15,7 @@ describe('LobbySystem — ready-up and countdown', () => {
 
     beforeEach(() => {
         state = new GameState();
+        state.settings.teams = true; // the team tests below; see "teams off" for the other case
         phases = [];
     });
 
@@ -72,7 +74,9 @@ describe('LobbySystem — ready-up and countdown', () => {
         state.phase.endsAt = Date.now() - 1;
         tick();
         expect(state.phase.phase).toBe('playing');
-        expect(state.phase.endsAt - Date.now()).toBeGreaterThan(MATCH_DURATION_MS - 100);
+        expect(state.phase.endsAt - Date.now()).toBeGreaterThan(
+            PhaseSystem.matchDurationMs(state) - 100
+        );
         expect(Array.from(a.structureInventory)).toEqual(['farm']);
         expect([b.gun, b.ammo, b.materials]).toEqual(['basic', 15, 15]);
     });
@@ -81,6 +85,7 @@ describe('LobbySystem — ready-up and countdown', () => {
 describe('LobbySystem — picks', () => {
     it('sets team (and color) and character while not ready', () => {
         const state = new GameState();
+        state.settings.teams = true;
         const p = addPlayer(state, 'a');
         expect(LobbySystem.selectTeam(state, p, 'blue')).toBe(true);
         expect(LobbySystem.selectCharacter(state, p, 'robot')).toBe(true);
@@ -165,5 +170,21 @@ describe('LobbySystem — names', () => {
         p.name = 'Carol';
         expect(LobbySystem.setName(state, p, 'C')).toBe(false);
         expect(p.name).toBe('Carol');
+    });
+});
+
+describe('LobbySystem — teams off', () => {
+    it('lets you pick a color only if no other player has it', () => {
+        const state = new GameState();
+        state.phase.phase = 'lobby';
+        const a = addPlayer(state, 'a');
+        const b = addPlayer(state, 'b');
+        LobbySystem.setTeam(a, 'red');
+        LobbySystem.setTeam(b, 'blue');
+        expect(LobbySystem.selectTeam(state, b, 'red')).toBe(false); // a has it
+        expect(b.teamId).toBe('blue');
+        expect(LobbySystem.selectTeam(state, b, 'green')).toBe(true);
+        expect([b.teamId, b.color]).toEqual(['green', TEAMS.green.color]);
+        expect(LobbySystem.selectTeam(state, a, 'blue')).toBe(true); // b let it go
     });
 });

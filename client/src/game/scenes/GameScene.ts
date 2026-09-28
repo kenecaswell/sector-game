@@ -6,7 +6,8 @@ import type {
     ProjectileState,
     StructureState,
 } from '../../types/gameState';
-import { drawPickup, pickupLook } from '../pickups';
+import { drawDropPod, drawDropPodGlow } from '../pickups';
+import { drawSpawnPad } from '../spawnPad';
 import { GUN_DAMAGE, TERRAIN } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
 import { isShallowWater } from '../terrain';
@@ -17,6 +18,7 @@ import {
     CLAIM_BLEND,
     CLAIM_BORDER_DARKEN,
     CLAIM_BORDER_WIDTH,
+    BASE_TILE_SIZE,
     CLAIM_CHUNK_SIZE,
     CLAIM_RING_FILL_ALPHA,
     DISCONNECTED_ALPHA,
@@ -65,6 +67,7 @@ import {
     PICKUP_BOB_MS,
     PICKUP_LIFT,
     PICKUP_SCALE,
+    POD_GLOW_MS,
 } from '../constants';
 import {
     hexCenter,
@@ -104,6 +107,8 @@ interface PlayerView {
     // Expander. A separate scene object (not part of `container`) so it sits under every entity.
     ring: Phaser.GameObjects.Ellipse | null;
     ringRadius: number;
+    // Their spawn platform, on the ground at the hex they start and respawn on.
+    pad: Phaser.GameObjects.Graphics;
     wx: number;
     wy: number;
 }
@@ -140,7 +145,9 @@ export class GameScene extends Phaser.Scene {
     // Terrain is baked into textures. A Graphics object re-runs its whole command list every
     // frame, so drawing 4,096 hexes that way cost ~50ms per frame (~19fps); a baked texture is
     // one quad per frame.
-    private baseLayer!: Phaser.GameObjects.RenderTexture; // static hex terrain, baked once
+    // Static hex terrain, baked once, in tiles of at most BASE_TILE_SIZE px: one texture for a whole
+    // Big or Large map would exceed the maximum texture size of some GPUs (phones especially).
+    private baseTiles: Phaser.GameObjects.RenderTexture[] = [];
     // Ownership tint, in square chunks so a claim re-bakes only the chunk(s) it touches (bounded
     // cost) instead of every claimed hex on the map, and off-screen chunks are culled.
     private claimChunks: Phaser.GameObjects.RenderTexture[] = [];
@@ -225,8 +232,15 @@ export class GameScene extends Phaser.Scene {
 
         const layerWidth = Math.ceil(world.width) + 1;
         const layerHeight = Math.ceil(world.height * ISO_SQUASH + HEX_DEPTH) + 1;
-        this.baseLayer = this.add.renderTexture(0, 0, layerWidth, layerHeight);
-        this.baseLayer.setOrigin(0, 0).setDepth(-3);
+        this.baseTiles = [];
+        for (let y = 0; y < layerHeight; y += BASE_TILE_SIZE) {
+            for (let x = 0; x < layerWidth; x += BASE_TILE_SIZE) {
+                const w = Math.min(BASE_TILE_SIZE, layerWidth - x);
+                const h = Math.min(BASE_TILE_SIZE, layerHeight - y);
+                const tile = this.add.renderTexture(x, y, w, h).setOrigin(0, 0).setDepth(-3);
+                this.baseTiles.push(tile);
+            }
+        }
         this.hoverGraphics = this.add.graphics().setDepth(-1);
         // A ring on the ground where a right-click told the player to go.
         this.targetMarker = this.add.ellipse(0, 0, HEX_SIZE * 1.2, HEX_SIZE * 1.2 * ISO_SQUASH);
@@ -639,7 +653,13 @@ export class GameScene extends Phaser.Scene {
             }
         }
 
-        this.bake(this.baseLayer, g);
+        // Bake into every tile, each drawing the same graphics shifted to its own position.
+        for (const tile of this.baseTiles) {
+            tile.clear();
+            tile.draw(g, -tile.x, -tile.y);
+            tile.render();
+        }
+        g.destroy();
     }
 
     /**
@@ -658,17 +678,6 @@ export class GameScene extends Phaser.Scene {
     ): void {
         const neighbors = hexNeighbors(col, row);
         for (let i = 0; i < 6; i++) visit(corners[i], corners[(i + 1) % 6], neighbors[(i + 1) % 6]);
-    }
-
-    /** Replaces a layer's contents with what `source` draws, then frees `source`. */
-    private bake(
-        layer: Phaser.GameObjects.RenderTexture,
-        source: Phaser.GameObjects.Graphics
-    ): void {
-        layer.clear();
-        layer.draw(source);
-        layer.render();
-        source.destroy();
     }
 
     /** Creates the claim chunk textures and records which hexes overlap which chunk. */
@@ -860,12 +869,20 @@ export class GameScene extends Phaser.Scene {
         const container = this.add.container(start.x, start.y, [shadow, body, nose]);
         container.setDepth(start.y);
 
+        // Their spawn platform: on the ground, above the claim tint and under every entity.
+        const spawn = hexCenter(player.spawnTileX, player.spawnTileY);
+        const padAt = project(spawn.x, spawn.y);
+        const pad = this.add.graphics();
+        drawSpawnPad(pad, color);
+        pad.setPosition(padAt.x, padAt.y).setDepth(-0.45);
+
         this.playerViews.set(player.id, {
             container,
             nose,
             color,
             ring: null,
             ringRadius: 0,
+            pad,
             wx: player.x,
             wy: player.y,
         });
@@ -907,6 +924,7 @@ export class GameScene extends Phaser.Scene {
         const view = this.playerViews.get(sessionId);
         view?.container.destroy();
         view?.ring?.destroy();
+        view?.pad.destroy();
         this.playerViews.delete(sessionId);
     }
 
@@ -990,26 +1008,37 @@ export class GameScene extends Phaser.Scene {
     }
 
     /**
-     * A pickup: a small placeholder shape (see game/pickups.ts) floating over its hex with a shadow,
-     * bobbing gently so it reads as something to grab. Never moves, so it's sorted once.
+     * A pickup: a drop pod (see game/pickups.ts) floating over its hex with a shadow, bobbing gently
+     * with a pulsing light so it reads as something to grab. Never moves, so it's sorted once.
      */
     private addPickupView(pickup: PickupState): void {
         if (this.pickupViews.has(pickup.id)) return;
         const center = hexCenter(pickup.tileX, pickup.tileY);
         const ground = project(center.x, center.y);
         const shadow = this.add.ellipse(0, 0, 32, 32 * ISO_SQUASH, 0x000000, 0.3);
-        const shape = this.add.graphics();
-        drawPickup(shape, pickupLook(pickup.kind, pickup.itemId));
-        shape.setScale(PICKUP_SCALE).setY(-PICKUP_LIFT);
+        // Every pickup is the same drop pod: what's inside is decided when it's opened.
+        const glow = this.add.graphics();
+        drawDropPodGlow(glow);
+        const pod = this.add.graphics();
+        drawDropPod(pod);
+        for (const part of [glow, pod]) part.setScale(PICKUP_SCALE).setY(-PICKUP_LIFT);
         this.tweens.add({
-            targets: shape,
+            targets: [glow, pod],
             y: -PICKUP_LIFT - PICKUP_BOB,
             duration: PICKUP_BOB_MS,
             yoyo: true,
             repeat: -1,
             ease: 'Sine.easeInOut',
         });
-        const container = this.add.container(ground.x, ground.y, [shadow, shape]);
+        this.tweens.add({
+            targets: glow,
+            alpha: { from: 0.25, to: 1 },
+            duration: POD_GLOW_MS,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+        });
+        const container = this.add.container(ground.x, ground.y, [shadow, glow, pod]);
         container.setDepth(ground.y);
         this.pickupViews.set(pickup.id, container);
     }

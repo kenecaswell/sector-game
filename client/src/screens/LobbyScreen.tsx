@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import { useGameConnection } from '../context/GameContext';
 import { NoticeStack } from '../components/NoticeStack';
-import type { PlayerState } from '../types/gameState';
+import type { GameSettingsState, PlayerState } from '../types/gameState';
 import {
     CHARACTERS,
     CHARACTER_IDS,
     DEFAULT_CHARACTER,
     GUN_NAMES,
+    MAP_SIZES,
     PLAYER_NAME_MAX_LENGTH,
     PLAYER_NAME_MIN_LENGTH,
     STRUCTURE_NAMES,
@@ -17,11 +18,15 @@ import {
     normalizePlayerName,
     type Character,
     type CharacterId,
+    type MapSizeId,
     type TeamId,
     type UpgradeId,
     upgradeLabel,
 } from '../types/shared';
 import { usePhaseCountdown } from '../utils/usePhaseCountdown';
+import { gamePath, navigate } from '../utils/route';
+import { MENU_CSS } from './menuStyles';
+import { MenuHeader } from './MenuHeader';
 
 // Real CSS for what inline styles can't express (:hover, :disabled, the narrow-screen layout).
 // Selects use `appearance: none` with a drawn arrow: Safari otherwise ignores most of their styling
@@ -96,10 +101,24 @@ const LOBBY_CSS = `
 .lobby-ready--on { background: #2ecc71; color: #fff; }
 .lobby-ready--on:hover { background: #27b463; }
 .lobby-status { font-size: 13px; font-weight: bold; text-align: center; }
+.lobby-copy {
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    background: transparent;
+    color: #fff;
+    font-size: 13px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+.lobby-copy:hover { border-color: rgba(255, 255, 255, 0.6); }
+/* Phones: your name on its own line, then the color/team and character pickers side by side, then
+   Ready across the width; other players' rows wrap the same way. */
 @media (max-width: 560px) {
-    .lobby-row { grid-template-columns: 1fr 1fr; }
+    .lobby-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 8px; }
     .lobby-row--head { display: none; }
     .lobby-name, .lobby-ready, .lobby-status { grid-column: 1 / -1; }
+    .lobby-ready { padding: 10px; }
+    .lobby-status { text-align: left; }
 }
 `;
 
@@ -120,14 +139,32 @@ export function LobbyScreen() {
         selectCharacter,
         setReady,
         setName,
+        settings,
+        gameCode,
+        leave,
     } = useGameConnection();
+    const teams = settings?.teams ?? true;
+    const [copied, setCopied] = useState(false);
+    const copyLink = () => {
+        if (!gameCode) return;
+        const url = `${window.location.origin}${gamePath(gameCode)}`;
+        navigator.clipboard
+            ?.writeText(url)
+            .then(() => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+            })
+            .catch(() => undefined);
+    };
     const secondsLeft = usePhaseCountdown(phase === 'countdown' ? phaseEndsAt : 0, 100);
 
     const me = players.find((player) => player.id === sessionId);
     const connected = players.filter((player) => player.connected);
     const waitingFor = connected.filter((player) => !player.ready).length;
 
-    let status = 'Set your name, pick a team and a character, then press Ready.';
+    let status = teams
+        ? 'Set your name, pick a team and a character, then press Ready.'
+        : 'Set your name, pick a color and a character, then press Ready.';
     if (secondsLeft !== null) status = '';
     else if (me?.ready) {
         status = `Waiting for ${waitingFor} more ${waitingFor === 1 ? 'player' : 'players'} to get ready…`;
@@ -151,15 +188,20 @@ export function LobbyScreen() {
                 boxSizing: 'border-box',
             }}
         >
+            <style>{MENU_CSS}</style>
             <style>{LOBBY_CSS}</style>
             <NoticeStack notices={notices} />
             <div style={{ width: 680, maxWidth: '100%', textAlign: 'left' }}>
-                <div style={{ fontSize: 13, letterSpacing: 2, opacity: 0.7, textAlign: 'center' }}>
-                    SECTOR 42
-                </div>
+                <MenuHeader
+                    backLabel="Leave"
+                    onBack={() => {
+                        leave();
+                        navigate('/play');
+                    }}
+                />
                 <h1
                     style={{
-                        margin: '4px 0 8px',
+                        margin: '0 0 8px',
                         fontSize: 34,
                         color: '#fff',
                         textAlign: 'center',
@@ -168,6 +210,25 @@ export function LobbyScreen() {
                 >
                     Lobby
                 </h1>
+                {settings && gameCode && (
+                    <div style={{ textAlign: 'center', fontSize: 14, marginBottom: 4 }}>
+                        <strong>{settings.name}</strong> · code{' '}
+                        <span
+                            style={{
+                                fontFamily: 'ui-monospace, Menlo, monospace',
+                                letterSpacing: 2,
+                            }}
+                        >
+                            {gameCode}
+                        </span>{' '}
+                        <button type="button" className="lobby-copy" onClick={copyLink}>
+                            {copied ? 'Copied!' : 'Copy link'}
+                        </button>
+                        <div style={{ fontSize: 13, opacity: 0.65, marginTop: 4 }}>
+                            {settingsLine(settings)}
+                        </div>
+                    </div>
+                )}
                 <div
                     aria-live="polite"
                     style={{ minHeight: 44, marginBottom: 12, textAlign: 'center' }}
@@ -184,7 +245,7 @@ export function LobbyScreen() {
                 <div role="list" aria-label="Players">
                     <div className="lobby-row lobby-row--head" aria-hidden="true">
                         <div>Player</div>
-                        <div>Team</div>
+                        <div>{teams ? 'Team' : 'Color'}</div>
                         <div>Character</div>
                         <div />
                     </div>
@@ -193,6 +254,7 @@ export function LobbyScreen() {
                             <OwnRow
                                 key={player.id}
                                 player={player}
+                                teams={teams}
                                 teamCounts={teamCounts}
                                 onTeam={selectTeam}
                                 onCharacter={selectCharacter}
@@ -208,14 +270,25 @@ export function LobbyScreen() {
                 {me && <CharacterCard character={characterOf(me)} />}
 
                 <p style={{ margin: '16px 0 0', fontSize: 13, opacity: 0.65, lineHeight: 1.5 }}>
-                    Players with the same color are a team: you can't shoot each other or each
-                    other's structures, you can walk through each other's structures, and you don't
-                    take each other's tiles. Scores are still per player. The match starts 3 seconds
-                    after everyone is ready.
+                    {teams
+                        ? "Players with the same color are a team: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's tiles. Scores are still per player."
+                        : 'Teams are off in this game: everyone plays for themselves. Pick any color nobody else has.'}{' '}
+                    The match starts 3 seconds after everyone is ready.
                 </p>
             </div>
         </div>
     );
+}
+
+/** "Small map · Drop pods · 5 min" (teams are covered by the rows and the note below them). */
+function settingsLine(settings: GameSettingsState): string {
+    const size = MAP_SIZES[settings.mapSize as MapSizeId]?.name ?? settings.mapSize;
+    return [
+        `${size} map`,
+        settings.teams ? 'Teams on' : 'Teams off',
+        settings.pods ? 'Drop pods' : 'No drop pods',
+        `${settings.matchMinutes} min`,
+    ].join(' · ');
 }
 
 function characterOf(player: PlayerState): Character {
@@ -240,6 +313,7 @@ function Name({ player }: { player: PlayerState }) {
 
 interface OwnRowProps {
     player: PlayerState;
+    teams: boolean;
     teamCounts: Map<string, number>;
     onTeam: (teamId: TeamId) => void;
     onCharacter: (characterId: CharacterId) => void;
@@ -247,7 +321,7 @@ interface OwnRowProps {
     onName: (name: string) => void;
 }
 
-function OwnRow({ player, teamCounts, onTeam, onCharacter, onReady, onName }: OwnRowProps) {
+function OwnRow({ player, teams, teamCounts, onTeam, onCharacter, onReady, onName }: OwnRowProps) {
     const locked = player.ready;
     const lockedTitle = locked ? 'Un-ready to change this' : undefined;
 
@@ -261,7 +335,7 @@ function OwnRow({ player, teamCounts, onTeam, onCharacter, onReady, onName }: Ow
             <div className="lobby-pick">
                 <select
                     className="lobby-select"
-                    aria-label="Team"
+                    aria-label={teams ? 'Team' : 'Color'}
                     title={lockedTitle}
                     value={player.teamId}
                     disabled={locked}
@@ -272,10 +346,13 @@ function OwnRow({ player, teamCounts, onTeam, onCharacter, onReady, onName }: Ow
                 >
                     {TEAM_IDS.map((id) => {
                         const count = teamCounts.get(id) ?? 0;
+                        // Teams off: a color is yours alone, so one someone else has is taken.
+                        const taken = !teams && count > 0 && id !== player.teamId;
                         return (
-                            <option key={id} value={id}>
+                            <option key={id} value={id} disabled={taken}>
                                 {TEAMS[id].name}
-                                {count > 0 ? ` (${count})` : ''}
+                                {teams && count > 0 ? ` (${count})` : ''}
+                                {taken ? ' (taken)' : ''}
                             </option>
                         );
                     })}

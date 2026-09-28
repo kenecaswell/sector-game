@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makePlayer } from '../test/factories';
-import type { PlayerState } from '../types/gameState';
+import type { GameSettingsState, PlayerState } from '../types/gameState';
 import { LobbyScreen } from './LobbyScreen';
 
 // The lobby reads everything from the connection context; replace it with a controllable fake.
@@ -16,6 +16,9 @@ const connection = {
     selectCharacter: vi.fn(),
     setReady: vi.fn(),
     setName: vi.fn(),
+    leave: vi.fn(),
+    gameCode: 'K7QF' as string | null,
+    settings: null as GameSettingsState | null,
 };
 vi.mock('../context/GameContext', () => ({ useGameConnection: () => connection }));
 
@@ -27,6 +30,7 @@ function showLobby(me: Partial<PlayerState> = {}, others: PlayerState[] = []) {
 beforeEach(() => {
     connection.phase = 'lobby';
     connection.phaseEndsAt = 0;
+    connection.settings = null;
     for (const fn of [
         connection.selectTeam,
         connection.selectCharacter,
@@ -145,5 +149,44 @@ describe('LobbyScreen — team, character and ready', () => {
         connection.phaseEndsAt = Date.now() + 2500;
         showLobby({ ready: true });
         expect(screen.getByText('Starting in 3…')).toBeInTheDocument();
+    });
+});
+
+describe('LobbyScreen — game settings', () => {
+    const settings = (teams: boolean): GameSettingsState => ({
+        name: "Ada's game",
+        mapSize: 'big',
+        teams,
+        pods: true,
+        matchMinutes: 10,
+    });
+
+    it("shows the game's name, code and settings", () => {
+        connection.settings = settings(true);
+        showLobby();
+        expect(screen.getByText("Ada's game")).toBeInTheDocument();
+        expect(screen.getByText('K7QF')).toBeInTheDocument();
+        expect(screen.getByText('Big map · Teams on · Drop pods · 10 min')).toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Team' })).toBeInTheDocument();
+    });
+
+    it("with teams off, it's a color picker: colors other players have are taken", async () => {
+        connection.settings = settings(false);
+        showLobby({ teamId: 'red' }, [makePlayer({ id: 'b', name: 'Bo', teamId: 'blue' })]);
+        expect(screen.queryByRole('combobox', { name: 'Team' })).not.toBeInTheDocument();
+        const color = screen.getByRole('combobox', { name: 'Color' });
+        expect(screen.getByRole('option', { name: 'Blue (taken)' })).toBeDisabled();
+        expect(screen.getByRole('option', { name: 'Red' })).toBeEnabled(); // yours
+        await userEvent.selectOptions(color, 'green');
+        expect(connection.selectTeam).toHaveBeenCalledWith('green');
+        expect(screen.getByText(/Teams are off in this game/)).toBeInTheDocument();
+    });
+
+    it('Leave leaves the game and goes back to the game list', async () => {
+        showLobby();
+        expect(screen.getByText('SECTOR 42')).toBeInTheDocument(); // the shared header
+        await userEvent.click(screen.getByRole('button', { name: '← Leave' }));
+        expect(connection.leave).toHaveBeenCalled();
+        expect(window.location.pathname).toBe('/play');
     });
 });

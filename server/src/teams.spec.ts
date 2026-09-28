@@ -27,4 +27,12 @@ describe('areAllies', () => {
     it("a player who left the room is nobody's ally", () => {
         expect(areAllies(state, 'red1', 'gone')).toBe(false);
     });
+
+    it('with teams off, even the same team color is an enemy', () => {
+        const solo = world('playing', { tiles: false, teams: false });
+        addPlayer(solo, 'a', 0, 0, 'red');
+        addPlayer(solo, 'b', 0, 0, 'red');
+        expect(areAllies(solo, 'a', 'b')).toBe(false);
+        expect(areAllies(solo, 'a', 'a')).toBe(true);
+    });
 });

@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
     PICKUP_AMMO,
-    PICKUP_CHANCES,
-    PICKUP_MATERIALS,
+    PICKUP_EMPTY_CHANCE,
     PICKUP_GRID,
+    PICKUP_MATERIALS,
+    PICKUP_TIER_CHANCES,
     SPAWN_CLEAR_RADIUS,
+    type PickupOutcome,
 } from './constants';
 import { hexDistance, hexIndex } from './hex';
-import { generatePickups, rollPickup } from './pickups';
+import { generatePickups, rollPickup, scoreTier, type PickupCollector } from './pickups';
 import { generateTerrain, seededRandom, spawnHexes } from './terrain';
 import { SHOP_ITEMS, TERRAIN, UPGRADE_IDS, type Terrain } from './types/shared';
 
@@ -15,49 +17,108 @@ const COLS = 64;
 const ROWS = 64;
 const LOCATIONS = PICKUP_GRID.cols * PICKUP_GRID.rows;
 
-describe('pickup rolls', () => {
-    it('the chances add up to 100%', () => {
-        expect(Object.values(PICKUP_CHANCES).reduce((a, b) => a + b, 0)).toBe(100);
+/** A fresh player: unarmed, no upgrades. */
+const fresh = (): PickupCollector => ({
+    gun: '',
+    boosterLevel: 0,
+    expanderLevel: 0,
+    armorLevel: 0,
+    wingsLevel: 0,
+    equippedUpgrade: '',
+});
+
+/** What a roll came out as, in PICKUP_TIER_CHANCES terms. */
+function outcomeOf(contents: ReturnType<typeof rollPickup>): PickupOutcome {
+    if (contents.kind !== 'item') return contents.kind;
+    const item = SHOP_ITEMS[contents.itemId as keyof typeof SHOP_ITEMS];
+    if (item.upgrade) return 'upgrade';
+    if (item.structure) return 'structure';
+    return contents.itemId as 'basicGun' | 'bigGun';
+}
+
+function shares(tier: number, collector: PickupCollector, n = 20_000) {
+    const random = seededRandom(tier + 11);
+    const counts: Partial<Record<PickupOutcome, number>> = {};
+    for (let i = 0; i < n; i++) {
+        const outcome = outcomeOf(rollPickup(tier, collector, random));
+        counts[outcome] = (counts[outcome] ?? 0) + 1;
+    }
+    return (outcome: PickupOutcome) => (counts[outcome] ?? 0) / n;
+}
+
+describe('pickup tier tables', () => {
+    it('has four tiers, each adding up to 100%', () => {
+        expect(PICKUP_TIER_CHANCES).toHaveLength(4);
+        for (const row of PICKUP_TIER_CHANCES) {
+            expect(Object.values(row).reduce((a, b) => a + b, 0)).toBe(100);
+        }
     });
 
-    it('come out in about the configured proportions, with amounts in range', () => {
-        const random = seededRandom(7);
-        const counts: Record<string, number> = {};
-        const N = 20_000;
-        for (let i = 0; i < N; i++) {
-            const roll = rollPickup(random);
-            let key = 'nothing';
-            if (roll?.kind === 'materials') {
-                key = 'materials';
-                expect(roll.amount).toBeGreaterThanOrEqual(PICKUP_MATERIALS.min);
-                expect(roll.amount).toBeLessThanOrEqual(PICKUP_MATERIALS.max);
-            } else if (roll?.kind === 'ammo') {
-                key = 'ammo';
-                expect(roll.amount).toBeGreaterThanOrEqual(PICKUP_AMMO.min);
-                expect(roll.amount).toBeLessThanOrEqual(PICKUP_AMMO.max);
-            } else if (roll) {
-                const item = SHOP_ITEMS[roll.itemId as keyof typeof SHOP_ITEMS];
-                if (item.upgrade) key = 'upgrade';
-                else if (item.structure) key = 'structure';
-                else key = roll.itemId; // basicGun / bigGun
-            }
-            counts[key] = (counts[key] ?? 0) + 1;
+    it('better items get likelier further down the tiers, materials and ammo less likely', () => {
+        for (let t = 1; t < PICKUP_TIER_CHANCES.length; t++) {
+            const [above, below] = [PICKUP_TIER_CHANCES[t - 1], PICKUP_TIER_CHANCES[t]];
+            expect(below.upgrade + below.structure + below.bigGun).toBeGreaterThan(
+                above.upgrade + above.structure + above.bigGun
+            );
+            expect(below.materials + below.ammo).toBeLessThan(above.materials + above.ammo);
         }
-        for (const [key, percent] of Object.entries(PICKUP_CHANCES)) {
-            expect((counts[key] ?? 0) / N, key).toBeCloseTo(percent / 100, 1);
+    });
+});
+
+describe('rollPickup', () => {
+    it("comes out in about each tier's proportions for a fresh player, amounts in range", () => {
+        PICKUP_TIER_CHANCES.forEach((row, tier) => {
+            const share = shares(tier, fresh());
+            for (const [outcome, percent] of Object.entries(row) as [PickupOutcome, number][]) {
+                expect(share(outcome), `tier ${tier + 1} ${outcome}`).toBeCloseTo(percent / 100, 1);
+            }
+        });
+        const random = seededRandom(5);
+        for (let i = 0; i < 2000; i++) {
+            const contents = rollPickup(3, fresh(), random);
+            const range = contents.kind === 'materials' ? PICKUP_MATERIALS : PICKUP_AMMO;
+            if (contents.kind === 'item') continue;
+            expect(contents.amount).toBeGreaterThanOrEqual(range.min);
+            expect(contents.amount).toBeLessThanOrEqual(range.max);
         }
     });
 
-    it('an upgrade pickup is any of the upgrades', () => {
-        const random = seededRandom(3);
-        const seen = new Set<string>();
-        for (let i = 0; i < 5000; i++) {
-            const roll = rollPickup(random);
-            if (roll?.kind === 'item' && SHOP_ITEMS[roll.itemId as 'booster'].upgrade) {
-                seen.add(roll.itemId);
-            }
+    it("never gives something you can't use; the rest of the row shares its chance", () => {
+        const armed: PickupCollector = { ...fresh(), gun: 'big' };
+        for (const id of UPGRADE_IDS) armed[`${id}Level`] = 1;
+        const share = shares(3, armed);
+        expect(share('basicGun') + share('bigGun') + share('upgrade')).toBe(0);
+        const row = PICKUP_TIER_CHANCES[3];
+        const left = row.materials + row.ammo + row.structure;
+        expect(share('structure')).toBeCloseTo(row.structure / left, 1);
+    });
+
+    it('an upgrade is level 1 of one you lack; a basic gun only if unarmed', () => {
+        const collector: PickupCollector = { ...fresh(), gun: 'basic', boosterLevel: 1 };
+        const random = seededRandom(9);
+        for (let i = 0; i < 3000; i++) {
+            const contents = rollPickup(3, collector, random);
+            expect(contents.itemId).not.toBe('basicGun');
+            expect(contents.itemId).not.toBe('booster');
         }
-        expect([...seen].sort()).toEqual([...UPGRADE_IDS].sort());
+    });
+});
+
+describe('scoreTier', () => {
+    it('leader 1, last 4, in between spread out (as indexes 0-3)', () => {
+        const scores = [100, 80, 60, 40];
+        expect(scores.map((s) => scoreTier(scores, s))).toEqual([0, 1, 2, 3]);
+        const two = [50, 10];
+        expect(two.map((s) => scoreTier(two, s))).toEqual([0, 3]);
+        const ten = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+        expect(ten.map((s) => scoreTier(ten, s))).toEqual([0, 0, 1, 1, 1, 2, 2, 2, 3, 3]);
+    });
+
+    it('ties share the average place: everyone level sits in the middle, alone is the leader', () => {
+        expect(scoreTier([0, 0, 0, 0], 0)).toBe(2); // place 1.5 of 0-3 rounds to the third tier
+        expect(scoreTier([5], 5)).toBe(0);
+        expect(scoreTier([90, 90, 10], 90)).toBe(1); // tied for first: place 0.5 of 0-2
+        expect(scoreTier([90, 90, 10], 10)).toBe(3);
     });
 });
 
@@ -68,7 +129,7 @@ describe('pickup placement', () => {
         return { terrain, pickups: generatePickups(terrain, COLS, ROWS, random) };
     });
 
-    it('places at most one per grid cell, on distinct ground hexes outside the spawn areas', () => {
+    it('places up to one per grid cell, on distinct ground hexes outside the spawn areas', () => {
         const spawns = spawnHexes(COLS, ROWS);
         for (const { terrain, pickups } of maps) {
             expect(pickups.length).toBeLessThanOrEqual(LOCATIONS);
@@ -81,15 +142,38 @@ describe('pickup placement', () => {
                 }
             }
         }
-        // "Nothing" is 5%, so most maps have 11 or 12.
-        const average = maps.reduce((n, m) => n + m.pickups.length, 0) / maps.length;
-        expect(average).toBeGreaterThan(LOCATIONS * 0.85);
+        // PICKUP_EMPTY_CHANCE (5%) of locations get no pod.
+        const placed = maps.reduce((n, m) => n + m.pickups.length, 0) / (maps.length * LOCATIONS);
+        expect(placed).toBeGreaterThan(0.88);
+        expect(placed).toBeLessThan(1);
+    });
+
+    it('leaves a location empty when its roll is under PICKUP_EMPTY_CHANCE', () => {
+        const all = new Array<Terrain>(COLS * ROWS).fill(TERRAIN.ground);
+        expect(generatePickups(all, COLS, ROWS, () => (PICKUP_EMPTY_CHANCE - 0.1) / 100)).toEqual(
+            []
+        );
+        expect(generatePickups(all, COLS, ROWS, () => PICKUP_EMPTY_CHANCE / 100)).toHaveLength(
+            LOCATIONS
+        );
+    });
+
+    it('fills only the cells asked for, avoiding blocked hexes, and says which cell each is in', () => {
+        const all = new Array<Terrain>(COLS * ROWS).fill(TERRAIN.ground);
+        const free = generatePickups(all, COLS, ROWS, () => 0.5, { cells: [0, 5] });
+        expect(free.map((p) => p.cell)).toEqual([0, 5]);
+        const moved = generatePickups(all, COLS, ROWS, () => 0.5, {
+            cells: [0],
+            blocked: (h) => h.col === free[0].col && h.row === free[0].row,
+        });
+        expect(moved).toHaveLength(1);
+        expect([moved[0].col, moved[0].row]).not.toEqual([free[0].col, free[0].row]);
+        expect(hexDistance(moved[0], free[0])).toBe(1);
     });
 
     it('spreads them evenly: one near the middle of each grid cell', () => {
         const all = new Array<Terrain>(COLS * ROWS).fill(TERRAIN.ground);
-        // Always "materials", so every location gets one.
-        const pickups = generatePickups(all, COLS, ROWS, () => 0);
+        const pickups = generatePickups(all, COLS, ROWS, () => 0.5);
         expect(pickups).toHaveLength(LOCATIONS);
         const cells = new Set(
             pickups.map(
@@ -103,7 +187,7 @@ describe('pickup placement', () => {
     it('moves a location off mountains and water to the nearest ground hex', () => {
         const water = new Array<Terrain>(COLS * ROWS).fill(TERRAIN.water);
         water[hexIndex(20, 20, COLS)] = TERRAIN.ground; // the only ground hex
-        const pickups = generatePickups(water, COLS, ROWS, () => 0);
+        const pickups = generatePickups(water, COLS, ROWS, () => 0.5);
         expect(pickups).toEqual([expect.objectContaining({ col: 20, row: 20 })]);
     });
 

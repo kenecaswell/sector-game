@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MATCH_DURATION_MS, RESULTS_DURATION_MS } from '../constants';
+import { RESULTS_DURATION_MS } from '../constants';
 import { GameState } from '../state/GameState';
 import type { PhaseChangedEvent } from '../types/shared';
 import { PhaseSystem } from './PhaseSystem';
@@ -28,7 +28,9 @@ describe('PhaseSystem', () => {
         const state = new GameState();
         const { events, broadcast } = recorder();
         PhaseSystem.transitionTo(state, 'playing', broadcast);
-        expect(state.phase.endsAt - Date.now()).toBeGreaterThan(MATCH_DURATION_MS - 100);
+        expect(state.phase.endsAt - Date.now()).toBeGreaterThan(
+            PhaseSystem.matchDurationMs(state) - 100
+        );
         expect(events).toEqual([{ phase: 'playing', endsAt: state.phase.endsAt }]);
         PhaseSystem.transitionTo(state, 'lobby', broadcast);
         expect(state.phase.endsAt).toBe(0); // the lobby has no timer

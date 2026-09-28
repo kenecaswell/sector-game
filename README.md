@@ -39,9 +39,11 @@ cd client
 npm run dev
 ```
 
-Open http://localhost:5173, click **Join Game**, set your name, pick a team and a character, and press **Ready**. The match starts 3 seconds after everyone in the room is ready (on your own, that's straight away).
+Open http://localhost:5173 and click **Play**. On the game list, pick an open game or **Create game** (map size, teams, drop pods, game length). In the lobby, set your name, pick a character (and a team, if the game has teams on), and press **Ready**. The match starts 3 seconds after everyone in the game is ready (on your own, that's straight away).
 
-To try multiplayer, open the page in a second tab or window. Each tab is its own player, because the reconnection token lives in per-tab `sessionStorage`. The exception is Chrome's "Duplicate tab", which copies that storage, so the copy would rejoin as the same player; open a fresh tab instead.
+Every game has a 4-character code (shown in the list and the lobby, with a **Copy link** button). `http://localhost:5173/game/CODE` goes straight to that game. The list comes from the server's `GET /games`.
+
+To try multiplayer, open the game's link (or the list) in a second tab or window. Each tab is its own player, because the reconnection token lives in per-tab `sessionStorage`. The exception is Chrome's "Duplicate tab", which copies that storage, so the copy would rejoin as the same player; open a fresh tab instead.
 
 ## Scripts
 
@@ -84,7 +86,7 @@ Before committing, run `npm run build && npm run lint` in whichever folder you c
 
 Health check: `GET http://localhost:2567/health` returns `{"status":"ok"}`.
 
-Gameplay tunables (tick rate, speeds, damage, hex size, materials per claim, pickup chances, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
+Gameplay tunables (tick rate, speeds, damage, hex size, materials per claim, drop-pod odds per score tier, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
 
 ### Testing on a phone or another machine
 
@@ -107,10 +109,11 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
 | Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
-| Build a structure (place one you have) | `B` or the **Build** button, bottom right (shows which structure it will place and how many of that type you have; pick the type in the Inventory), then click where to put it — the outline is yellow where it fits, red where it doesn't. `Esc` (or `B` again) cancels | **Build** button (above FIRE), then tap where to put it (a refused tap flashes red) |
+| Build a structure (place one you have) | Click its icon in the **inventory bar** (right side, under Structures; the number is how many you have), or `B` for the one you picked last; while placing, `Tab` switches to your next structure type (`Shift+Tab` the previous). Then click where to put it — the outline is yellow where it fits, red where it doesn't. `Esc`, `B`, or its icon again cancels | Tap its icon, then tap where to put it (a refused tap flashes red); tap the icon again to cancel |
+| Switch upgrade | Click its icon in the inventory bar (under Upgrades; the number is its level). The one in use is outlined; Armor is always on | Tap its icon |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
-| Fabricator (make items from materials) | **Fabricator** button (below Leaderboard); `Esc` closes. No hotkey (`E` is kept free) | **Fabricator** button |
-| Inventory (your gun, ammo, structures, upgrades; pick which structure Build places; switch the equipped upgrade) | **Inventory** button (below Fabricator) or `I`; `Esc` closes | **Inventory** button |
+| Fabricator (make items from materials) | **Fabricator** button (below Leaderboard) or `F`; `Esc` closes | **Fabricator** button |
+| Hide / show the inventory bar | `I` | — |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 | **Dev only (temporary):** +500 materials | `M` during the match, in a dev build (`npm run dev`); a server started with `NODE_ENV=production` refuses it | — |
 
@@ -118,8 +121,9 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 ## How a match works
 
+0. **Pick a game** — **Play** on the start screen opens the game list: **Create game** at the top, a box to find a game by code or name, and the open games (lobbies first, then games in play, with player counts and settings). Joining one, or opening its link, takes you to its lobby. Creating one picks its settings: map size Small 64 × 64 (default), Big 80 × 80 or Large 96 × 96; teams off (default) or on; drop pods on (default) or off; game length 5 (default), 7 or 10 minutes.
 1. **Lobby** — every player is listed. Click (or tap) your name to change it: 2–25 characters, anything goes. It's remembered for next time, and if someone already has it you get a "(1)" added. Next to your name are three choices:
-   - **Team** — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
+   - **Team** (games with teams on) or **Color** (teams off: any color nobody else has) — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
    - **Character** — your starting kit (default Farmer):
 
      | Character | Gun | Ammo | Materials | Structures | Upgrades |
@@ -138,7 +142,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Explorer starts with one), place the structures your character started with on hexes you own, and gather materials. The Fabricator stays available from the **Fabricator** button — the game keeps running while it's open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
-**Fabricator** (during the match; the **Fabricator** button). Items aren't bought, they're fabricated from materials:
+**Fabricator** (during the match; the **Fabricator** button or `F`). Items aren't bought, they're fabricated from materials:
 
 | | Item | Cost | What it does |
 |---|---|---|---|
@@ -155,9 +159,9 @@ The Fabricator offers your next level of each upgrade. Levels last the whole mat
 
 **Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Materials aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you place it on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, fabricator: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
-The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Pickups** are scattered on the map: piles of materials (a wooden crate) and ammo (brass rounds), guns, level-1 upgrades (a colored diamond) and structures (a tiny slab). Walk onto one to take it; you only take what you can use. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
+The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Drop pods** are scattered on the map, all looking the same: walk onto one to open it and find out what's inside (materials, ammo, a gun, an upgrade or a structure). The further behind you are on score, the better your odds. About 2:50 into the match, empty spots get new pods over the following 15 seconds. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
-Players start on a line near the right-hand edge of the map: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
+Players start on a line near the right-hand edge of the map, each on a round metal spawn platform: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
 
 ## Project layout
 

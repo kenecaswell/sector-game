@@ -51,7 +51,7 @@ describe('GameState schema', () => {
     it('syncs pickups, and their removal; server-only fields (claimedBefore, spawnSlot) stay put', () => {
         const state = new GameState();
         const pickup = new Pickup();
-        Object.assign(pickup, { id: 'p1', kind: 'item', itemId: 'bigGun', tileX: 3, tileY: 4 });
+        Object.assign(pickup, { id: 'p1', tileX: 3, tileY: 4 });
         state.pickups.set('p1', pickup);
         const tile = new Tile();
         tile.claimedBefore = true;
@@ -60,11 +60,8 @@ describe('GameState schema', () => {
         const client = new GameState();
         const decoder = new Decoder(client);
         decoder.decode(encoder.encodeAll());
-        expect(client.pickups.get('p1')).toMatchObject({
-            kind: 'item',
-            itemId: 'bigGun',
-            tileX: 3,
-        });
+        // Only where it is: contents are rolled on collection and never synced.
+        expect(client.pickups.get('p1')?.toJSON()).toEqual({ id: 'p1', tileX: 3, tileY: 4 });
         expect(client.tiles[0].claimedBefore).toBe(false); // not synced
 
         encoder.discardChanges();
