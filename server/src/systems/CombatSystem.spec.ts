@@ -186,3 +186,39 @@ describe('CombatSystem — projectiles', () => {
         }
     );
 });
+
+describe('CombatSystem.fire', () => {
+    it("uses one ammo and sends a shot with the gun's damage from the shooter", () => {
+        const state = world();
+        const shooter = addPlayer(state, 'a', 300, 400);
+        shooter.gun = 'big';
+        shooter.ammo = 2;
+        expect(CombatSystem.fire(state, shooter, 1.5)).toBe(true);
+        expect(shooter.ammo).toBe(1);
+        const [shot] = state.projectiles.values();
+        expect(shot).toMatchObject({
+            ownerId: 'a',
+            x: 300,
+            y: 400,
+            angle: 1.5,
+            damage: GUN_DAMAGE.big,
+        });
+        expect(CombatSystem.fire(state, shooter, 1.5)).toBe(true);
+        expect(state.projectiles.size).toBe(2); // each shot has its own id
+    });
+
+    it('refuses without a gun or ammo, outside the match, or with a junk angle', () => {
+        const state = world();
+        const shooter = addPlayer(state, 'a');
+        shooter.ammo = 5;
+        expect(CombatSystem.fire(state, shooter, 0)).toBe(false); // no gun
+        shooter.gun = 'basic';
+        expect(CombatSystem.fire(state, shooter, Number.NaN)).toBe(false);
+        state.phase.phase = 'results';
+        expect(CombatSystem.fire(state, shooter, 0)).toBe(false);
+        state.phase.phase = 'playing';
+        shooter.ammo = 0;
+        expect(CombatSystem.fire(state, shooter, 0)).toBe(false);
+        expect(state.projectiles.size).toBe(0);
+    });
+});

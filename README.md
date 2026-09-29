@@ -7,7 +7,7 @@ Server-authoritative: clients send inputs, the server simulates everything and s
 - **Server:** Node.js + TypeScript + [Colyseus](https://colyseus.io/) 0.16
 - **Client:** React 19 + [Phaser](https://phaser.io/) 4 (Vite, TypeScript)
 
-> **Status:** playable prototype. You can join a lobby, pick a team color and a character, ready up, then move around an isometric hex map, claim hexes, gather materials and pickups, fabricate items, shoot enemies (once you have a gun), place structures, and see the results. Team pooling and a team win condition are designed but not built. See [Current Status & Known Issues](docs/ARCHITECTURE.md#current-status--known-issues).
+> **Status:** playable prototype. You can join a lobby, pick a team color and a character, ready up, then move around an isometric hex map, claim hexes, gather materials and pickups, fabricate items, shoot enemies (once you have a gun), place structures, and see the results. You can play alone against computer bots (Easy, Medium or Hard). Team pooling and a team win condition are designed but not built. See [Current Status & Known Issues](docs/ARCHITECTURE.md#current-status--known-issues).
 
 ## Quick start
 
@@ -40,6 +40,8 @@ npm run dev
 ```
 
 Open http://localhost:5173 and click **Play**. On the game list, pick an open game or **Create game** (map size, teams, drop pods, game length). In the lobby, set your name, pick a character (and a team, if the game has teams on), and press **Ready**. The match starts 3 seconds after everyone in the game is ready (on your own, that's straight away).
+
+**Playing alone:** in the lobby, pick a difficulty under the player list and press **+ Add bot** once per opponent, then press **Ready**. Bots are always ready, so the match starts straight away.
 
 Every game has a 4-character code (shown in the list and the lobby, with a **Copy link** button). `http://localhost:5173/game/CODE` goes straight to that game. The list comes from the server's `GET /games`.
 
@@ -138,7 +140,9 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      The four structure types all work the same for now.
    - **Ready** — press it when you're set (press again to cancel). Team and character are locked while you're ready.
 
-   When everyone connected is ready, a **3-second countdown** starts. It's cancelled if anyone un-readies or someone new joins.
+   - **Bots** — under the player list, pick **Easy**, **Medium** or **Hard** and press **+ Add bot** for a computer-controlled player. Anyone in the lobby can change a bot's color (or team), character and difficulty, or remove it (✕). Bots count toward the 10 players and are always ready. They leave you alone near your own spawn. What each difficulty does is in [GAME_DESIGN → Bots](docs/GAME_DESIGN.md#bots-single-player).
+
+   When everyone connected is ready, a **3-second countdown** starts. It's cancelled if anyone un-readies or someone new joins. Bots alone never start a match.
 2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Explorer starts with one), place the structures your character started with on hexes you own, and gather materials. The Fabricator stays available from the **Fabricator** button — the game keeps running while it's open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
@@ -172,7 +176,8 @@ server/                     Colyseus game server
   src/hex.ts                Hex grid math (pixel <-> hex, bounds)
   src/rooms/GameRoom.ts     Room lifecycle, message handlers, tick loop
   src/state/GameState.ts    Synced state schema
-  src/systems/              Movement, collision, combat, structures, phases, economy, score
+  src/systems/              Movement, collision, combat, structures, phases, economy, score, bots
+  src/bots/                 How bots decide: routes, aiming, what to fabricate
   src/types/shared.ts       Client/server message types
 client/                     React + Phaser client
   src/context/GameContext   Connection lifecycle, reconnection, roster state

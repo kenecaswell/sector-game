@@ -17,6 +17,7 @@ import type {
     StructureState,
     TileState,
 } from '../../../shared/state';
+import type { BotBrain } from '../bots/brain';
 
 // Each class implements its interface in shared/state.ts (what the client reads), so dropping or
 // retyping a field the client relies on is a compile error here.
@@ -55,6 +56,9 @@ export class Player extends Schema implements PlayerState {
     // The hex this player starts and respawns on, for the client's spawn platform.
     @type('uint8') spawnTileX: number = 0;
     @type('uint8') spawnTileY: number = 0;
+    // Computer-controlled players (BotSystem): no client, always connected and ready.
+    @type('boolean') bot: boolean = false;
+    @type('string') botDifficulty: string = ''; // a BotDifficulty, or '' for a person
     // Server only (not synced): which spawn-line slot this player starts and respawns at.
     spawnSlot: number = 0;
 }
@@ -138,4 +142,8 @@ export class GameState
     nextPodWaveAt: number = 0;
     pendingPods: PendingPod[] = [];
     podsMade: number = 0; // for unique pod ids
+    shotsFired: number = 0; // for unique projectile ids
+    botsMade: number = 0; // for unique bot ids
+    // Server only: what each bot is thinking (BotSystem), keyed by its player id.
+    botBrains = new Map<string, BotBrain>();
 }

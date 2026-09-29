@@ -8,5 +8,8 @@ export default defineConfig({
         include: ['src/**/*.spec.ts'],
         environment: 'node',
         restoreMocks: true,
+        // Some specs sweep hundreds of maps or approaches and take 4-5 s on their own, close to
+        // Vitest's 5 s default, so they timed out when the machine was busy. Allow more.
+        testTimeout: 20_000,
     },
 });

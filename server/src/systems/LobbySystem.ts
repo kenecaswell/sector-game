@@ -81,13 +81,18 @@ function setName(state: GameState, player: Player, name: unknown): boolean {
  * nobody is anyone's ally either way, see areAllies).
  */
 function selectTeam(state: GameState, player: Player, teamId: unknown): boolean {
-    if (!inLobby(state) || player.ready || !isTeamId(teamId)) return false;
-    if (!state.settings.teams) {
-        for (const other of state.players.values()) {
-            if (other !== player && other.teamId === teamId) return false; // taken
-        }
-    }
+    if (!inLobby(state) || player.ready || !canTakeTeam(state, player, teamId)) return false;
     setTeam(player, teamId);
+    return true;
+}
+
+/** Whether `player` may be on `teamId`: any team with teams on; with teams off, a color nobody else has. */
+function canTakeTeam(state: GameState, player: Player, teamId: unknown): teamId is TeamId {
+    if (!isTeamId(teamId)) return false;
+    if (state.settings.teams) return true;
+    for (const other of state.players.values()) {
+        if (other !== player && other.teamId === teamId) return false; // taken
+    }
     return true;
 }
 
@@ -104,17 +109,18 @@ function setReady(state: GameState, player: Player, ready: unknown): boolean {
 }
 
 /**
- * Everyone who is connected is ready (and there is at least one such player). Disconnected
- * players don't hold the match up; if they come back they land in it with their pick.
+ * Everyone who is connected is ready, and at least one of them is a person (bots are always ready,
+ * and never start a match on their own). Disconnected players don't hold the match up; if they
+ * come back they land in it with their pick.
  */
 function everyoneReady(state: GameState): boolean {
-    let connected = 0;
+    let people = 0;
     for (const player of state.players.values()) {
         if (!player.connected) continue;
         if (!player.ready) return false;
-        connected++;
+        if (!player.bot) people++;
     }
-    return connected > 0;
+    return people > 0;
 }
 
 function update(state: GameState, broadcast: Broadcast): void {
@@ -138,6 +144,7 @@ export const LobbySystem = {
     joiningName,
     setName,
     selectTeam,
+    canTakeTeam,
     selectCharacter,
     setReady,
     everyoneReady,

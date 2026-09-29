@@ -3,23 +3,30 @@ import { useGameConnection } from '../context/GameContext';
 import { NoticeStack } from '../components/NoticeStack';
 import type { GameSettingsState, PlayerState } from '../types/gameState';
 import {
+    BOT_DIFFICULTIES,
+    BOT_DIFFICULTY_IDS,
     CHARACTERS,
     CHARACTER_IDS,
+    DEFAULT_BOT_DIFFICULTY,
     DEFAULT_CHARACTER,
     GUN_NAMES,
     MAP_SIZES,
+    MAX_PLAYERS,
     PLAYER_NAME_MAX_LENGTH,
     PLAYER_NAME_MIN_LENGTH,
     STRUCTURE_NAMES,
     TEAMS,
     TEAM_IDS,
+    isBotDifficulty,
     isCharacterId,
     isTeamId,
     normalizePlayerName,
+    type BotDifficulty,
     type Character,
     type CharacterId,
     type MapSizeId,
     type TeamId,
+    type UpdateBotMessage,
     type UpgradeId,
     upgradeLabel,
 } from '../types/shared';
@@ -112,6 +119,58 @@ const LOBBY_CSS = `
     cursor: pointer;
 }
 .lobby-copy:hover { border-color: rgba(255, 255, 255, 0.6); }
+.lobby-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby-bot-tag {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    overflow: visible;
+}
+.lobby-remove {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 2px 7px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+.lobby-remove:hover:not(:disabled) { background: rgba(231, 76, 60, 0.35); color: #fff; }
+.lobby-remove:disabled { opacity: 0.35; cursor: default; }
+.lobby-remove:focus-visible { outline: 2px solid #f1c40f; }
+.lobby-add-bot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+}
+.lobby-add-bot .lobby-select { width: auto; min-width: 110px; }
+.lobby-add-label { font-weight: bold; }
+.lobby-add {
+    padding: 7px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 6px;
+    background: transparent;
+    color: #fff;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+}
+.lobby-add:hover:not(:disabled) { border-color: #f1c40f; color: #f1c40f; }
+.lobby-add:disabled { opacity: 0.45; cursor: default; }
+.lobby-add:focus-visible { outline: 2px solid #f1c40f; outline-offset: 1px; }
+.lobby-add-hint { flex-basis: 100%; font-size: 13px; opacity: 0.65; }
 /* Phones: your name on its own line, then the color/team and character pickers side by side, then
    Ready across the width; other players' rows wrap the same way. */
 @media (max-width: 560px) {
@@ -125,6 +184,9 @@ const LOBBY_CSS = `
     .lobby-row--other .lobby-name, .lobby-row--other .lobby-status { grid-column: auto; }
     .lobby-row--other .lobby-status { font-size: 12px; text-align: right; }
     .lobby-row--other > div:nth-child(3) { font-size: 14px; opacity: 0.85; }
+    /* Bots: name (and remove) on one line, then color, character and difficulty side by side. */
+    .lobby-row--bot { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 6px; }
+    .lobby-row--bot .lobby-select { padding-right: 22px; background-position: right 7px center; }
 }
 `;
 
@@ -145,6 +207,9 @@ export function LobbyScreen() {
         selectCharacter,
         setReady,
         setName,
+        addBot,
+        removeBot,
+        updateBot,
         settings,
         gameCode,
         leave,
@@ -254,11 +319,27 @@ export function LobbyScreen() {
                                 onReady={setReady}
                                 onName={setName}
                             />
+                        ) : player.bot ? (
+                            <BotRow
+                                key={player.id}
+                                bot={player}
+                                teams={teams}
+                                teamCounts={teamCounts}
+                                locked={phase !== 'lobby'}
+                                onUpdate={updateBot}
+                                onRemove={removeBot}
+                            />
                         ) : (
                             <OtherRow key={player.id} player={player} teams={teams} />
                         )
                     )}
                 </div>
+
+                <AddBot
+                    full={players.length >= MAX_PLAYERS}
+                    locked={phase !== 'lobby'}
+                    onAdd={addBot}
+                />
 
                 {me && <CharacterCard character={characterOf(me)} />}
 
@@ -266,7 +347,8 @@ export function LobbyScreen() {
                     {teams
                         ? "Players with the same color are a team: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's tiles. Scores are still per player."
                         : 'Teams are off in this game: everyone plays for themselves. Pick any color nobody else has.'}{' '}
-                    The match starts 3 seconds after everyone is ready.
+                    The match starts 3 seconds after everyone is ready. Bots are always ready, so on
+                    your own with bots it starts as soon as you are.
                 </p>
             </div>
             <MenuFooter />
@@ -327,47 +409,23 @@ function OwnRow({ player, teams, teamCounts, onTeam, onCharacter, onReady, onNam
                 <span className="lobby-you">(you)</span>
             </div>
             <div className="lobby-pick">
-                <select
-                    className="lobby-select"
-                    aria-label={teams ? 'Team' : 'Color'}
+                <TeamSelect
+                    player={player}
+                    teams={teams}
+                    teamCounts={teamCounts}
+                    label={teams ? 'Team' : 'Color'}
                     title={lockedTitle}
-                    value={player.teamId}
                     disabled={locked}
-                    onChange={(e) => {
-                        if (isTeamId(e.target.value)) onTeam(e.target.value);
-                    }}
-                    style={{ borderLeft: `6px solid ${player.color}` }}
-                >
-                    {TEAM_IDS.map((id) => {
-                        const count = teamCounts.get(id) ?? 0;
-                        // Teams off: a color is yours alone, so one someone else has is taken.
-                        const taken = !teams && count > 0 && id !== player.teamId;
-                        return (
-                            <option key={id} value={id} disabled={taken}>
-                                {TEAMS[id].name}
-                                {teams && count > 0 ? ` (${count})` : ''}
-                                {taken ? ' (taken)' : ''}
-                            </option>
-                        );
-                    })}
-                </select>
+                    onTeam={onTeam}
+                />
             </div>
-            <select
-                className="lobby-select"
-                aria-label="Character"
+            <CharacterSelect
+                player={player}
+                label="Character"
                 title={lockedTitle}
-                value={player.character}
                 disabled={locked}
-                onChange={(e) => {
-                    if (isCharacterId(e.target.value)) onCharacter(e.target.value);
-                }}
-            >
-                {CHARACTER_IDS.map((id) => (
-                    <option key={id} value={id}>
-                        {CHARACTERS[id].name}
-                    </option>
-                ))}
-            </select>
+                onCharacter={onCharacter}
+            />
             <button
                 type="button"
                 className={locked ? 'lobby-ready lobby-ready--on' : 'lobby-ready'}
@@ -377,6 +435,210 @@ function OwnRow({ player, teams, teamCounts, onTeam, onCharacter, onReady, onNam
             >
                 {locked ? '✓ Ready' : 'Ready'}
             </button>
+        </div>
+    );
+}
+
+interface TeamSelectProps {
+    player: PlayerState;
+    teams: boolean;
+    teamCounts: Map<string, number>;
+    label: string;
+    title?: string;
+    disabled: boolean;
+    onTeam: (teamId: TeamId) => void;
+}
+
+/** A player's team (teams on) or color (teams off: colors someone else has are taken). */
+function TeamSelect({
+    player,
+    teams,
+    teamCounts,
+    label,
+    title,
+    disabled,
+    onTeam,
+}: TeamSelectProps) {
+    return (
+        <select
+            className="lobby-select"
+            aria-label={label}
+            title={title}
+            value={player.teamId}
+            disabled={disabled}
+            onChange={(e) => {
+                if (isTeamId(e.target.value)) onTeam(e.target.value);
+            }}
+            style={{ borderLeft: `6px solid ${player.color}` }}
+        >
+            {TEAM_IDS.map((id) => {
+                const count = teamCounts.get(id) ?? 0;
+                // Teams off: a color is yours alone, so one someone else has is taken.
+                const taken = !teams && count > 0 && id !== player.teamId;
+                return (
+                    <option key={id} value={id} disabled={taken}>
+                        {TEAMS[id].name}
+                        {teams && count > 0 ? ` (${count})` : ''}
+                        {taken ? ' (taken)' : ''}
+                    </option>
+                );
+            })}
+        </select>
+    );
+}
+
+interface CharacterSelectProps {
+    player: PlayerState;
+    label: string;
+    title?: string;
+    disabled: boolean;
+    onCharacter: (characterId: CharacterId) => void;
+}
+
+function CharacterSelect({ player, label, title, disabled, onCharacter }: CharacterSelectProps) {
+    return (
+        <select
+            className="lobby-select"
+            aria-label={label}
+            title={title}
+            value={player.character}
+            disabled={disabled}
+            onChange={(e) => {
+                if (isCharacterId(e.target.value)) onCharacter(e.target.value);
+            }}
+        >
+            {CHARACTER_IDS.map((id) => (
+                <option key={id} value={id}>
+                    {CHARACTERS[id].name}
+                </option>
+            ))}
+        </select>
+    );
+}
+
+interface BotRowProps {
+    bot: PlayerState;
+    teams: boolean;
+    teamCounts: Map<string, number>;
+    locked: boolean; // the countdown has started: bots can't be changed
+    onUpdate: (update: UpdateBotMessage) => void;
+    onRemove: (botId: string) => void;
+}
+
+/**
+ * A bot: anyone in the lobby can change its color (or team), character and difficulty, or remove
+ * it. Bots are always ready.
+ */
+function BotRow({ bot, teams, teamCounts, locked, onUpdate, onRemove }: BotRowProps) {
+    const title = locked ? 'Bots can only be changed in the lobby' : undefined;
+    return (
+        <div className="lobby-row lobby-row--bot" role="listitem">
+            <div className="lobby-name">
+                <span className="lobby-swatch" style={{ background: bot.color }} />
+                <span className="lobby-name-text">{bot.name}</span>
+                <span className="lobby-bot-tag">BOT</span>
+                <button
+                    type="button"
+                    className="lobby-remove"
+                    aria-label={`Remove ${bot.name}`}
+                    title={title ?? 'Remove this bot'}
+                    disabled={locked}
+                    onClick={() => onRemove(bot.id)}
+                >
+                    ✕
+                </button>
+            </div>
+            <div className="lobby-pick">
+                <TeamSelect
+                    player={bot}
+                    teams={teams}
+                    teamCounts={teamCounts}
+                    label={`${teams ? 'Team' : 'Color'} for ${bot.name}`}
+                    title={title}
+                    disabled={locked}
+                    onTeam={(teamId) => onUpdate({ botId: bot.id, teamId })}
+                />
+            </div>
+            <CharacterSelect
+                player={bot}
+                label={`Character for ${bot.name}`}
+                title={title}
+                disabled={locked}
+                onCharacter={(characterId) => onUpdate({ botId: bot.id, characterId })}
+            />
+            <div className="lobby-bot-difficulty">
+                <DifficultySelect
+                    value={isBotDifficulty(bot.botDifficulty) ? bot.botDifficulty : undefined}
+                    label={`Difficulty for ${bot.name}`}
+                    title={title}
+                    disabled={locked}
+                    onChange={(difficulty) => onUpdate({ botId: bot.id, difficulty })}
+                />
+            </div>
+        </div>
+    );
+}
+
+interface DifficultySelectProps {
+    value: BotDifficulty | undefined;
+    label: string;
+    title?: string;
+    disabled: boolean;
+    onChange: (difficulty: BotDifficulty) => void;
+}
+
+function DifficultySelect({ value, label, title, disabled, onChange }: DifficultySelectProps) {
+    return (
+        <select
+            className="lobby-select"
+            aria-label={label}
+            title={title}
+            value={value ?? DEFAULT_BOT_DIFFICULTY}
+            disabled={disabled}
+            onChange={(e) => {
+                if (isBotDifficulty(e.target.value)) onChange(e.target.value);
+            }}
+        >
+            {BOT_DIFFICULTY_IDS.map((id) => (
+                <option key={id} value={id}>
+                    {BOT_DIFFICULTIES[id].name}
+                </option>
+            ))}
+        </select>
+    );
+}
+
+/** Adds a computer-controlled player of the picked difficulty (lobby only, while there's room). */
+function AddBot({
+    full,
+    locked,
+    onAdd,
+}: {
+    full: boolean;
+    locked: boolean;
+    onAdd: (difficulty: BotDifficulty) => void;
+}) {
+    const [difficulty, setDifficulty] = useState<BotDifficulty>(DEFAULT_BOT_DIFFICULTY);
+    let hint = `${BOT_DIFFICULTIES[difficulty].name}: ${BOT_DIFFICULTIES[difficulty].description}`;
+    if (full) hint = `The game is full (${MAX_PLAYERS} players).`;
+    return (
+        <div className="lobby-add-bot">
+            <span className="lobby-add-label">Bots</span>
+            <DifficultySelect
+                value={difficulty}
+                label="New bot's difficulty"
+                disabled={locked}
+                onChange={setDifficulty}
+            />
+            <button
+                type="button"
+                className="lobby-add"
+                disabled={full || locked}
+                onClick={() => onAdd(difficulty)}
+            >
+                + Add bot
+            </button>
+            <span className="lobby-add-hint">{hint}</span>
         </div>
     );
 }

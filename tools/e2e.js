@@ -647,6 +647,75 @@ async function games() {
     });
 }
 
+async function bots() {
+    section('Bots (single player)');
+    await withServer(0.2, async () => {
+        const client = new Client(URL);
+        const a = await client.create('GameRoom', { name: 'Solo', game: { name: 'Solo game' } });
+        if (!a.state?.phase) await new Promise((resolve) => a.onStateChange.once(resolve));
+        a.onMessage('*', () => {});
+        const code = a.roomId;
+        const botsIn = () => Array.from(a.state.players.values()).filter((p) => p.bot);
+
+        a.send('addBot', { difficulty: 'hard' });
+        a.send('addBot', { difficulty: 'easy' });
+        await waitFor(() => botsIn().length === 2, 2000);
+        check(
+            'addBot adds ready bots with the difficulty asked for',
+            botsIn().every((b) => b.ready) &&
+                botsIn()
+                    .map((b) => b.botDifficulty)
+                    .sort()
+                    .join() === 'easy,hard',
+            botsIn()
+                .map((b) => `${b.name}:${b.botDifficulty}`)
+                .join(' ')
+        );
+        const easy = botsIn().find((b) => b.botDifficulty === 'easy');
+        a.send('updateBot', { botId: easy.id, difficulty: 'medium', characterId: 'robot' });
+        await waitFor(() => easy.botDifficulty === 'medium', 2000);
+        check('updateBot changes its difficulty and character', easy.character === 'robot');
+
+        let listed = (await fetchGames()).find((g) => g.code === code);
+        check(
+            'the game list counts bots as players',
+            listed?.players === 3 && listed?.bots === 2 && listed?.maxPlayers === 10,
+            JSON.stringify(listed)
+        );
+
+        for (let i = 0; i < 8; i++) a.send('addBot', { difficulty: 'easy' });
+        await waitFor(() => a.state.players.size === 10, 2000);
+        await sleep(300);
+        check(
+            'bots fill the game to 10 players, and no further',
+            a.state.players.size === 10 && botsIn().length === 9
+        );
+        check("a full game (you and 9 bots) doesn't let anyone else in", (await probe(code)) === 'LOCKED');
+        a.send('removeBot', { botId: easy.id });
+        await waitFor(() => a.state.players.size === 9, 2000);
+        check('removeBot removes one, and a seat opens again', (await probe(code)) === 'OPEN');
+        await waitFor(() => a.state.players.size === 9, 2000); // the probe has left again
+
+        const spawns = new Map(botsIn().map((b) => [b.id, [b.x, b.y]]));
+        await startMatch(a);
+        check('you plus bots: the match starts as soon as you are ready', phaseOf(a) === 'playing');
+        a.send('addBot', { difficulty: 'easy' });
+        await sleep(4000);
+        const moved = botsIn().filter((b) => {
+            const [x, y] = spawns.get(b.id);
+            return Math.hypot(b.x - x, b.y - y) > 60 && b.tilesOwned >= 3;
+        });
+        check(
+            'in the match the bots move off their spawns and claim hexes',
+            moved.length === botsIn().length,
+            botsIn()
+                .map((b) => `${b.botDifficulty}:${b.tilesOwned}`)
+                .join(' ')
+        );
+        check('no adding bots once the match is on', botsIn().length === 8);
+    });
+}
+
 async function edges() {
     // A map of plain ground: this walks from the spawn to the edges, and terrain in the way
     // would stop it (terrain movement is unit-tested in server/src/systems/terrainRules.spec.ts).
@@ -701,6 +770,7 @@ async function edges() {
         await connection();
         await pickups();
         await games();
+        await bots();
         await edges();
     } catch (error) {
         check('the e2e run completed without an error', false, error.message);

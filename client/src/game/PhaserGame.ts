@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameScene, type GameSceneCallbacks } from './scenes/GameScene';
+import { GAME_DISPOSED_KEY, GameScene, type GameSceneCallbacks } from './scenes/GameScene';
 import type { GameRoom } from '../net/GameConnection';
 
 export function createPhaserGame(
@@ -31,4 +31,14 @@ export function createPhaserGame(
     game.scene.start('GameScene', { room, sessionId, callbacks });
 
     return game;
+}
+
+/**
+ * Destroys a game made by createPhaserGame. Its scene stops listening to the room right away (see
+ * GameScene.create): Phaser itself only tears a game down on its next frame, and never does for one
+ * destroyed while it was still booting, as React StrictMode's throwaway first mount is in dev.
+ */
+export function destroyPhaserGame(game: Phaser.Game): void {
+    game.registry.set(GAME_DISPOSED_KEY, true);
+    game.destroy(true);
 }

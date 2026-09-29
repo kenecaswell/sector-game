@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { useGameConnection } from '../context/GameContext';
-import { createPhaserGame } from '../game/PhaserGame';
+import { createPhaserGame, destroyPhaserGame } from '../game/PhaserGame';
 import { sendDevMaterials } from '../net/GameConnection';
 import type { GameScene } from '../game/scenes/GameScene';
 import { FabricatorMenu } from '../components/FabricatorMenu';
@@ -72,7 +72,7 @@ export function GameScreen() {
         gameRef.current = game;
 
         return () => {
-            game.destroy(true);
+            destroyPhaserGame(game);
             gameRef.current = null;
         };
         // Intentionally only re-creates the Phaser game if the room/session

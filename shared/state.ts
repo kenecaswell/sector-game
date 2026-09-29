@@ -39,6 +39,8 @@ export interface PlayerState {
     equippedUpgrade: string; // the slot upgrade in effect: an UpgradeId, or '' for none
     spawnTileX: number; // the hex they start and respawn on (col, row): drawn as a spawn platform
     spawnTileY: number;
+    bot: boolean; // computer-controlled (see BotSystem on the server); always ready
+    botDifficulty: string; // a BotDifficulty for a bot, '' for a person
 }
 
 export interface TileState {

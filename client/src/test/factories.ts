@@ -33,6 +33,8 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         equippedUpgrade: '',
         spawnTileX: 0,
         spawnTileY: 0,
+        bot: false,
+        botDifficulty: '',
         ...overrides,
     };
 }

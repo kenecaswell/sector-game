@@ -3,13 +3,14 @@ import { listingsFrom, randomGameCode, type GameMetadata } from './games';
 import { GAME_CODE_ALPHABET, GAME_CODE_LENGTH, normalizeGameCode } from './types/shared';
 import { seededRandom } from './terrain';
 
-const meta = (name: string, phase: GameMetadata['phase'] = 'lobby'): GameMetadata => ({
+const meta = (name: string, phase: GameMetadata['phase'] = 'lobby', bots = 0): GameMetadata => ({
     name,
     mapSize: 'small',
     teams: false,
     pods: true,
     matchMinutes: 5,
     phase,
+    bots,
 });
 
 describe('game codes', () => {
@@ -36,5 +37,13 @@ describe('listingsFrom', () => {
         ]);
         expect(games.map((g) => g.code)).toEqual(['BBBB', 'ZZZZ', 'PLAY']);
         expect(games[0]).toEqual({ code: 'BBBB', players: 2, maxPlayers: 10, ...meta('Bravo') });
+    });
+
+    it('counts bots as players: they take seats the room no longer offers to people', () => {
+        // 1 person and 3 bots: GameRoom has lowered maxClients from 10 to 7.
+        const [game] = listingsFrom([
+            { roomId: 'SOLO', clients: 1, maxClients: 7, metadata: meta('Solo', 'lobby', 3) },
+        ]);
+        expect(game).toMatchObject({ players: 4, bots: 3, maxPlayers: 10 });
     });
 });

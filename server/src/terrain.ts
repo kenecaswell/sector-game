@@ -103,6 +103,23 @@ export function freeSpawnSlot(state: GameState): number {
     return slot % SPAWN_SLOTS;
 }
 
+/**
+ * Gives a newcomer (a person joining or a bot being added) the lowest free spawn slot and puts them
+ * on it. Call before adding them to `state.players`.
+ */
+export function assignSpawn(
+    state: GameState,
+    player: { spawnSlot: number; x: number; y: number; spawnTileX: number; spawnTileY: number }
+): void {
+    player.spawnSlot = freeSpawnSlot(state);
+    const start = spawnPoint(state, player.spawnSlot);
+    player.x = start.x;
+    player.y = start.y;
+    const spawn = spawnHex(state.mapWidth, state.mapHeight, player.spawnSlot);
+    player.spawnTileX = spawn.col;
+    player.spawnTileY = spawn.row;
+}
+
 interface GridTables {
     neighbors: Int32Array; // hex i's six neighbor indices at [i * 6 + k], -1 = off the map
     nearSpawn: Uint8Array; // 1 = within SPAWN_CLEAR_RADIUS of a spawn hex

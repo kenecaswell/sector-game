@@ -1,4 +1,4 @@
-import type { GameState, Player } from '../state/GameState';
+import { Projectile, type GameState, type Player } from '../state/GameState';
 import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
 import { PROJECTILE_LIFETIME_MS, SHOT_TERRAIN_STEP } from '../constants';
@@ -7,7 +7,7 @@ import { isMountainAtPoint, spawnPoint } from '../terrain';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
-import type { PlayerHitEvent } from '../types/shared';
+import { GUN_DAMAGE, isGunId, type PlayerHitEvent } from '../types/shared';
 
 function respawnPlayer(state: GameState, player: Player): void {
     // Territory-claiming game, not a deathmatch — a defeated player respawns
@@ -19,6 +19,30 @@ function respawnPlayer(state: GameState, player: Player): void {
     player.y = start.y;
     player.vx = 0;
     player.vy = 0;
+}
+
+/**
+ * `player` fires a shot heading `angle` (world radians), if it's the match and they have a gun and
+ * ammo: one ammo is used and a projectile with their gun's damage starts from their position.
+ * Returns whether it fired. People's shots come from GameRoom's `shoot` message, bots' from
+ * BotSystem. (There's no server-side fire-rate limit yet; the client spaces out people's shots and
+ * each bot's difficulty spaces out its own.)
+ */
+function fire(state: GameState, player: Player, angle: number): boolean {
+    if (state.phase.phase !== 'playing' || !player.connected) return false;
+    if (player.gun === '' || player.ammo <= 0 || !Number.isFinite(angle)) return false;
+
+    player.ammo--;
+    const projectile = new Projectile();
+    projectile.id = `${player.id}-${state.shotsFired++}`;
+    projectile.ownerId = player.id;
+    projectile.x = player.x;
+    projectile.y = player.y;
+    projectile.angle = angle;
+    projectile.spawnedAt = Date.now();
+    projectile.damage = GUN_DAMAGE[isGunId(player.gun) ? player.gun : 'basic'];
+    state.projectiles.set(projectile.id, projectile);
+    return true;
 }
 
 /**
@@ -92,4 +116,4 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
     toRemove.forEach((id) => state.projectiles.delete(id));
 }
 
-export const CombatSystem = { update };
+export const CombatSystem = { update, fire };

@@ -11,6 +11,7 @@ const game = (code: string, name: string, extra: Partial<GameListing> = {}): Gam
     matchMinutes: 5,
     phase: 'lobby',
     players: 1,
+    bots: 0,
     maxPlayers: 10,
     ...extra,
 });
@@ -33,5 +34,10 @@ describe('settingsSummary', () => {
                 game('A', 'a', { mapSize: 'large', teams: true, pods: false, matchMinutes: 10 })
             )
         ).toBe('Large map · Teams · No pods · 10 min');
+    });
+
+    it('mentions bots when there are any', () => {
+        expect(settingsSummary(game('A', 'a', { bots: 1 }))).toMatch(/· 1 bot$/);
+        expect(settingsSummary(game('A', 'a', { bots: 3 }))).toMatch(/· 3 bots$/);
     });
 });

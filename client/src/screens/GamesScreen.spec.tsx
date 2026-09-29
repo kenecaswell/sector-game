@@ -13,6 +13,7 @@ const listing = (code: string, name: string, extra: Partial<GameListing> = {}): 
     matchMinutes: 5,
     phase: 'lobby',
     players: 2,
+    bots: 0,
     maxPlayers: 10,
     ...extra,
 });

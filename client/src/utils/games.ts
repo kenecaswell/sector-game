@@ -9,12 +9,14 @@ export function filterGames(games: readonly GameListing[], filter: string): Game
     );
 }
 
-/** "Small map · Teams · Drop pods · 5 min" */
+/** "Small map · Teams · Drop pods · 5 min", plus " · 3 bots" if it has any. */
 export function settingsSummary(game: GameListing): string {
-    return [
+    const parts = [
         `${MAP_SIZES[game.mapSize]?.name ?? game.mapSize} map`,
         game.teams ? 'Teams' : 'No teams',
         game.pods ? 'Drop pods' : 'No pods',
         `${game.matchMinutes} min`,
-    ].join(' · ');
+    ];
+    if (game.bots > 0) parts.push(game.bots === 1 ? '1 bot' : `${game.bots} bots`);
+    return parts.join(' · ');
 }

@@ -22,10 +22,14 @@ import {
     sendSetName,
     sendSetReady,
     sendShoot,
+    sendAddBot,
+    sendRemoveBot,
+    sendUpdateBot,
     type GameRoom,
     type ConnectTarget,
 } from '../net/GameConnection';
 import type {
+    BotDifficulty,
     CharacterId,
     GameOverEvent,
     GamePhase,
@@ -35,6 +39,7 @@ import type {
     ShopItemId,
     StructureType,
     TeamId,
+    UpdateBotMessage,
     UpgradeId,
 } from '../types/shared';
 import type { GameSettingsState, PlayerState } from '../types/gameState';
@@ -85,6 +90,10 @@ interface GameContextValue {
     purchase: (itemId: ShopItemId) => void;
     // Equip a slot upgrade you own, or '' to empty the slot (the server enforces the cooldown).
     equipUpgrade: (upgradeId: UpgradeId | '') => void;
+    // Bots (lobby only; anyone in the lobby may manage them).
+    addBot: (difficulty: BotDifficulty) => void;
+    removeBot: (botId: string) => void;
+    updateBot: (update: UpdateBotMessage) => void;
     // Leave the finished match and join a fresh lobby / just go back to the start screen.
     playAgain: () => void;
     exitResults: () => void;
@@ -213,7 +222,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         const signature = roster
                             .map(
                                 (p) =>
-                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}`
+                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}|${p.botDifficulty}`
                             )
                             .join(';');
                         if (signature === lastSignature) return;
@@ -415,6 +424,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
         [room]
     );
 
+    const addBot = useCallback(
+        (difficulty: BotDifficulty) => {
+            if (!room) return;
+            sendAddBot(room, difficulty);
+        },
+        [room]
+    );
+
+    const removeBot = useCallback(
+        (botId: string) => {
+            if (!room) return;
+            sendRemoveBot(room, botId);
+        },
+        [room]
+    );
+
+    const updateBot = useCallback(
+        (update: UpdateBotMessage) => {
+            if (!room) return;
+            sendUpdateBot(room, update);
+        },
+        [room]
+    );
+
     const value = useMemo<GameContextValue>(
         () => ({
             status,
@@ -440,6 +473,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
             setName,
             purchase,
             equipUpgrade,
+            addBot,
+            removeBot,
+            updateBot,
             playAgain,
             exitResults,
         }),
@@ -466,6 +502,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
             setName,
             purchase,
             equipUpgrade,
+            addBot,
+            removeBot,
+            updateBot,
             playAgain,
             exitResults,
         ]

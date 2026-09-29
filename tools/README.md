@@ -16,12 +16,14 @@ cd server && npm run build
 
 | Script | What it does | Needs a server? | Time |
 |---|---|---|---|
-| `e2e.js` | Real `colyseus.js` clients against its own throwaway server (port 2598, phase times scaled down): the lobby (names, ready-up, countdown and its cancelling), match lifecycle with character kits, guns and the structure inventory, room closing, shop over the wire, mid-match joins, disconnect/reconnect notices, map edge | It starts its own | ~1 min |
-| `bots.js` | Load bots for profiling a browser client; not a pass/fail check | Yes (yours) | as long as you run it |
+| `e2e.js` | Real `colyseus.js` clients against its own throwaway server (port 2598, phase times scaled down): the lobby (names, ready-up, countdown and its cancelling), match lifecycle with character kits, guns and the structure inventory, room closing, shop over the wire, mid-match joins, disconnect/reconnect notices, the game list, bots (add/change/remove, a full room, playing), map edge | It starts its own | ~1.5 min |
+| `bot-sim.js` | Headless bot-vs-bot matches (the in-game bots) on a virtual clock, printing each bot's score, hexes, kills, structures and kit, and the tick cost — for tuning `BOT_PROFILES`; not a pass/fail check | No | ~2 s per 5-minute match |
+| `bots.js` | Load bots (wandering WebSocket clients, not the in-game bots) for profiling a browser client; not a pass/fail check | Yes (yours) | as long as you run it |
 | `map-preview.js` | Renders generated maps to PNG, whole map top-down, one image per seed — for judging terrain generation; not a pass/fail check | No | ~1 s per map |
 
 ```bash
 node tools/e2e.js
+node tools/bot-sim.js easy,medium,hard 5 7   # difficulties, minutes, map seed [, mapSize, teams 0/1]
 node tools/bots.js 4 120            # then profile the browser; see ARCHITECTURE.md, Performance pass
 node tools/map-preview.js           # seeds 1-6 into map-previews/ (git-ignored)
 node tools/map-preview.js 7 42 --out /tmp/maps   # chosen seeds, chosen folder
@@ -64,3 +66,12 @@ alternating shades so each mountain piece stands out; deep water dark blue, shal
 the spawn hexes red. Fixed seeds always give the same picture, so render a few seeds, change the
 generator (`server/src/terrain.ts`, tunables in `server/src/constants.ts`), rebuild, and render
 the same seeds again to compare.
+
+## Bot simulations
+
+`bot-sim.js` builds a room the way `GameRoom` does (terrain, pods, the bots added in the lobby),
+starts the match and runs the server's systems tick by tick, with `Date.now` replaced by a virtual
+clock, so a 5-minute match takes about 2 seconds. The same seed gives the same map and the same
+match: change a number in `BOT_PROFILES` (`server/src/constants.ts`), rebuild the server, and run
+the same seeds again to compare. It prints the scores every minute, a table at the end, and how
+long a tick took on average and at worst (the budget is 50 ms).

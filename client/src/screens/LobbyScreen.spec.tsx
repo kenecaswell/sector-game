@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makePlayer } from '../test/factories';
@@ -16,6 +16,9 @@ const connection = {
     selectCharacter: vi.fn(),
     setReady: vi.fn(),
     setName: vi.fn(),
+    addBot: vi.fn(),
+    removeBot: vi.fn(),
+    updateBot: vi.fn(),
     leave: vi.fn(),
     gameCode: 'K7QF' as string | null,
     settings: null as GameSettingsState | null,
@@ -36,6 +39,9 @@ beforeEach(() => {
         connection.selectCharacter,
         connection.setReady,
         connection.setName,
+        connection.addBot,
+        connection.removeBot,
+        connection.updateBot,
     ]) {
         fn.mockReset();
     }
@@ -136,7 +142,11 @@ describe('LobbyScreen — team, character and ready', () => {
         expect(screen.getAllByText('✓ Ready')).toHaveLength(1);
         expect(screen.getByText('Cy (disconnected)')).toBeInTheDocument();
         // Only your row has controls.
-        expect(screen.getAllByRole('combobox')).toHaveLength(2);
+        for (const name of ['Bo', 'Cy (disconnected)']) {
+            const row = screen.getByText(name).closest('[role="listitem"]') as HTMLElement;
+            expect(within(row).queryAllByRole('combobox')).toHaveLength(0);
+            expect(within(row).queryAllByRole('button')).toHaveLength(0);
+        }
     });
 
     it('says who it is waiting for once you are ready', () => {
@@ -197,5 +207,94 @@ describe('LobbyScreen — game settings', () => {
         await userEvent.click(screen.getByRole('button', { name: '← Leave' }));
         expect(connection.leave).toHaveBeenCalled();
         expect(window.location.pathname).toBe('/play');
+    });
+});
+
+describe('LobbyScreen — bots', () => {
+    const teamsOff = () => {
+        connection.settings = {
+            name: 'Solo',
+            mapSize: 'small',
+            teams: false,
+            pods: true,
+            matchMinutes: 5,
+        };
+    };
+    const bot = (overrides: Partial<PlayerState> = {}) =>
+        makePlayer({
+            id: 'bot-0',
+            name: 'Bot Cassini',
+            bot: true,
+            botDifficulty: 'easy',
+            ready: true,
+            teamId: 'green',
+            color: '#2ecc71',
+            character: 'miner',
+            ...overrides,
+        });
+
+    it('adds a bot of the picked difficulty (Medium unless you pick another)', async () => {
+        showLobby();
+        await userEvent.click(screen.getByRole('button', { name: '+ Add bot' }));
+        expect(connection.addBot).toHaveBeenCalledWith('medium');
+        await userEvent.selectOptions(
+            screen.getByRole('combobox', { name: "New bot's difficulty" }),
+            'Hard'
+        );
+        expect(screen.getByText(/Hard: /)).toBeInTheDocument(); // what Hard means
+        await userEvent.click(screen.getByRole('button', { name: '+ Add bot' }));
+        expect(connection.addBot).toHaveBeenLastCalledWith('hard');
+    });
+
+    it("shows a bot's picks, which anyone can change, and a button to remove it", async () => {
+        teamsOff();
+        showLobby({}, [bot()]);
+        expect(screen.getByText('BOT')).toBeInTheDocument();
+        const difficulty = screen.getByRole('combobox', { name: 'Difficulty for Bot Cassini' });
+        expect(difficulty).toHaveValue('easy');
+        await userEvent.selectOptions(difficulty, 'Hard');
+        expect(connection.updateBot).toHaveBeenCalledWith({ botId: 'bot-0', difficulty: 'hard' });
+        await userEvent.selectOptions(
+            screen.getByRole('combobox', { name: 'Character for Bot Cassini' }),
+            'Robot'
+        );
+        expect(connection.updateBot).toHaveBeenCalledWith({ botId: 'bot-0', characterId: 'robot' });
+        await userEvent.selectOptions(
+            screen.getByRole('combobox', { name: 'Color for Bot Cassini' }),
+            'Teal'
+        );
+        expect(connection.updateBot).toHaveBeenCalledWith({ botId: 'bot-0', teamId: 'teal' });
+        await userEvent.click(screen.getByRole('button', { name: 'Remove Bot Cassini' }));
+        expect(connection.removeBot).toHaveBeenCalledWith('bot-0');
+    });
+
+    it('with teams off, a bot cannot take your color', () => {
+        teamsOff();
+        showLobby({ teamId: 'red' }, [bot()]);
+        const color = screen.getByRole('combobox', { name: 'Color for Bot Cassini' });
+        expect(within(color).getByRole('option', { name: 'Red (taken)' })).toBeDisabled();
+    });
+
+    it("bots don't count as players you're waiting for", () => {
+        showLobby({ ready: true }, [bot(), makePlayer({ id: 'b' })]);
+        expect(screen.getByText('Waiting for 1 more player to get ready…')).toBeInTheDocument();
+    });
+
+    it('locks bots once the countdown starts, and adding once the game is full', () => {
+        connection.phase = 'countdown';
+        connection.phaseEndsAt = Date.now() + 3000;
+        showLobby({ ready: true }, [bot()]);
+        expect(screen.getByRole('combobox', { name: 'Difficulty for Bot Cassini' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Remove Bot Cassini' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: '+ Add bot' })).toBeDisabled();
+    });
+
+    it('no adding bots in a full game', () => {
+        const others = Array.from({ length: 9 }, (_, i) =>
+            bot({ id: `bot-${i}`, name: `Bot ${i}` })
+        );
+        showLobby({}, others);
+        expect(screen.getByRole('button', { name: '+ Add bot' })).toBeDisabled();
+        expect(screen.getByText('The game is full (10 players).')).toBeInTheDocument();
     });
 });

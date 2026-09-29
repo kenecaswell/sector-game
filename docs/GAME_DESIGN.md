@@ -23,15 +23,16 @@
 6. [Players](#players)
 7. [Teams](#teams)
 8. [Characters](#characters)
-9. [Territory](#territory)
-10. [Combat](#combat)
-11. [Structures](#structures)
-12. [Economy and fabrication](#economy-and-fabrication)
-13. [Scoring and winning](#scoring-and-winning)
-14. [Controls](#controls)
-15. [Look and feel](#look-and-feel)
-16. [Open design questions and plans](#open-design-questions-and-plans)
-17. [Design decisions log](#design-decisions-log)
+9. [Bots (single player)](#bots-single-player)
+10. [Territory](#territory)
+11. [Combat](#combat)
+12. [Structures](#structures)
+13. [Economy and fabrication](#economy-and-fabrication)
+14. [Scoring and winning](#scoring-and-winning)
+15. [Controls](#controls)
+16. [Look and feel](#look-and-feel)
+17. [Open design questions and plans](#open-design-questions-and-plans)
+18. [Design decisions log](#design-decisions-log)
 
 ---
 
@@ -94,12 +95,13 @@ A match moves through four phases. ✅
 
 | Phase | What happens | How long |
 |---|---|---|
-| **Lobby** | Players join, set a name, pick a character (and a team color, if the game has teams on), and press **Ready**. | Until every connected player is ready |
+| **Lobby** | Players join, set a name, pick a character (and a team color, if the game has teams on), and press **Ready**. Anyone can add [bots](#bots-single-player). | Until every connected player is ready |
 | **Countdown** | Everyone is ready: "Starting in 3…". Nobody can move yet. If anyone un-readies or a new player joins, it cancels back to the lobby. | 3 s (`COUNTDOWN_DURATION_MS`) |
 | **Playing** | The whole match. Claiming, shooting, fabricating and gathering all happen at once. | 5, 7 or 10 min (the game's setting) |
 | **Results** | Final standings and the winner. No new players can join. The room closes when the timer ends (or when the last player leaves), but each player's results stay on screen until they choose **Play again** or **Main menu**. | 60 s (`RESULTS_DURATION_MS`) |
 
 - **Nobody is in charge.** There is no host and no Start button: the match starts itself once everyone is ready.
+- **Playing alone:** add bots in the lobby and press Ready. Bots are always ready, so the match starts straight away ([Bots](#bots-single-player)).
 - **Characters apply at the start.** Your character's starting kit is given to you when the countdown ends, replacing anything you had.
 - **Team and character are locked while you're ready.** Un-ready to change them, so what everyone saw when they readied is what starts. Your name can still change while you're ready, but not once the match starts.
 - **Players who drop don't hold up the lobby.** A disconnected player is left out of the ready check.
@@ -208,6 +210,34 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 - Only the Explorer can shoot from the start. Everyone else has to fabricate a gun (or find one).
 - The four structure-starting characters differ only in which structure type they get, and 📝 structure types don't behave differently yet ([Structures](#structures)).
 - 📝 Each character is planned to get its own art; today everyone is a circle in their team color.
+
+## Bots (single player)
+
+🧪 Built 2026-09-28. **Bots** are computer-controlled players, so Sector 42 can be played alone, or a multiplayer game filled out. Their numbers are first-pass, tuned in simulated matches, not yet against people.
+
+- **Adding them:** in the lobby, under the players, pick a difficulty (**Easy**, **Medium** or **Hard**; Medium to start with) and press **+ Add bot**. Anyone in the lobby can add bots, and change any bot's color (or team), character and difficulty, or remove it; there's no host. Only in the lobby, not during the countdown or the match.
+- **A bot is a player.** It takes one of the 10 places (you plus 9 bots is a full game, and nobody else can join), gets a spawn spot, a color nobody has, a random character, and a name like "Bot Cassini". It plays by every rule people do: it claims hexes, opens drop pods, fabricates, switches upgrades, builds and shoots, and appears on the leaderboard and the results like anyone. The game list counts bots as players ("4 / 10", with "3 bots" in the summary).
+- **Always ready.** Bots never hold up the lobby: on your own with bots, the match starts as soon as you're ready. **Bots alone never start a match**: at least one connected person has to be ready.
+- **Teams:** with teams on, give a bot your color to make it a teammate. With teams off, bots take free colors like anyone.
+- **Spawn mercy:** 🧪 bots leave an enemy alone (don't shoot at them or chase them) while that enemy is within **3 hexes of their own spawn spot** (`BOT_SPAWN_MERCY_RADIUS`), so a bot can't camp your spawn. People get no such protection from people.
+- **What bots know:** they plan on the server and can see the whole map (every player, hex and pod), like a player with a perfect minimap. They only shoot what they have a clear line to (mountains block their view as they block shots) and within their range.
+
+### Difficulty
+
+Each difficulty is a profile of numbers (`BOT_PROFILES` in `server/src/constants.ts`); angles are how far a shot can stray either side, ranges are on-screen px like shot range (a shot flies 1,200).
+
+| | Easy | Medium | Hard |
+|---|---|---|---|
+| **Moving** | 75% speed; dawdles now and then; looks 6 hexes ahead and often picks a so-so spot | 85% speed; looks 8 hexes ahead | Full speed; looks 14 hexes ahead; efficient |
+| **Shooting** | Fires 1 s after spotting you, a shot every 0.8 s, strays up to ±20°, aims where you are, range 380 | 0.5 s, every 0.4 s, ±8°, allows for half your movement, range 520 | 0.22 s, every 0.25 s, ±3°, leads you fully, range 650 |
+| **Chasing** (while armed) | Never | Enemies within 420; stops at 200 and stands its ground; not below 30% health | Within 650; circles at 260, changing direction; not below 35% health |
+| **Structures** | Places one only where it happens to own a spot; doesn't shoot structures | Claims the hexes a spot needs, then builds; shoots enemy structures when it has ammo to spare | The same, faster |
+| **Fabricating** | Every 8 s: Basic gun, farm, Armor, Booster, in that order, skipping what it can't afford yet; ammo below 5 shots | Every 3 s, saving up for each: Basic gun, Armor, Expander, fort, Booster, Big gun, Armor 2, fort, then a fort whenever it has none; ammo below 10 | Every second, saving up: Expander, Basic gun, Armor, fort, Expander 2, Big gun, Armor 2, fort, Booster, Expander 3, Armor 3, three forts, then forts; ammo below 20 |
+| **Upgrade slot** | Never switches | Equips the Expander once it has one | The Booster to chase, the Expander to claim |
+
+How they compare, from simulated 5-minute matches on a Small map (`node tools/bot-sim.js`, three seeds): **alone**, Easy claims about 950–1,050 hexes, Medium about 2,300 (and builds some 20 forts), Hard about 3,000–3,400 (25–30 forts); **all three in one match**, about 200–370, 780–1,130 and 2,000–2,400 hexes. Hard is meant to beat a good player, Easy to lose to a new one; that's still to be checked in real play.
+
+Implementation: [Bots](ARCHITECTURE.md#bots).
 
 ## Territory
 
@@ -423,6 +453,14 @@ Built 2026-09-27 (see [Inventory bar](#inventory-bar)). Still open: number-key s
 ### Results and rematch
 - A richer results screen (per-player details, match stats) and a same-room **rematch**, instead of Play again starting a fresh lobby.
 
+### Bots (follow-ups)
+Built 2026-09-28 ([Bots](#bots-single-player)). Still open:
+- **Tuning against people:** the difficulty numbers come from bot-vs-bot simulations. Play each difficulty and adjust `BOT_PROFILES`.
+- **A quicker way into single player:** a "Play solo" option on the start screen or Create game (with a number of bots) instead of creating a game and adding bots, and whether such games should stay out of the public game list.
+- **Filling empty seats:** should bots automatically join a game that's short of players, or take over a player who disconnects?
+- **Joining mid-match:** bots can only be added in the lobby today.
+- **Team play:** bots don't coordinate with teammates beyond not shooting them.
+
 ### Contested hexes
 - When two players reach a hex at the same moment, join order decides. Decide whether that's acceptable or whether it should go to whoever got there first by input order.
 
@@ -515,3 +553,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Colors with teams off; lobby header and phone layout | With teams off, players pick a color no one else has (the Team picker relabeled Color, taken colors disabled); the lobby uses the menu header (Leave left, SECTOR 42 centered); on phones the pickers sit side by side under your name | No choice of color with teams off (previous, same day) | Requested (2026-09-27). The server enforces "not taken" in `selectTeam` |
 | Compact lobby rows; footer | On phones other players take one line (name with color dot, character, ready); with teams off their team/color isn't spelled out (the dot shows it); every menu screen has a "© 2026 kenecaswell" footer with space above it | — | Requested (2026-09-27) |
 | Booster, Expander and shot speeds (revised) | Booster +33% a level (133 / 166 / 199%); the Expander now slows you 10% a level (90 / 80 / 70%) while equipped; shots 50% faster (600 on-screen px/s, same 2 s lifetime, so 50% more range) | +25% Booster, no Expander penalty, 400 px/s shots (previous) | Requested (2026-09-27). The Expander's wide claims get a cost; faster shots are easier to land. Keeping the lifetime (my choice) means the range grows too; shorten `PROJECTILE_LIFETIME_MS` if that's too far |
+| Bots | Computer-controlled players added in the lobby, each with its own difficulty (Easy, Medium, Hard), color and character; anyone in the lobby can add, change or remove them; always ready; they take one of the 10 places and play by the same rules, through the same actions, as people | A separate single-player mode or button; one difficulty for the whole game; bots that fill empty seats automatically | Requested (2026-09-28): single player, with the bots' difficulty settable (Easy, Medium, Hard). My choices: single player is just a game with bots (no separate mode, so bots also work in multiplayer games), difficulty per bot so a match can mix them, anyone can manage bots since there's no host, a newcomer's free color and a random character, and lobby only |
+| Bots don't start a match on their own | The match needs at least one connected, ready person; bots are always ready | Bots count like anyone | My addition: otherwise a lobby whose people had all dropped would start with only bots |
+| Spawn mercy for bots | Bots don't shoot or chase an enemy within 3 hexes of that enemy's own spawn spot (`BOT_SPAWN_MERCY_RADIUS`) | No protection | My addition, from simulation: a Hard bot scored 222 kills in 5 minutes by camping the others' respawns, which would feel awful to play against. It applies only to bots; people can still fight anywhere |
+| Difficulty as profiles | Each difficulty is a set of numbers (think rate, speed, look-ahead, reaction time, aim error and lead, fire rate, range, chasing, what to fabricate and in what order, building, upgrade switching); first-pass values tuned in headless simulations | Separate hand-written behavior per difficulty | One behavior with different numbers is easier to tune and keeps the difficulties consistent; `tools/bot-sim.js` plays a match in about 2 seconds, so a change can be compared on the same maps |

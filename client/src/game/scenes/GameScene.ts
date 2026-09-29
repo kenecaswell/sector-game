@@ -119,6 +119,9 @@ interface ProjectileView {
     wy: number;
 }
 
+/** Registry key destroyPhaserGame sets: the game is going, so its scene stops listening to the room. */
+export const GAME_DISPOSED_KEY = 'disposed';
+
 const AIM_MIN_DISTANCE = 6; // world px — closer than this to the player, keep the previous aim
 
 /**
@@ -254,20 +257,45 @@ export class GameScene extends Phaser.Scene {
 
         const $ = getStateCallbacks(this.room);
 
-        $(this.room.state).players.onAdd((player) => this.addPlayerView(player));
-        $(this.room.state).players.onRemove((_player, sessionId) => {
-            this.removePlayerView(sessionId);
-            this.claimsDirty = true; // a departing player's tiles are released without a tilesClaimed event
+        // The room outlives this scene, so every room listener is detached when the game goes:
+        // otherwise a dead scene still gets the room's changes and throws. Phaser only tears a game
+        // down on its next frame, and one destroyed while still booting (React StrictMode's
+        // throwaway first mount in dev) never does, so destroyPhaserGame also flags the game as
+        // disposed in its registry, which detaches at once (or never attaches, if it came first).
+        const detach: Array<() => void> = [];
+        const detachAll = () => detach.splice(0).forEach((stop) => stop());
+        const attach = () => {
+            detach.push(
+                $(this.room.state).players.onAdd((player) => this.addPlayerView(player)),
+                $(this.room.state).players.onRemove((_player, sessionId) => {
+                    this.removePlayerView(sessionId);
+                    this.claimsDirty = true; // a departing player's tiles are released without a tilesClaimed event
+                }),
+                $(this.room.state).projectiles.onAdd((projectile) =>
+                    this.addProjectileView(projectile)
+                ),
+                $(this.room.state).projectiles.onRemove((_projectile, id) =>
+                    this.removeProjectileView(id)
+                ),
+                $(this.room.state).structures.onAdd((structure) =>
+                    this.addStructureSprite(structure)
+                ),
+                $(this.room.state).structures.onRemove((_structure, id) =>
+                    this.removeStructureSprite(id)
+                ),
+                $(this.room.state).pickups.onAdd((pickup) => this.addPickupView(pickup)),
+                $(this.room.state).pickups.onRemove((_pickup, id) => this.removePickupView(id)),
+                this.room.onMessage('tilesClaimed', () => {
+                    this.claimsDirty = true;
+                })
+            );
+        };
+        if (!this.registry.get(GAME_DISPOSED_KEY)) attach();
+        this.registry.events.on('setdata', (_parent: unknown, key: string) => {
+            if (key === GAME_DISPOSED_KEY) detachAll();
         });
-
-        $(this.room.state).projectiles.onAdd((projectile) => this.addProjectileView(projectile));
-        $(this.room.state).projectiles.onRemove((_projectile, id) => this.removeProjectileView(id));
-
-        $(this.room.state).structures.onAdd((structure) => this.addStructureSprite(structure));
-        $(this.room.state).structures.onRemove((_structure, id) => this.removeStructureSprite(id));
-
-        $(this.room.state).pickups.onAdd((pickup) => this.addPickupView(pickup));
-        $(this.room.state).pickups.onRemove((_pickup, id) => this.removePickupView(id));
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, detachAll);
+        this.events.once(Phaser.Scenes.Events.DESTROY, detachAll);
 
         // Existing entities at scene-create time (server sends full state on join,
         // and onAdd only fires for changes *after* the callback is registered).
@@ -275,11 +303,6 @@ export class GameScene extends Phaser.Scene {
         this.room.state.projectiles.forEach((projectile) => this.addProjectileView(projectile));
         this.room.state.structures.forEach((structure) => this.addStructureSprite(structure));
         this.room.state.pickups.forEach((pickup) => this.addPickupView(pickup));
-
-        const stopListeningForClaims = this.room.onMessage('tilesClaimed', () => {
-            this.claimsDirty = true;
-        });
-        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => stopListeningForClaims());
 
         if (this.input.keyboard) {
             this.cursorKeys = this.input.keyboard.createCursorKeys();

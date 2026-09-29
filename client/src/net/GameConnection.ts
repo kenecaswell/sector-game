@@ -11,6 +11,9 @@
 import { Client, getStateCallbacks, type Room } from 'colyseus.js';
 import { SERVER_HTTP_URL, SERVER_URL } from './config';
 import type {
+    AddBotMessage,
+    RemoveBotMessage,
+    UpdateBotMessage,
     GameListing,
     GameOverEvent,
     GameSettings,
@@ -221,6 +224,20 @@ export function sendSetName(room: GameRoom, name: string): void {
 
 export function sendSetReady(room: GameRoom, ready: boolean): void {
     room.send<SetReadyMessage>('setReady', { ready });
+}
+
+/** Lobby only: add a bot of this difficulty (any player may; see BotSystem on the server). */
+export function sendAddBot(room: GameRoom, difficulty: AddBotMessage['difficulty']): void {
+    room.send<AddBotMessage>('addBot', { difficulty });
+}
+
+export function sendRemoveBot(room: GameRoom, botId: string): void {
+    room.send<RemoveBotMessage>('removeBot', { botId });
+}
+
+/** Lobby only: change a bot's difficulty, team or character (only the fields given). */
+export function sendUpdateBot(room: GameRoom, update: UpdateBotMessage): void {
+    room.send<UpdateBotMessage>('updateBot', update);
 }
 
 export { getStateCallbacks };

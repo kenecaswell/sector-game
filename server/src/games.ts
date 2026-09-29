@@ -12,7 +12,7 @@ import {
 } from './types/shared';
 
 /** What a GameRoom keeps in its matchmaker metadata for the list. */
-export type GameMetadata = GameSettings & { phase: GamePhase };
+export type GameMetadata = GameSettings & { phase: GamePhase; bots: number };
 
 /** A random code of GAME_CODE_LENGTH characters from GAME_CODE_ALPHABET. */
 export function randomGameCode(random: () => number = Math.random): string {
@@ -51,6 +51,7 @@ export function listingsFrom(rooms: readonly RoomSummary[]): GameListing[] {
         .filter((room) => !room.locked && !room.private && room.metadata?.mapSize)
         .map((room) => {
             const meta = room.metadata as GameMetadata;
+            const bots = meta.bots ?? 0;
             return {
                 code: room.roomId,
                 name: meta.name,
@@ -59,8 +60,10 @@ export function listingsFrom(rooms: readonly RoomSummary[]): GameListing[] {
                 pods: meta.pods,
                 matchMinutes: meta.matchMinutes,
                 phase: meta.phase,
-                players: room.clients,
-                maxPlayers: room.maxClients,
+                // Bots take seats without being clients (GameRoom lowers maxClients for them).
+                players: room.clients + bots,
+                bots,
+                maxPlayers: room.maxClients + bots,
             };
         })
         .sort(

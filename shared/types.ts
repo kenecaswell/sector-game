@@ -51,6 +51,52 @@ export interface SetNameMessage {
     name: string;
 }
 
+// Client -> Server, lobby phase only (not the countdown): computer-controlled players. Any player
+// in the lobby may add, change or remove bots (there's no host). Bots are always ready, so a lone
+// player plus bots is a single-player game. See docs/GAME_DESIGN.md → Bots.
+export interface AddBotMessage {
+    difficulty: BotDifficulty;
+}
+
+export interface RemoveBotMessage {
+    botId: string;
+}
+
+// Only the fields given are changed. `teamId` follows the same rules as a player's own pick (with
+// teams off, a color nobody else has).
+export interface UpdateBotMessage {
+    botId: string;
+    difficulty?: BotDifficulty;
+    teamId?: TeamId;
+    characterId?: CharacterId;
+}
+
+// --- Bots --------------------------------------------------------------------------------------
+// How well a bot plays. The server's tunables for each are BOT_PROFILES in server/src/constants.ts.
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
+
+export const BOT_DIFFICULTIES: Record<BotDifficulty, { name: string; description: string }> = {
+    easy: {
+        name: 'Easy',
+        description: 'Slow to react, a poor shot, and wanders. Rarely fabricates anything.',
+    },
+    medium: {
+        name: 'Medium',
+        description: 'Claims steadily, fabricates a gun early and fights what comes close.',
+    },
+    hard: {
+        name: 'Hard',
+        description: 'Claims efficiently, builds, leads its shots and hunts nearby players.',
+    },
+};
+
+export const BOT_DIFFICULTY_IDS = Object.keys(BOT_DIFFICULTIES) as BotDifficulty[];
+export const DEFAULT_BOT_DIFFICULTY: BotDifficulty = 'medium';
+
+export function isBotDifficulty(value: unknown): value is BotDifficulty {
+    return typeof value === 'string' && Object.hasOwn(BOT_DIFFICULTIES, value);
+}
+
 // Options sent when joining or creating a game. `name` is the player's saved name (localStorage),
 // if any. `game` only matters when creating one (client.create): its settings, cleaned up by
 // normalizeGameSettings on the server.
@@ -72,6 +118,7 @@ export const MAP_SIZES: Record<MapSizeId, { name: string; cols: number; rows: nu
 };
 export const MAP_SIZE_IDS = Object.keys(MAP_SIZES) as MapSizeId[];
 export const MATCH_LENGTH_OPTIONS = [5, 7, 10]; // minutes
+export const MAX_PLAYERS = 10; // people and bots together (one spawn slot each)
 export const GAME_NAME_MAX_LENGTH = 30;
 export const GAME_CODE_LENGTH = 4;
 export const GAME_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I
@@ -123,7 +170,8 @@ export function normalizeGameCode(value: string): string | null {
 // One game in the list (GET /games on the server): the open, unfinished ones.
 export interface GameListing extends GameSettings {
     code: string;
-    players: number;
+    players: number; // bots included
+    bots: number;
     maxPlayers: number;
     phase: GamePhase;
 }

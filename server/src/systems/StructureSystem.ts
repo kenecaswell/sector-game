@@ -1,6 +1,6 @@
-import type { GameState } from '../state/GameState';
+import { Structure, type GameState, type Player } from '../state/GameState';
 import type { Broadcast } from './Broadcast';
-import type { StructureDestroyedEvent } from '../types/shared';
+import { isStructureType, type StructureDestroyedEvent } from '../types/shared';
 import { hexIndex, inStructureFootprint, isValidHex, structureFootprint } from '../hex';
 
 /**
@@ -19,6 +19,28 @@ function canPlace(state: GameState, playerId: string, col: number, row: number):
             if (inStructureFootprint(hex.col, hex.row, other.tileX, other.tileY)) return false;
         }
     }
+    return true;
+}
+
+/**
+ * `player` places a structure of `type` from their inventory, centered on hex (col, row), if it's
+ * the match, they hold one, and `canPlace` allows the spot. One is used up. Returns whether it was
+ * placed. People place from GameRoom's `placeStructure` message, bots from BotSystem.
+ */
+function place(state: GameState, player: Player, type: unknown, col: number, row: number): boolean {
+    if (state.phase.phase !== 'playing' || !player.connected || !isStructureType(type))
+        return false;
+    const slot = player.structureInventory.indexOf(type);
+    if (slot === -1 || !canPlace(state, player.id, col, row)) return false;
+
+    const structure = new Structure();
+    structure.id = `struct-${col}-${row}`;
+    structure.ownerId = player.id;
+    structure.tileX = col;
+    structure.tileY = row;
+    structure.type = type;
+    player.structureInventory.splice(slot, 1);
+    state.structures.set(structure.id, structure);
     return true;
 }
 
@@ -42,4 +64,4 @@ function applyDamage(
     }
 }
 
-export const StructureSystem = { canPlace, applyDamage };
+export const StructureSystem = { canPlace, place, applyDamage };

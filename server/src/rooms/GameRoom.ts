@@ -1,5 +1,5 @@
 import { Room, Client } from 'colyseus';
-import { GameState, Player, Tile, Projectile, Structure } from '../state/GameState';
+import { GameState, Player, Tile } from '../state/GameState';
 import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
@@ -12,10 +12,17 @@ import { CharacterSystem } from '../systems/CharacterSystem';
 import { StructureSystem } from '../systems/StructureSystem';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { PickupSystem } from '../systems/PickupSystem';
+import { BotSystem } from '../systems/BotSystem';
 import { generatePickups } from '../pickups';
-import { freeSpawnSlot, generateTerrain, seededRandom, spawnHex, spawnPoint } from '../terrain';
+import { assignSpawn, generateTerrain, seededRandom } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
-import { TICK_RATE, RECONNECT_WINDOW_SECONDS, SCREEN_Y_SCALE, PICKUPS_ENABLED } from '../constants';
+import {
+    TICK_RATE,
+    RECONNECT_WINDOW_SECONDS,
+    SCREEN_Y_SCALE,
+    PICKUPS_ENABLED,
+    SPAWN_SLOTS,
+} from '../constants';
 import type {
     InputMessage,
     ShootMessage,
@@ -31,20 +38,16 @@ import type {
     SetNameMessage,
     JoinOptions,
     EquipUpgradeMessage,
+    AddBotMessage,
+    RemoveBotMessage,
+    UpdateBotMessage,
 } from '../types/shared';
-import {
-    GUN_DAMAGE,
-    MAP_SIZES,
-    isGunId,
-    isStructureType,
-    normalizeGameSettings,
-    type GamePhase,
-    type MapSizeId,
-} from '../types/shared';
+import { MAP_SIZES, normalizeGameSettings, type GamePhase, type MapSizeId } from '../types/shared';
 import { uniqueGameCode, type GameMetadata } from '../games';
 
 export class GameRoom extends Room<GameState> {
-    maxClients = 10;
+    // One seat per spawn slot; bots take seats too, so this drops as bots are added (syncBotSeats).
+    maxClients = SPAWN_SLOTS;
 
     // Per-player transient state that shouldn't be synced to clients, so it
     // lives outside the Colyseus schema rather than as @type fields. NOT named
@@ -52,7 +55,6 @@ export class GameRoom extends Room<GameState> {
     private playerInputs = new Map<string, PlayerInput>();
     private matchFinished = false;
     private closing = false;
-    private nextProjectileId = 0;
     private listedPhase: GamePhase = 'lobby';
 
     private readonly broadcastEvent: Broadcast = (type, payload) => this.broadcast(type, payload);
@@ -120,6 +122,30 @@ export class GameRoom extends Room<GameState> {
         this.onMessage<PurchaseMessage>('purchase', (client, msg) =>
             this.handlePurchase(client, msg)
         );
+        // Bots (lobby only; any player may manage them). See BotSystem.
+        this.onMessage<AddBotMessage>('addBot', (client, msg) =>
+            this.withPlayer(client, () => {
+                if (BotSystem.add(this.state, msg?.difficulty)) this.syncBotSeats();
+            })
+        );
+        this.onMessage<RemoveBotMessage>('removeBot', (client, msg) =>
+            this.withPlayer(client, () => {
+                if (BotSystem.remove(this.state, msg?.botId)) this.syncBotSeats();
+            })
+        );
+        this.onMessage<UpdateBotMessage>('updateBot', (client, msg) =>
+            this.withPlayer(client, () => BotSystem.configure(this.state, msg))
+        );
+    }
+
+    /**
+     * Bots fill spawn slots without being clients, so people get the seats that are left: the room
+     * reports full (and locks itself) once people plus bots reach SPAWN_SLOTS. The game list counts
+     * the bots from the metadata.
+     */
+    private syncBotSeats(): void {
+        this.maxClients = SPAWN_SLOTS - BotSystem.botCount(this.state);
+        this.updateListing();
     }
 
     onJoin(client: Client, options?: JoinOptions): void {
@@ -132,13 +158,7 @@ export class GameRoom extends Room<GameState> {
         // during the countdown cancels it, since the newcomer isn't ready yet.)
         if (this.state.phase.phase === 'playing') CharacterSystem.apply(player);
         // Start on the spawn line at the east edge (see terrain.ts → spawnHex).
-        player.spawnSlot = freeSpawnSlot(this.state);
-        const start = spawnPoint(this.state, player.spawnSlot);
-        player.x = start.x;
-        player.y = start.y;
-        const spawn = spawnHex(this.state.mapWidth, this.state.mapHeight, player.spawnSlot);
-        player.spawnTileX = spawn.col;
-        player.spawnTileY = spawn.row;
+        assignSpawn(this.state, player);
 
         this.state.players.set(client.sessionId, player);
     }
@@ -237,12 +257,14 @@ export class GameRoom extends Room<GameState> {
             pods: settings.pods,
             matchMinutes: settings.matchMinutes,
             phase: phase.phase,
+            bots: BotSystem.botCount(this.state),
         } satisfies GameMetadata);
         this.listedPhase = phase.phase;
     }
 
     private tick(dt: number): void {
         LobbySystem.update(this.state, this.broadcastEvent);
+        BotSystem.update(this.state, this.playerInputs); // sets bots' inputs before anyone moves
         MovementSystem.update(this.state, this.playerInputs, dt);
         CollisionSystem.update(this.state, this.broadcastEvent);
         PickupSystem.update(this.state, this.broadcastEvent);
@@ -281,44 +303,15 @@ export class GameRoom extends Room<GameState> {
 
     private handleShoot(client: Client, msg: ShootMessage): void {
         const player = this.state.players.get(client.sessionId);
-        if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
-        if (player.gun === '' || player.ammo <= 0) return;
-
-        player.ammo--;
-
-        const projectile = new Projectile();
-        projectile.id = `${client.sessionId}-${this.nextProjectileId++}`;
-        projectile.ownerId = client.sessionId;
-        projectile.x = player.x;
-        projectile.y = player.y;
-        projectile.angle = msg.angle;
-        projectile.spawnedAt = Date.now();
-        projectile.damage = GUN_DAMAGE[isGunId(player.gun) ? player.gun : 'basic'];
-
-        this.state.projectiles.set(projectile.id, projectile);
+        if (player) CombatSystem.fire(this.state, player, msg?.angle);
     }
 
+    /** From the player's structure inventory; the whole 7-hex footprint must be theirs and free. */
     private handlePlaceStructure(client: Client, msg: PlaceStructureMessage): void {
         const player = this.state.players.get(client.sessionId);
-        if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
-
-        // Structures come out of the player's inventory (their character's starting kit, for now).
-        if (!isStructureType(msg.structureType)) return;
-        const slot = player.structureInventory.indexOf(msg.structureType);
-        if (slot === -1) return;
-
-        // The whole 7-hex footprint must be yours, on the map, and free.
-        if (!StructureSystem.canPlace(this.state, client.sessionId, msg.tileX, msg.tileY)) return;
-
-        const structure = new Structure();
-        structure.id = `struct-${msg.tileX}-${msg.tileY}`;
-        structure.ownerId = client.sessionId;
-        structure.tileX = msg.tileX;
-        structure.tileY = msg.tileY;
-        structure.type = msg.structureType;
-
-        player.structureInventory.splice(slot, 1);
-        this.state.structures.set(structure.id, structure);
+        if (player) {
+            StructureSystem.place(this.state, player, msg?.structureType, msg?.tileX, msg?.tileY);
+        }
     }
 
     /** Buying happens during the match only (there's no separate shopping phase). */

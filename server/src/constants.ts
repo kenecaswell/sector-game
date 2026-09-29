@@ -5,6 +5,7 @@
 // in shared/constants.ts and are re-exported here.
 
 import { PLAYER_RADIUS } from '../../shared/constants';
+import { MAX_PLAYERS, type BotDifficulty, type ShopItemId } from '../../shared/types';
 
 export * from '../../shared/constants';
 
@@ -95,8 +96,8 @@ export const SPAWN_CLEAR_RADIUS = 3;
 
 // Spawn line (see terrain.ts → spawnHex): one spawn hex per slot, in a column this many hexes in from
 // the right-hand (east) edge. Slot 0 is the middle row; later slots alternate above and below it,
-// SPAWN_ROW_SPACING rows apart. SPAWN_SLOTS matches GameRoom.maxClients.
-export const SPAWN_SLOTS = 10;
+// SPAWN_ROW_SPACING rows apart. SPAWN_SLOTS is GameRoom's player limit (people and bots).
+export const SPAWN_SLOTS = MAX_PLAYERS;
 export const SPAWN_EDGE_INSET = 3;
 export const SPAWN_ROW_SPACING = 6;
 
@@ -141,3 +142,150 @@ export const PICKUP_TIER_CHANCES: Record<PickupOutcome, number>[] = [
 ];
 export const PICKUP_MATERIALS = { min: 10, max: 50 };
 export const PICKUP_AMMO = { min: 10, max: 30 };
+
+// Bots: computer-controlled players, added in the lobby (see BotSystem and docs/GAME_DESIGN.md →
+// Bots). Each difficulty is a profile of these knobs; distances are on-screen px (world y scaled
+// by SCREEN_Y_SCALE), like shot range.
+export interface BotProfile {
+    thinkMs: number; // how often it re-decides where to go (steering follows its route every tick)
+    speed: number; // how hard it pushes the stick, 0..1 (1 = top speed)
+    searchDepth: number; // how many hexes away it looks for ground to claim or a pod to open
+    goalNoise: number; // randomness in picking where to go (0 = always the best-looking spot)
+    idleChance: number; // chance, each time it thinks, of dawdling for idleMs
+    idleMs: number;
+    reactionMs: number; // an enemy must be in its sights this long before it fires
+    aimError: number; // radians: its shots stray up to this far either side
+    lead: number; // 0..1: how much of a moving target's motion it aims ahead for
+    fireIntervalMs: number; // at most one shot this often
+    range: number; // it shoots at enemies this close (a shot flies 1,200)
+    chaseRange: number; // armed, it goes after enemies this close (0 = never chases)
+    keepDistance: number; // while chasing, it stops closing in at this distance
+    strafe: boolean; // while chasing, it circles its target instead of standing still
+    shootStructures: boolean; // it shoots enemy structures in range when no enemy player is
+    retreatHealth: number; // below this share of its health it stops chasing
+    shopMs: number; // how often it considers fabricating something
+    ammoLow: number; // holding a gun, it fabricates ammo first when it has fewer shots than this
+    // What it fabricates, in order: an upgrade listed twice means level 2, a structure listed twice
+    // means two of them. With `saveUp` it waits for the next item on the list; without, it skips
+    // to anything further down it can afford.
+    shopPlan: ShopItemId[];
+    saveUp: boolean;
+    keepBuilding: boolean; // once the list is done, it fabricates a fort whenever it has none to place
+    buildSites: boolean; // holding a structure, it claims the hexes a spot needs (else it only places where it happens to own 7)
+    // Which upgrade it keeps in its slot: 'never' switches (keeps whatever equipped itself first),
+    // 'expander' equips the Expander once it has one, 'smart' also switches to the Booster to chase.
+    equip: 'never' | 'expander' | 'smart';
+}
+
+export const BOT_PROFILES: Record<BotDifficulty, BotProfile> = {
+    easy: {
+        thinkMs: 600,
+        speed: 0.75,
+        searchDepth: 6,
+        goalNoise: 1,
+        idleChance: 0.05,
+        idleMs: 1000,
+        reactionMs: 1000,
+        aimError: 0.35,
+        lead: 0,
+        fireIntervalMs: 800,
+        range: 380,
+        chaseRange: 0,
+        keepDistance: 0,
+        strafe: false,
+        shootStructures: false,
+        retreatHealth: 0,
+        shopMs: 8000,
+        ammoLow: 5,
+        shopPlan: ['basicGun', 'farm', 'armor', 'booster'],
+        saveUp: false,
+        keepBuilding: false,
+        buildSites: false,
+        equip: 'never',
+    },
+    medium: {
+        thinkMs: 300,
+        speed: 0.85,
+        searchDepth: 8,
+        goalNoise: 0.5,
+        idleChance: 0,
+        idleMs: 0,
+        reactionMs: 500,
+        aimError: 0.14,
+        lead: 0.5,
+        fireIntervalMs: 400,
+        range: 520,
+        chaseRange: 420,
+        keepDistance: 200,
+        strafe: false,
+        shootStructures: true,
+        retreatHealth: 0.3,
+        shopMs: 3000,
+        ammoLow: 10,
+        shopPlan: ['basicGun', 'armor', 'expander', 'fort', 'booster', 'bigGun', 'armor', 'fort'],
+        saveUp: true,
+        keepBuilding: true,
+        buildSites: true,
+        equip: 'expander',
+    },
+    hard: {
+        thinkMs: 150,
+        speed: 1,
+        searchDepth: 14,
+        goalNoise: 0.08,
+        idleChance: 0,
+        idleMs: 0,
+        reactionMs: 220,
+        aimError: 0.05,
+        lead: 1,
+        fireIntervalMs: 250,
+        range: 650,
+        chaseRange: 650,
+        keepDistance: 260,
+        strafe: true,
+        shootStructures: true,
+        retreatHealth: 0.35,
+        shopMs: 1000,
+        ammoLow: 20,
+        shopPlan: [
+            'expander',
+            'basicGun',
+            'armor',
+            'fort',
+            'expander',
+            'bigGun',
+            'armor',
+            'fort',
+            'booster',
+            'expander',
+            'armor',
+            'fort',
+            'fort',
+            'fort',
+        ],
+        saveUp: true,
+        keepBuilding: true,
+        buildSites: true,
+        equip: 'smart',
+    },
+};
+
+// Bots leave an enemy alone (don't chase or shoot them) while they're within this many hexes of
+// their own spawn hex, so a bot can't camp a spawn point. People get no such protection from people.
+export const BOT_SPAWN_MERCY_RADIUS = SPAWN_CLEAR_RADIUS;
+
+// Bots are named "Bot <name>", the first of these no player in the room has (then "Bot 11", ...).
+export const BOT_NAMES = [
+    'Cassini',
+    'Huygens',
+    'Kepler',
+    'Tycho',
+    'Halley',
+    'Galileo',
+    'Hubble',
+    'Sagan',
+    'Vega',
+    'Rhea',
+    'Mimas',
+    'Dione',
+];

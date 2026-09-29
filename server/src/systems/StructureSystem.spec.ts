@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hexNeighbors, structureFootprint } from '../hex';
-import { addStructure, ownFootprint, tileAt, world } from '../test/world';
+import { addPlayer, addStructure, ownFootprint, tileAt, world } from '../test/world';
 import { StructureSystem } from './StructureSystem';
 
 describe('StructureSystem.canPlace', () => {
@@ -64,5 +64,24 @@ describe('StructureSystem.applyDamage', () => {
 
     it('ignores an unknown structure', () => {
         expect(() => StructureSystem.applyDamage(world(), 'nope', 50)).not.toThrow();
+    });
+});
+
+describe('StructureSystem.place', () => {
+    it('places one from the inventory where canPlace allows, using it up', () => {
+        const state = world();
+        const player = addPlayer(state, 'a');
+        player.structureInventory.push('farm', 'fort');
+        expect(StructureSystem.place(state, player, 'fort', 20, 20)).toBe(false); // not theirs yet
+        ownFootprint(state, 'a', 20, 20);
+        expect(StructureSystem.place(state, player, 'power', 20, 20)).toBe(false); // none held
+        expect(StructureSystem.place(state, player, 'fort', 20, 20)).toBe(true);
+        expect(Array.from(player.structureInventory)).toEqual(['farm']);
+        expect(Array.from(state.structures.values())).toMatchObject([
+            { ownerId: 'a', tileX: 20, tileY: 20, type: 'fort' },
+        ]);
+        state.phase.phase = 'results';
+        ownFootprint(state, 'a', 30, 30);
+        expect(StructureSystem.place(state, player, 'farm', 30, 30)).toBe(false);
     });
 });
