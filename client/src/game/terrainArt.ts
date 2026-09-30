@@ -373,3 +373,143 @@ export function pebbles(center: Pt, seed: number): Array<[number, number, number
         ];
     });
 }
+
+// --- Ground -----------------------------------------------------------------------------------
+// Titan's plains: slate ice, dusted in drifting patches of reddish-brown tholin (the organic haze
+// that settles out of its sky). Each tile gets a subtle texture: ice grains, dark and maroon specks,
+// now and then a hairline crack or a patch of frost, and a soft bevel so tiles read as sleek panels.
+
+export const GROUND_SLATE = 0x3a4763; // HEX_TOP_COLOR: the base
+export const GROUND_BROWN = 0x4b4249; // warm brown-gray dust
+export const GROUND_MAROON = 0x503546; // deeper maroon deposits
+export const ICE_GRAIN_COLOR = 0xdde6f0;
+export const DARK_GRAIN_COLOR = 0x222a3b;
+export const THOLIN_GRAIN_COLOR = 0x7c4049;
+export const CRACK_COLOR = 0x212838;
+export const FROST_COLOR = 0xe6edf5;
+// Patch sizes (scene px) of the two noise layers: broad brown drifts, smaller maroon deposits.
+const BROWN_PATCH_SCALE = 300;
+const MAROON_PATCH_SCALE = 150;
+
+/** A pseudo-random number in [0, 1) for a lattice point (ix, iy) and a seed. */
+function latticeRandom(ix: number, iy: number, seed: number): number {
+    return hexSeed(Math.imul(ix, 73856093) ^ Math.imul(iy, 19349663), seed) / 4294967296;
+}
+
+/** Smooth value noise in [0, 1): gentle hills of `scale` px, the same for the same seed. */
+export function valueNoise(x: number, y: number, scale: number, seed: number): number {
+    const fx = x / scale;
+    const fy = y / scale;
+    const ix = Math.floor(fx);
+    const iy = Math.floor(fy);
+    const smooth = (t: number) => t * t * (3 - 2 * t);
+    const tx = smooth(fx - ix);
+    const ty = smooth(fy - iy);
+    const top = latticeRandom(ix, iy, seed) * (1 - tx) + latticeRandom(ix + 1, iy, seed) * tx;
+    const bottom =
+        latticeRandom(ix, iy + 1, seed) * (1 - tx) + latticeRandom(ix + 1, iy + 1, seed) * tx;
+    return top * (1 - ty) + bottom * ty;
+}
+
+/** 0 below `from`, 1 above `to`, a smooth ramp between. */
+function ramp(value: number, from: number, to: number): number {
+    const t = Math.max(0, Math.min(1, (value - from) / (to - from)));
+    return t * t * (3 - 2 * t);
+}
+
+/**
+ * The top color of a ground hex centered on `center` (scene px): slate, drifting toward brown and
+ * maroon where the dust lies (smooth patches spanning several hexes), plus a hint of per-hex
+ * variation. `index` is the hex's tile index.
+ */
+export function groundColor(center: Pt, index: number): number {
+    const brown = ramp(valueNoise(center.x, center.y, BROWN_PATCH_SCALE, 11), 0.45, 0.85) * 0.6;
+    const maroon = ramp(valueNoise(center.x, center.y, MAROON_PATCH_SCALE, 12), 0.62, 0.9) * 0.55;
+    let color = mixColor(GROUND_SLATE, GROUND_BROWN, brown);
+    color = mixColor(color, GROUND_MAROON, maroon);
+    const tint = seededRandom(hexSeed(index, 13))();
+    return tint < 0.5
+        ? mixColor(color, 0x000000, (0.5 - tint) * 0.08)
+        : mixColor(color, 0xffffff, (tint - 0.5) * 0.05);
+}
+
+export interface GroundDetails {
+    grains: Array<{ x: number; y: number; r: number; color: number; alpha: number }>;
+    cracks: Pt[][];
+    frost: Array<{ x: number; y: number; w: number; h: number }>;
+}
+
+/**
+ * The texture of one ground hex centered on `center`: a few grains (ice-white, dark, or maroon
+ * where the ground is dusty), sometimes a hairline crack, sometimes a faint patch of frost. All
+ * inside the hex's top and all faint, so the ground stays calm. `dust` (0..1) is how brown/maroon
+ * this hex is, which makes maroon grains likelier.
+ */
+export function groundDetails(center: Pt, index: number, dust: number): GroundDetails {
+    const random = seededRandom(hexSeed(index, 14));
+    // A point within the hex top: an ellipse well inside it (the top is ~64 x 33 px on screen).
+    const inside = (rx: number, ry: number): Pt => {
+        const angle = random() * Math.PI * 2;
+        const radius = Math.sqrt(random());
+        return {
+            x: center.x + Math.cos(angle) * rx * radius,
+            y: center.y + Math.sin(angle) * ry * radius,
+        };
+    };
+    const grains: GroundDetails['grains'] = [];
+    const count = 4 + Math.floor(random() * 6);
+    for (let k = 0; k < count; k++) {
+        const p = inside(22, 11);
+        const kind = random();
+        if (kind < 0.45) {
+            grains.push({
+                ...p,
+                r: 0.7 + random() * 0.6,
+                color: ICE_GRAIN_COLOR,
+                alpha: 0.12 + random() * 0.1,
+            });
+        } else if (kind < 0.45 + 0.35 * (0.4 + dust)) {
+            grains.push({
+                ...p,
+                r: 0.9 + random() * 0.9,
+                color: THOLIN_GRAIN_COLOR,
+                alpha: 0.25 + random() * 0.15,
+            });
+        } else {
+            grains.push({
+                ...p,
+                r: 0.8 + random() * 0.8,
+                color: DARK_GRAIN_COLOR,
+                alpha: 0.2 + random() * 0.15,
+            });
+        }
+    }
+    const cracks: Pt[][] = [];
+    if (random() < 0.28) {
+        let p = inside(14, 7);
+        let angle = random() * Math.PI * 2;
+        const crack = [p];
+        const segments = 2 + Math.floor(random() * 3);
+        for (let k = 0; k < segments; k++) {
+            angle += (random() * 2 - 1) * 0.9;
+            const length = 4 + random() * 5;
+            p = { x: p.x + Math.cos(angle) * length, y: p.y + Math.sin(angle) * length * 0.55 };
+            crack.push(p);
+        }
+        cracks.push(crack);
+    }
+    const frost: GroundDetails['frost'] = [];
+    if (random() < 0.14) {
+        const p = inside(12, 6);
+        frost.push({ ...p, w: 12 + random() * 10, h: 5 + random() * 3 });
+    }
+    return { grains, cracks, frost };
+}
+
+/** How dusty (brown/maroon) the ground is at `center`, 0..1: for groundDetails. */
+export function groundDust(center: Pt): number {
+    return Math.max(
+        ramp(valueNoise(center.x, center.y, BROWN_PATCH_SCALE, 11), 0.45, 0.85),
+        ramp(valueNoise(center.x, center.y, MAROON_PATCH_SCALE, 12), 0.62, 0.9)
+    );
+}

@@ -11,6 +11,11 @@ import { drawDropPod, drawDropPodGlow } from '../pickups';
 import { drawBackpack, drawBackpackRing } from '../backpack';
 import { drawSpawnPad } from '../spawnPad';
 import {
+    CRACK_COLOR,
+    FROST_COLOR,
+    groundColor,
+    groundDetails,
+    groundDust,
     DEEP_BANK_HEIGHT,
     DEEP_WATER_COLOR,
     DEEP_WATER_DARK,
@@ -620,7 +625,6 @@ export class GameScene extends Phaser.Scene {
      */
     private drawBase(): void {
         const { mapWidth, mapHeight, tiles } = this.room.state;
-        const g = this.make.graphics({}, false);
         const terrainAt = (col: number, row: number): number =>
             isValidHex(col, row, mapWidth, mapHeight)
                 ? (tiles[hexIndex(col, row, mapWidth)]?.terrain ?? TERRAIN.ground)
@@ -628,84 +632,141 @@ export class GameScene extends Phaser.Scene {
         const isWater = (col: number, row: number) => terrainAt(col, row) === TERRAIN.water;
         // Shallow (wadeable) water is derived from its shape, the same way the server decides it.
         const shallow = (col: number, row: number) => isShallowWater(isWater, col, row);
-        // Deep water darkens toward the middle of a lake (more water around it), with a little
-        // variation hex to hex so a lake isn't one flat color.
-        const topColor = (terrain: number, col: number, row: number): number => {
+        // Ground is slate with drifts of brown and maroon dust (terrainArt.groundColor). Deep water
+        // darkens toward the middle of a lake (more water around it), with a little variation hex
+        // to hex so a lake isn't one flat color.
+        const topColor = (terrain: number, col: number, row: number, center: Point): number => {
+            const index = hexIndex(col, row, mapWidth);
             if (terrain === TERRAIN.mountain) return SCREE_COLOR;
-            if (terrain !== TERRAIN.water) return HEX_TOP_COLOR;
+            if (terrain !== TERRAIN.water) return groundColor(center, index);
             if (shallow(col, row)) return SHALLOW_WATER_COLOR;
             const wet = hexNeighbors(col, row).filter((n) => isWater(n.col, n.row)).length;
-            const jitter = seededRandom(hexSeed(hexIndex(col, row, mapWidth), 1))() * 0.15;
+            const jitter = seededRandom(hexSeed(index, 1))() * 0.15;
             return mixColor(DEEP_WATER_COLOR, DEEP_WATER_DARK, (wet / 6) * 0.6 + jitter);
         };
 
-        const order: Array<{ col: number; row: number; y: number }> = [];
+        const order: Array<{ col: number; row: number; center: Point }> = [];
         for (let row = 0; row < mapHeight; row++) {
             for (let col = 0; col < mapWidth; col++) {
-                order.push({ col, row, y: hexCenter(col, row).y });
+                const c = hexCenter(col, row);
+                order.push({ col, row, center: project(c.x, c.y) });
             }
         }
-        order.sort((a, b) => a.y - b.y || a.col - b.col);
+        order.sort((a, b) => a.center.y - b.center.y || a.col - b.col);
 
-        for (const { col, row } of order) {
-            const corners = this.hexCornerCache[hexIndex(col, row, mapWidth)];
-            const terrain = terrainAt(col, row);
+        // How far a hex's drawing reaches from its center (scene px), to find the hexes each tile
+        // needs: its top, and below it the cliff face and a bank.
+        const halfHeight = ((HEX_SIZE * Math.sqrt(3)) / 2) * ISO_SQUASH;
+        const reachUp = halfHeight + 2;
+        const reachDown = halfHeight + HEX_DEPTH + DEEP_BANK_HEIGHT + 2;
+        const reachSide = HEX_SIZE + 2;
 
-            // Only the three lower edges (right, bottom, left) show a cliff face.
-            for (let i = 0; i < 3; i++) {
-                const a = corners[i];
-                const b = corners[i + 1];
-                g.fillStyle(i === 1 ? HEX_SIDE_DARK_COLOR : HEX_SIDE_COLOR, 1);
-                g.fillPoints(
-                    [
-                        a,
-                        b,
-                        new Phaser.Math.Vector2(b.x, b.y + HEX_DEPTH),
-                        new Phaser.Math.Vector2(a.x, a.y + HEX_DEPTH),
-                    ],
-                    true
-                );
-            }
-
-            g.fillStyle(topColor(terrain, col, row), 1);
-            g.fillPoints(corners, true);
-            if (terrain === TERRAIN.water) {
-                this.drawBanks(g, col, row, corners, shallow(col, row), isWater);
-            }
-            if (terrain !== TERRAIN.ground) continue; // its details come in the second pass
-            g.lineStyle(1, HEX_OUTLINE_COLOR, 0.6);
-            this.forEachEdge(col, row, corners, (a, b, neighbor) => {
-                if (terrainAt(neighbor.col, neighbor.row) === TERRAIN.ground)
-                    g.lineBetween(a.x, a.y, b.x, b.y);
-            });
-        }
-
-        // Second pass: the details of mountain and water hexes, over every top, so no neighbor's
-        // top paints over them. (Each mountain itself is a sprite of its own: buildMountains.)
-        for (const { col, row } of order) {
-            const terrain = terrainAt(col, row);
-            if (terrain === TERRAIN.ground) continue;
-            const index = hexIndex(col, row, mapWidth);
-            const corners = this.hexCornerCache[index];
-            const center = project(hexCenter(col, row).x, hexCenter(col, row).y);
-            if (terrain === TERRAIN.mountain) {
-                // Scree under the mountain: a few darker stones.
-                g.fillStyle(SCREE_SPECK_COLOR, 0.8);
-                for (const [x, y, w, h] of pebbles(center, hexSeed(index, 2))) {
-                    g.fillEllipse(x, y, w, h);
-                }
-                continue;
-            }
-            this.drawWaterDetails(g, col, row, corners, center, shallow(col, row), isWater);
-        }
-
-        // Bake into every tile, each drawing the same graphics shifted to its own position.
+        // Each tile is baked from a drawing of only the hexes that touch it (one drawing of the whole
+        // map, replayed into every tile, would cost several times as much on a Big or Large map).
         for (const tile of this.baseTiles) {
+            const g = this.make.graphics({}, false);
+            const hexes = order.filter(
+                ({ center }) =>
+                    center.x + reachSide >= tile.x &&
+                    center.x - reachSide <= tile.x + tile.width &&
+                    center.y + reachDown >= tile.y &&
+                    center.y - reachUp <= tile.y + tile.height
+            );
+
+            for (const { col, row, center } of hexes) {
+                const corners = this.hexCornerCache[hexIndex(col, row, mapWidth)];
+                const terrain = terrainAt(col, row);
+
+                // Only the three lower edges (right, bottom, left) show a cliff face.
+                for (let i = 0; i < 3; i++) {
+                    const a = corners[i];
+                    const b = corners[i + 1];
+                    g.fillStyle(i === 1 ? HEX_SIDE_DARK_COLOR : HEX_SIDE_COLOR, 1);
+                    g.fillPoints(
+                        [
+                            a,
+                            b,
+                            new Phaser.Math.Vector2(b.x, b.y + HEX_DEPTH),
+                            new Phaser.Math.Vector2(a.x, a.y + HEX_DEPTH),
+                        ],
+                        true
+                    );
+                }
+
+                g.fillStyle(topColor(terrain, col, row, center), 1);
+                g.fillPoints(corners, true);
+                if (terrain === TERRAIN.water) {
+                    this.drawBanks(g, col, row, corners, shallow(col, row), isWater);
+                }
+                if (terrain !== TERRAIN.ground) continue; // its details come in the second pass
+                this.drawGroundDetails(g, col, row, corners, center);
+                g.lineStyle(1, HEX_OUTLINE_COLOR, 0.6);
+                this.forEachEdge(col, row, corners, (a, b, neighbor) => {
+                    if (terrainAt(neighbor.col, neighbor.row) === TERRAIN.ground)
+                        g.lineBetween(a.x, a.y, b.x, b.y);
+                });
+            }
+
+            // Second pass: the details of mountain and water hexes, over every top, so no
+            // neighbor's top paints over them. (Each mountain itself is a sprite: buildMountains.)
+            for (const { col, row, center } of hexes) {
+                const terrain = terrainAt(col, row);
+                if (terrain === TERRAIN.ground) continue;
+                const index = hexIndex(col, row, mapWidth);
+                const corners = this.hexCornerCache[index];
+                if (terrain === TERRAIN.mountain) {
+                    // Scree under the mountain: a few darker stones.
+                    g.fillStyle(SCREE_SPECK_COLOR, 0.8);
+                    for (const [x, y, w, h] of pebbles(center, hexSeed(index, 2))) {
+                        g.fillEllipse(x, y, w, h);
+                    }
+                    continue;
+                }
+                this.drawWaterDetails(g, col, row, corners, center, shallow(col, row), isWater);
+            }
+
             tile.clear();
             tile.draw(g, -tile.x, -tile.y);
             tile.render();
+            g.destroy();
         }
-        g.destroy();
+    }
+
+    /**
+     * A ground hex's texture, over its top: faint grains, an occasional hairline crack or patch of
+     * frost (terrainArt.groundDetails), and a soft bevel (a light line inside its upper edges, a
+     * shadow inside its lower ones) so each tile reads as a sleek panel.
+     */
+    private drawGroundDetails(
+        g: Phaser.GameObjects.Graphics,
+        col: number,
+        row: number,
+        corners: Phaser.Math.Vector2[],
+        center: Point
+    ): void {
+        const index = hexIndex(col, row, this.room.state.mapWidth);
+        const { grains, cracks, frost } = groundDetails(center, index, groundDust(center));
+        for (const patch of frost) {
+            g.fillStyle(FROST_COLOR, 0.05);
+            g.fillEllipse(patch.x, patch.y, patch.w, patch.h);
+        }
+        for (const crack of cracks) {
+            g.lineStyle(1, CRACK_COLOR, 0.3);
+            g.strokePoints(crack as Phaser.Math.Vector2[], false);
+        }
+        for (const grain of grains) {
+            g.fillStyle(grain.color, grain.alpha);
+            g.fillCircle(grain.x, grain.y, grain.r);
+        }
+        // The bevel, just inside the edges: corners 3-4-5-0 run along the top, 0-1-2-3 the bottom.
+        const inset = corners.map(
+            (p) =>
+                new Phaser.Math.Vector2(p.x + (center.x - p.x) * 0.07, p.y + (center.y - p.y) * 0.1)
+        );
+        g.lineStyle(1.2, 0xffffff, 0.07);
+        g.strokePoints([inset[3], inset[4], inset[5], inset[0]], false);
+        g.lineStyle(1.2, 0x000000, 0.12);
+        g.strokePoints([inset[0], inset[1], inset[2], inset[3]], false);
     }
 
     /**
@@ -962,10 +1023,11 @@ export class GameScene extends Phaser.Scene {
             const ownerColor = Phaser.Display.Color.HexStringToColor(
                 owner.color || '#ffffff'
             ).color;
-            // The fill covers the base layer's outline, so draw a border again — otherwise
+            // The tint washes out the base layer's outline, so draw a border again — otherwise
             // a group of same-colored hexes merges into one blob.
+            // The owner's color at CLAIM_BLEND strength, see-through so the ground's texture shows.
             const fill = blendColors(HEX_TOP_COLOR, ownerColor, CLAIM_BLEND);
-            g.fillStyle(fill, 1);
+            g.fillStyle(ownerColor, CLAIM_BLEND);
             g.fillPoints(this.hexCornerCache[i], true);
             g.lineStyle(CLAIM_BORDER_WIDTH, blendColors(fill, 0x000000, CLAIM_BORDER_DARKEN), 1);
             g.strokePoints(this.hexCornerCache[i], true);
