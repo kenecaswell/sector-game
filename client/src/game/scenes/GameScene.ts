@@ -10,6 +10,26 @@ import type {
 import { drawDropPod, drawDropPodGlow } from '../pickups';
 import { drawBackpack, drawBackpackRing } from '../backpack';
 import { drawSpawnPad } from '../spawnPad';
+import {
+    DEEP_BANK_HEIGHT,
+    DEEP_WATER_COLOR,
+    DEEP_WATER_DARK,
+    FOAM_COLOR,
+    RIPPLE_COLOR,
+    SCREE_COLOR,
+    SCREE_SPECK_COLOR,
+    SHALLOW_BANK_HEIGHT,
+    SHALLOW_BED_COLOR,
+    SHALLOW_WATER_COLOR,
+    SPARKLE_COLOR,
+    drawMountain,
+    hexSeed,
+    mixColor,
+    mountainModel,
+    pebbles,
+    rippleMarks,
+    seededRandom,
+} from '../terrainArt';
 import { GUN_DAMAGE, TERRAIN } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
 import { isShallowWater } from '../terrain';
@@ -29,13 +49,6 @@ import {
     FIRE_INTERVAL_MS,
     HEX_DEPTH,
     HEX_OUTLINE_COLOR,
-    MOUNTAIN_BORDER_COLOR,
-    MOUNTAIN_BORDER_WIDTH,
-    MOUNTAIN_TOP_COLOR,
-    WATER_DOT_RADIUS,
-    WATER_DOT_SPACING,
-    SHALLOW_WATER_TOP_COLOR,
-    WATER_TOP_COLOR,
     HEX_SIDE_COLOR,
     HEX_SIDE_DARK_COLOR,
     HEX_SIZE,
@@ -260,6 +273,8 @@ export class GameScene extends Phaser.Scene {
             .setVisible(false);
         this.buildHexCornerCache();
         this.drawBase();
+        this.buildMountains();
+        this.addWaterSparkles();
         this.buildClaimChunks(layerWidth, layerHeight);
 
         const $ = getStateCallbacks(this.room);
@@ -596,16 +611,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     /**
-     * Draws every hex once: cliff faces first, then the top, tiles sorted from
-     * back (top of screen) to front so a nearer tile's top covers the face of
-     * the tile behind it. Claim tints are separate chunked layers (syncClaims), so this
-     * never has to be redrawn.
-     */
-    /**
      * Bakes the terrain into the base layer once: every hex's cliff face and top (colored by its
-     * terrain), then borders. Ground hexes outline only edges shared with other ground; the edges
-     * of mountain and water hexes are drawn in a second pass in their own style (thin gray for
-     * mountains, dotted for water), so a neighbor's solid outline never paints over them.
+     * terrain), back (top of screen) to front so a nearer tile's top covers the face of the tile
+     * behind it. Ground hexes outline only edges shared with other ground. A second pass adds the
+     * details of mountain hexes (scree) and water (its bed, ripples, banks and foam; see
+     * drawWaterDetails). The mountains themselves are sprites (buildMountains), and claim tints are
+     * separate chunked layers (syncClaims), so this never has to be redrawn.
      */
     private drawBase(): void {
         const { mapWidth, mapHeight, tiles } = this.room.state;
@@ -616,10 +627,16 @@ export class GameScene extends Phaser.Scene {
                 : TERRAIN.ground;
         const isWater = (col: number, row: number) => terrainAt(col, row) === TERRAIN.water;
         // Shallow (wadeable) water is derived from its shape, the same way the server decides it.
+        const shallow = (col: number, row: number) => isShallowWater(isWater, col, row);
+        // Deep water darkens toward the middle of a lake (more water around it), with a little
+        // variation hex to hex so a lake isn't one flat color.
         const topColor = (terrain: number, col: number, row: number): number => {
-            if (terrain === TERRAIN.mountain) return MOUNTAIN_TOP_COLOR;
+            if (terrain === TERRAIN.mountain) return SCREE_COLOR;
             if (terrain !== TERRAIN.water) return HEX_TOP_COLOR;
-            return isShallowWater(isWater, col, row) ? SHALLOW_WATER_TOP_COLOR : WATER_TOP_COLOR;
+            if (shallow(col, row)) return SHALLOW_WATER_COLOR;
+            const wet = hexNeighbors(col, row).filter((n) => isWater(n.col, n.row)).length;
+            const jitter = seededRandom(hexSeed(hexIndex(col, row, mapWidth), 1))() * 0.15;
+            return mixColor(DEEP_WATER_COLOR, DEEP_WATER_DARK, (wet / 6) * 0.6 + jitter);
         };
 
         const order: Array<{ col: number; row: number; y: number }> = [];
@@ -652,7 +669,10 @@ export class GameScene extends Phaser.Scene {
 
             g.fillStyle(topColor(terrain, col, row), 1);
             g.fillPoints(corners, true);
-            if (terrain !== TERRAIN.ground) continue; // bordered in the second pass
+            if (terrain === TERRAIN.water) {
+                this.drawBanks(g, col, row, corners, shallow(col, row), isWater);
+            }
+            if (terrain !== TERRAIN.ground) continue; // its details come in the second pass
             g.lineStyle(1, HEX_OUTLINE_COLOR, 0.6);
             this.forEachEdge(col, row, corners, (a, b, neighbor) => {
                 if (terrainAt(neighbor.col, neighbor.row) === TERRAIN.ground)
@@ -660,31 +680,23 @@ export class GameScene extends Phaser.Scene {
             });
         }
 
+        // Second pass: the details of mountain and water hexes, over every top, so no neighbor's
+        // top paints over them. (Each mountain itself is a sprite of its own: buildMountains.)
         for (const { col, row } of order) {
             const terrain = terrainAt(col, row);
             if (terrain === TERRAIN.ground) continue;
-            const corners = this.hexCornerCache[hexIndex(col, row, mapWidth)];
+            const index = hexIndex(col, row, mapWidth);
+            const corners = this.hexCornerCache[index];
+            const center = project(hexCenter(col, row).x, hexCenter(col, row).y);
             if (terrain === TERRAIN.mountain) {
-                g.lineStyle(MOUNTAIN_BORDER_WIDTH, MOUNTAIN_BORDER_COLOR, 1);
-                g.strokePoints(corners, true);
-            } else {
-                g.fillStyle(HEX_OUTLINE_COLOR, 1);
-                this.forEachEdge(col, row, corners, (a, b) => {
-                    // Dots centered along the edge, so a shared edge drawn from either side lines up.
-                    const dots = Math.max(
-                        1,
-                        Math.round(Math.hypot(b.x - a.x, b.y - a.y) / WATER_DOT_SPACING)
-                    );
-                    for (let k = 0; k < dots; k++) {
-                        const t = (k + 0.5) / dots;
-                        g.fillCircle(
-                            a.x + (b.x - a.x) * t,
-                            a.y + (b.y - a.y) * t,
-                            WATER_DOT_RADIUS
-                        );
-                    }
-                });
+                // Scree under the mountain: a few darker stones.
+                g.fillStyle(SCREE_SPECK_COLOR, 0.8);
+                for (const [x, y, w, h] of pebbles(center, hexSeed(index, 2))) {
+                    g.fillEllipse(x, y, w, h);
+                }
+                continue;
             }
+            this.drawWaterDetails(g, col, row, corners, center, shallow(col, row), isWater);
         }
 
         // Bake into every tile, each drawing the same graphics shifted to its own position.
@@ -694,6 +706,153 @@ export class GameScene extends Phaser.Scene {
             tile.render();
         }
         g.destroy();
+    }
+
+    /**
+     * A water hex's details, over its top: the sandy bed of shallow water, ripples, and foam along
+     * its front shores (its banks come earlier: drawBanks). Edges between two water hexes get
+     * nothing, so a lake reads as one surface.
+     */
+    private drawWaterDetails(
+        g: Phaser.GameObjects.Graphics,
+        col: number,
+        row: number,
+        corners: Phaser.Math.Vector2[],
+        center: Point,
+        isShallow: boolean,
+        isWater: (col: number, row: number) => boolean
+    ): void {
+        const index = hexIndex(col, row, this.room.state.mapWidth);
+        if (isShallow) {
+            g.fillStyle(SHALLOW_BED_COLOR, 0.3);
+            for (const [x, y, w, h] of pebbles(center, hexSeed(index, 3)))
+                g.fillEllipse(x, y, w, h);
+        }
+        g.lineStyle(1, RIPPLE_COLOR, isShallow ? 0.28 : 0.2);
+        for (const wave of rippleMarks(center, hexSeed(index, 4), isShallow ? 1 : 2)) {
+            g.strokePoints(wave as Phaser.Math.Vector2[], false);
+        }
+
+        // Foam just inside each front shore (the back shores get theirs with the bank: drawBanks).
+        this.forEachEdge(col, row, corners, (a, b, neighbor) => {
+            if (isWater(neighbor.col, neighbor.row) || corners.indexOf(a) >= 3) return;
+            const ax = a.x + (center.x - a.x) * 0.06;
+            const ay = a.y + (center.y - a.y) * 0.06;
+            const bx = b.x + (center.x - b.x) * 0.06;
+            const by = b.y + (center.y - b.y) * 0.06;
+            g.lineStyle(1.5, FOAM_COLOR, 0.45);
+            g.lineBetween(ax, ay, bx, by);
+        });
+    }
+
+    /**
+     * The banks of a water hex: along each back shore (its three upper edges, where the neighbor
+     * isn't water) the ground drops to the water, which sits lower, with foam where it meets it.
+     * Drawn straight down right after the hex's top, in the back-to-front pass, so whatever pokes
+     * past the hex's side corners is covered by the hexes in front, drawn next.
+     */
+    private drawBanks(
+        g: Phaser.GameObjects.Graphics,
+        col: number,
+        row: number,
+        corners: Phaser.Math.Vector2[],
+        isShallow: boolean,
+        isWater: (col: number, row: number) => boolean
+    ): void {
+        const bank = isShallow ? SHALLOW_BANK_HEIGHT : DEEP_BANK_HEIGHT;
+        this.forEachEdge(col, row, corners, (a, b, neighbor) => {
+            // Edges 3-5 run along the top of the hex (0-2 are the front ones).
+            if (isWater(neighbor.col, neighbor.row) || corners.indexOf(a) < 3) return;
+            const a2 = new Phaser.Math.Vector2(a.x, a.y + bank);
+            const b2 = new Phaser.Math.Vector2(b.x, b.y + bank);
+            g.fillStyle(HEX_SIDE_COLOR, 1);
+            g.fillPoints([a, b, b2, a2], true);
+            g.lineStyle(1.5, FOAM_COLOR, 0.55);
+            g.lineBetween(a2.x, a2.y, b2.x, b2.y);
+        });
+    }
+
+    /**
+     * Each mountain (`room.state.mountains`: 3 or 7 hexes) as one sprite: a faceted, snow-capped peak
+     * over its hexes (terrainArt.mountainModel), baked into its own texture once. Its depth is the
+     * middle of its footprint on the ground, like a player's, so someone walking behind a mountain is
+     * hidden by it and someone in front isn't.
+     */
+    private buildMountains(): void {
+        const { mapWidth, mountains } = this.room.state;
+        const pad = 2;
+        (mountains ?? []).forEach((piece, i) => {
+            const hexes = Array.from(piece.hexes);
+            if (hexes.length === 0) return;
+            const corners = hexes.flatMap((index) => this.hexCornerCache[index] ?? []);
+            const centers = hexes.map((index) => {
+                const c = hexCenter(index % mapWidth, Math.floor(index / mapWidth));
+                return project(c.x, c.y);
+            });
+            const model = mountainModel(
+                corners,
+                centers,
+                piece.size >= 7,
+                hexSeed(hexes[0], 5),
+                ISO_SQUASH
+            );
+            const { minX, minY, maxX, maxY } = model.bounds;
+            const key = `mountain-${i}`;
+            if (this.textures.exists(key)) this.textures.remove(key);
+            const g = this.make.graphics({}, false);
+            drawMountain(g, model, pad - minX, pad - minY);
+            g.generateTexture(
+                key,
+                Math.ceil(maxX - minX) + pad * 2,
+                Math.ceil(maxY - minY) + pad * 2
+            );
+            g.destroy();
+            this.add
+                .image(minX - pad, minY - pad, key)
+                .setOrigin(0, 0)
+                .setDepth(model.anchor.y);
+        });
+    }
+
+    /**
+     * Glints on the water: a few small highlights on some water hexes, each fading in and out now and
+     * then. Cheap (one tweened ellipse each, capped at MAX_SPARKLES) and off-screen ones aren't drawn.
+     */
+    private addWaterSparkles(): void {
+        const { mapWidth, mapHeight, tiles } = this.room.state;
+        const MAX_SPARKLES = 160;
+        let made = 0;
+        for (let index = 0; index < tiles.length && made < MAX_SPARKLES; index++) {
+            if (tiles[index].terrain !== TERRAIN.water || hexSeed(index, 6) % 4 !== 0) continue;
+            const col = index % mapWidth;
+            const row = Math.floor(index / mapWidth);
+            if (!isValidHex(col, row, mapWidth, mapHeight)) continue;
+            const random = seededRandom(hexSeed(index, 7));
+            const c = hexCenter(col, row);
+            const at = project(c.x, c.y);
+            const sparkle = this.add
+                .ellipse(
+                    at.x + (random() * 2 - 1) * 16,
+                    at.y + (random() * 2 - 1) * 7,
+                    5,
+                    2,
+                    SPARKLE_COLOR,
+                    1
+                )
+                .setAlpha(0)
+                .setDepth(-2.5);
+            this.tweens.add({
+                targets: sparkle,
+                alpha: 0.75,
+                duration: 500 + random() * 600,
+                delay: random() * 5000,
+                repeatDelay: 2000 + random() * 4000,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+            });
+            made++;
+        }
     }
 
     /**

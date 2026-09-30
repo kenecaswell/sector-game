@@ -1,6 +1,6 @@
 import { Room, Client } from 'colyseus';
 import { StateView } from '@colyseus/schema';
-import { GameState, Player, Tile } from '../state/GameState';
+import { GameState, MountainPiece, Player, Tile } from '../state/GameState';
 import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
@@ -80,11 +80,20 @@ export class GameRoom extends Room<GameState> {
         state.mapHeight = MAP_SIZES[settings.mapSize].rows;
         // A fresh random layout for every match (the seed only matters for reproducing one).
         const random = seededRandom(Math.floor(Math.random() * 2 ** 32));
-        const { terrain } = generateTerrain(state.mapWidth, state.mapHeight, random);
+        const { terrain, features } = generateTerrain(state.mapWidth, state.mapHeight, random);
         for (let i = 0; i < state.mapWidth * state.mapHeight; i++) {
             const tile = new Tile();
             tile.terrain = terrain[i];
             state.tiles.push(tile);
+        }
+        // Which hexes make up each mountain, so clients can draw each one as a single sprite.
+        for (const feature of features) {
+            for (const piece of feature.pieces ?? []) {
+                const mountain = new MountainPiece();
+                mountain.size = piece.hexes.length;
+                mountain.hexes.push(...piece.hexes.map((h) => h.row * state.mapWidth + h.col));
+                state.mountains.push(mountain);
+            }
         }
         // Drop pods (the game's setting, and the PICKUPS_ENABLED feature flag; see pickups.ts).
         if (state.settings.pods) {

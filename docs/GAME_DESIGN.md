@@ -403,10 +403,12 @@ Implementation: [Input — desktop and mobile share one message contract](ARCHIT
 📝 **Everything is placeholder art** until real art exists.
 
 - **Players:** a circle in the team color with a shadow and a small dot showing which way they face. Disconnected players are drawn faded.
-- **Terrain** 🧪 (colors and borders until there are sprites):
+- **Terrain** 🧪 (drawn graphics since 2026-09-29; no image files yet):
   - **Ground:** the current slate-blue hex top.
-  - **Mountain:** off-white, with a thin gray border.
-  - **Water:** dark blue when deep, a lighter blue when shallow (wadeable), with a dotted border in the normal border color.
+  - **Mountains:** each mountain is one faceted, low-poly peak of cold gray rock with a snow cap, lit from the upper left, casting a soft shadow, standing on dark scree. A **small mountain** (3 hexes) is a single peak about 60 px tall; a **large mountain** (7 hexes) is a massif about 110 px tall with a second, lower summit. Every mountain's shape varies (the peak's position, ridges and shoulders), so a range doesn't look copied and pasted. Mountains stand up out of the map, so they hide whoever walks behind them.
+  - **Deep water** (lakes, wide rivers): dark blue, darker toward the middle of a lake, with low waves and the odd glint. The water sits below the ground: along a shore at the back you see the bank drop to it, and every shore has a line of foam. No hex lines inside a lake, so it reads as one surface.
+  - **Shallow water** (1-hex-wide river stretches you can wade through): turquoise, with its sandy, pebbly bed showing through and a lower bank.
+  - The look lives in `client/src/game/terrainArt.ts` (colors, peak heights, snow line).
 - **Hexes:** claimed hexes are tinted in the owner's color, with a slightly darker border so neighboring hexes of one color stay distinguishable.
 - **Pickups:** identical drop pods floating over a hex; see [Pickups](#pickups).
 - **Spawn platforms:** a low round metal pad on each player's spawn hex, with a small light in their team color.
@@ -443,7 +445,7 @@ Things that need a design decision, not just code. Where one is also tracked in 
 ### Map and spawning
 - **Starting positions:** ✅ decided 2026-09-26 (spawn line, see [The map](#the-map)). Still open: should teammates start next to each other rather than in join order?
 - **Terrain (Planned Features #7):** decided 2026-09-26: gameplay terrain (ground, mountain, water), no elevation; see [Terrain](#terrain). Still open:
-  - Mountain sprites: small and large mountains will map to different sprites; the generator already records which hexes form each one.
+  - Mountain and water art: ✅ first version drawn in code (2026-09-29; see [Look and feel](#look-and-feel)). Still open: hand-made sprites to replace it, animated water, and whether rivers should look like flowing rivers rather than chains of hexes.
   - Should terrain slow you down (wading through water, say) rather than only allow or block you?
   - Should rivers connect to lakes or run off the map edge, so they read as rivers rather than long lakes?
   - Should maps be shareable or replayable (a visible seed)?
@@ -527,7 +529,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Terrain and shots | Mountains block shots; water doesn't | Neither blocks; both block | Chosen by the developer: ranges become cover, water stays a pure movement barrier |
 | Wings | Upgrade, 100 materials, one per player: walk over mountains and deep water (still can't claim them) | 150 or 200 materials | Price chosen by the developer, in line with the other upgrades |
 | Terrain fairness | The spawn areas are always ground, and every ground hex is reachable on foot | No guarantee (retry-free generation) | My addition: a player without Wings must never spawn trapped, and no buildable ground may be walled off |
-| Terrain look (until sprites) | Mountain: off-white with a thin gray border. Water: dark blue with a dotted border in the normal border color | — | Requested; distinct from each other, from ground and from every team color |
+| Terrain look (until sprites) — **superseded 2026-09-29 (terrain graphics, below)** | Mountain: off-white with a thin gray border. Water: dark blue with a dotted border in the normal border color | — | Requested; distinct from each other, from ground and from every team color |
 | Terrain features (revised) — **superseded the same day (mountain pieces, gap, compact lakes, below)** | Mountain ranges 3–32 hexes; lakes 3–32; rivers 2–20 long and 1–4 wide, the width changing by one hex at a time; holes at river bends filled; features never touch | The first sizes (singles allowed, rivers 1–2 wide) | Requested: bigger, more substantial features with no single hexes. Filling holes (my addition) stops wide bending rivers leaving ground pockets inside them |
 | Shallow water | Water one hex across is shallow and walkable: a water hex with at most two water neighbors that don't touch each other (1-wide river stretches, bends included). Everything else is deep | Only lone water is shallow (previous); a river that's 1 wide along its whole length | Requested (2026-09-26): "single" water meant water you can step across. The rule is purely about shape, so both sides compute it the same way (`shared/terrain.ts`) |
 | Mountain pieces | Ranges of 3–35 hexes built from small mountains (3 hexes that all touch) and large ones (a hex and its 6 neighbors), touching but not overlapping; ~40% large | Free-form blobs (previous) | Requested: small and large mountains will map to different sprites |
@@ -569,3 +571,4 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Bots and backpacks | Bots go back for their own backpack unless an armed enemy is within their shot range of it; they ignore downed players | Always go back | From simulation: weaker bots kept walking back to where a Hard bot had just defeated them and dying there again, spending up to 40% of the match in "recover" |
 | Weapons cost double | Basic gun 200, Big gun 400, ammo pack 60 (2 materials a shot) | 100 / 200 / 30 (previous) | Requested (2026-09-29). My reading: "weapons" is the Fabricator's Weapons category, so the ammo pack doubles too |
 | Explorer starts with Armor | The Explorer has no gun or ammo; it starts with Armor 1 (200 health) and keeps its 15 materials. Nobody starts armed | Basic gun and 15 shots (previous) | Requested (2026-09-29). Keeping 15 materials (my choice): Armor 1 is worth 100 materials, so it's still the kit with the least to spend |
+| Terrain graphics | Mountains are one sprite per mountain (small 3-hex and large 7-hex): a faceted, lit, snow-capped peak built from its own footprint, varied per mountain, depth-sorted like players. Water is drawn into the terrain: deep blue with waves, darker mid-lake, turquoise shallows with a sandy bed, a bank along back shores and foam on every shore, no hex lines inside lakes, and a few glints | Hand-drawn sprite images; flat colors (previous) | Requested (2026-09-29): my best shot at mountains, water and shallow water, with the two mountain sizes. Drawn in code for now, since there are no art files yet: the shapes follow the real footprints, cost nothing per frame (baked once), and can be swapped for real sprites later. The cold palette and snow suit Titan |

@@ -12,6 +12,7 @@ import type {
     GameSettingsState,
     GameStateShape,
     BackpackState,
+    MountainPieceState,
     PickupState,
     PlayerState,
     ProjectileState,
@@ -122,6 +123,15 @@ export class Backpack extends Schema implements BackpackState {
     equippedUpgrade: string = '';
 }
 
+/**
+ * One mountain (terrain.ts → MountainPiece): its 3 or 7 hexes as tile indices, synced once so
+ * clients can draw each mountain as one sprite.
+ */
+export class MountainPiece extends Schema implements MountainPieceState {
+    @type('uint8') size: number = 3;
+    @type(['uint16']) hexes = new ArraySchema<number>();
+}
+
 /** A pod waiting to appear in a respawn wave (server only). */
 export interface PendingPod {
     col: number;
@@ -144,7 +154,7 @@ export class GamePhaseState extends Schema implements GamePhaseStateShape {
     @type('number') endsAt: number = 0; // server timestamp ms
 }
 
-// GameState checks everything but its six collections: MapSchema/ArraySchema don't match
+// GameState checks everything but its seven collections: MapSchema/ArraySchema don't match
 // ReadonlyMap / readonly T[] exactly for the compiler (they do structurally at runtime, which is
 // what the client's cast relies on), and their element classes above are checked individually.
 export class GameState
@@ -152,7 +162,13 @@ export class GameState
     implements
         Omit<
             GameStateShape,
-            'players' | 'structures' | 'projectiles' | 'pickups' | 'backpacks' | 'tiles'
+            | 'players'
+            | 'structures'
+            | 'projectiles'
+            | 'pickups'
+            | 'backpacks'
+            | 'tiles'
+            | 'mountains'
         >
 {
     @type({ map: Player }) players = new MapSchema<Player>();
@@ -163,6 +179,7 @@ export class GameState
     // player's backpacks to it (see RespawnSystem and GameRoom.showBackpacks).
     @view() @type({ map: Backpack }) backpacks = new MapSchema<Backpack>();
     @type([Tile]) tiles = new ArraySchema<Tile>(); // flat array, index = y*width+x
+    @type([MountainPiece]) mountains = new ArraySchema<MountainPiece>(); // set once, for drawing
     @type(GamePhaseState) phase = new GamePhaseState();
     @type(GameSettingsSchema) settings = new GameSettingsSchema();
     @type('number') mapWidth: number = 64;

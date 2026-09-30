@@ -76,6 +76,14 @@ export interface PickupState {
     tileY: number;
 }
 
+// One mountain, for drawing its sprite: 3 hexes that all touch (small) or a hex and its 6 neighbors
+// (large). A mountain range is one or more of these side by side. `hexes` are tile indices
+// (row * mapWidth + col); every mountain hex belongs to exactly one piece. Fixed for the match.
+export interface MountainPieceState {
+    size: number; // 3 or 7 (the number of hexes)
+    hexes: readonly number[];
+}
+
 // Weapons and upgrades a player dropped where they were defeated. The server only sends a player
 // their own backpacks; what's inside isn't synced.
 export interface BackpackState {
@@ -106,6 +114,7 @@ export interface GameStateShape {
     pickups: ReadonlyMap<string, PickupState>; // empty when the PICKUPS_ENABLED flag is off
     backpacks: ReadonlyMap<string, BackpackState>; // only your own
     tiles: readonly TileState[];
+    mountains: readonly MountainPieceState[]; // how the mountain hexes group into mountains
     phase: GamePhaseStateShape;
     settings: GameSettingsState;
     mapWidth: number;

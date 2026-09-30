@@ -2,7 +2,16 @@ import { Decoder, Encoder, StateView } from '@colyseus/schema';
 import { describe, expect, it } from 'vitest';
 import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
 import { DEFAULT_CHARACTER, GUN_DAMAGE, TERRAIN } from '../types/shared';
-import { Backpack, GameState, Pickup, Player, Projectile, Structure, Tile } from './GameState';
+import {
+    Backpack,
+    GameState,
+    MountainPiece,
+    Pickup,
+    Player,
+    Projectile,
+    Structure,
+    Tile,
+} from './GameState';
 
 describe('GameState schema', () => {
     // Guards the setup gotcha in ARCHITECTURE.md: without `useDefineForClassFields: false` the field
@@ -153,5 +162,24 @@ describe('GameState — backpacks are private', () => {
         state.backpacks.delete('b1');
         sync(false);
         expect(owner.backpacks.size).toBe(0);
+    });
+});
+
+describe('GameState — mountains', () => {
+    it('syncs each mountain piece: its size and its hexes (tile indices)', () => {
+        const state = new GameState();
+        const small = new MountainPiece();
+        small.size = 3;
+        small.hexes.push(10, 11, 75);
+        const large = new MountainPiece();
+        large.size = 7;
+        large.hexes.push(200, 201, 202, 136, 137, 264, 265);
+        state.mountains.push(small, large);
+        const client = new GameState();
+        new Decoder(client).decode(new Encoder(state).encodeAll());
+        expect(client.mountains.map((m) => [m.size, Array.from(m.hexes)])).toEqual([
+            [3, [10, 11, 75]],
+            [7, [200, 201, 202, 136, 137, 264, 265]],
+        ]);
     });
 });
