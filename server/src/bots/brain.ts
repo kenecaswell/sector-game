@@ -3,7 +3,7 @@
 
 import type { HexCoord } from '../hex';
 
-export type BotGoal = 'claim' | 'build' | 'chase';
+export type BotGoal = 'claim' | 'build' | 'chase' | 'recover'; // recover: its own backpack
 
 export interface BotBrain {
     nextThinkAt: number; // server ms; see BotProfile.thinkMs

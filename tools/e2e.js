@@ -716,6 +716,79 @@ async function bots() {
     });
 }
 
+async function backpacks() {
+    // Plain ground, so the shots and the walks aren't stopped by a mountain.
+    section('Defeat, respawn delay and backpacks');
+    await withServer(
+        0.2,
+        async () => {
+            const a = await join(new Client(URL), { name: 'Shooter' });
+            const b = await join(new Client(URL), { name: 'Robot' });
+            const collected = [];
+            a.onMessage('backpackCollected', (m) => collected.push(['a', m]));
+            b.onMessage('backpackCollected', (m) => collected.push(['b', m]));
+            a.send('selectCharacter', { characterId: 'explorer' }); // a Basic gun and 15 shots
+            b.send('selectCharacter', { characterId: 'robot' }); // Booster 1, equipped
+            await sleep(300);
+            await startMatch(a, b);
+            await waitFor(() => me(b).boosterLevel === 1 && me(a).gun === 'basic', 2000);
+
+            // The robot walks a few hexes west of its spawn, then the shooter fires twice at it.
+            const spawn = { x: me(b).x, y: me(b).y };
+            await goTo(b, { x: spawn.x - 150, y: spawn.y });
+            const fallen = pixelToHex(me(b).x, me(b).y);
+            for (let i = 0; i < 2 && me(b).respawnAt === 0; i++) {
+                const angle = Math.atan2(me(b).y - me(a).y, me(b).x - me(a).x);
+                a.send('shoot', { angle, seq: ++seq });
+                await waitFor(() => me(b).health < 100 || me(b).respawnAt > 0, 3000);
+                await sleep(250);
+            }
+            await waitFor(() => b.state.backpacks.size === 1, 2000);
+            const pack = Array.from(b.state.backpacks.values())[0];
+            check(
+                'two basic-gun hits: the robot is down (respawnAt set) and its Booster is gone',
+                me(b).respawnAt > Date.now() && me(b).boosterLevel === 0 && me(a).kills === 1,
+                `respawnAt in ${me(b).respawnAt - Date.now()} ms`
+            );
+            check(
+                'its backpack lies where it fell, and only its own client gets it',
+                pack?.tileX === fallen.col &&
+                    pack?.tileY === fallen.row &&
+                    a.state.backpacks.size === 0 &&
+                    b.state.players.get(a.sessionId).respawnAt === 0,
+                pack ? `at ${pack.tileX},${pack.tileY} vs ${fallen.col},${fallen.row}` : 'none'
+            );
+            const others = a.state.players.get(b.sessionId);
+            check('...and everyone sees it down', others.respawnAt > 0);
+            const downAt = { x: me(b).x, y: me(b).y };
+            await hold(b, -1, 0, 600); // a down player can't move
+            check(
+                "while down it can't move",
+                Math.hypot(me(b).x - downAt.x, me(b).y - downAt.y) < 1
+            );
+
+            await waitFor(() => me(b).respawnAt === 0, C.RESPAWN_DELAY_MS + 2000);
+            check(
+                `it respawns at its spawn after ${C.RESPAWN_DELAY_MS / 1000} s, with full health`,
+                Math.hypot(me(b).x - spawn.x, me(b).y - spawn.y) < 5 && me(b).health === 100
+            );
+            await goTo(b, hexCenter(pack.tileX, pack.tileY));
+            await waitFor(() => b.state.backpacks.size === 0, 2000);
+            await sleep(300);
+            check(
+                'walking onto it gives the Booster back, and only its owner is told',
+                me(b).boosterLevel === 1 &&
+                    me(b).equippedUpgrade === 'booster' &&
+                    collected.length === 1 &&
+                    collected[0][0] === 'b' &&
+                    collected[0][1].contents === 'Booster 1',
+                JSON.stringify(collected)
+            );
+        },
+        { TERRAIN_COVERAGE: '0', PICKUPS: '0' }
+    );
+}
+
 async function edges() {
     // A map of plain ground: this walks from the spawn to the edges, and terrain in the way
     // would stop it (terrain movement is unit-tested in server/src/systems/terrainRules.spec.ts).
@@ -771,6 +844,7 @@ async function edges() {
         await pickups();
         await games();
         await bots();
+        await backpacks();
         await edges();
     } catch (error) {
         check('the e2e run completed without an error', false, error.message);

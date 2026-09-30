@@ -125,7 +125,7 @@ function update(state: GameState, broadcast: Broadcast): void {
 
     const claimed: TilesClaimedEvent['tiles'] = [];
     state.players.forEach((player) => {
-        if (!player.connected) return;
+        if (!player.connected || player.respawnAt > 0) return;
         claimTiles(state, player, claimed);
     });
 

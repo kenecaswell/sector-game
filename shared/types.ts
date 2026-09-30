@@ -629,6 +629,13 @@ export type Terrain = (typeof TERRAIN)[keyof typeof TERRAIN];
 // materials or ammo has an `amount`; an item gives what its Fabricator item gives, for free.
 export type PickupKind = 'materials' | 'ammo' | 'item';
 
+// Server -> Client, to the owner only: they walked onto one of their backpacks and got its contents
+// back ("Big gun, 12 ammo, Booster 2"). Backpacks themselves are synced to their owner only
+// (GameState.backpacks); see docs/GAME_DESIGN.md → Players.
+export interface BackpackCollectedEvent {
+    contents: string;
+}
+
 // Server -> Client: a player opened a drop pod, and what was inside (it has gone from `state.pickups`).
 export interface PickupCollectedEvent {
     playerId: string;

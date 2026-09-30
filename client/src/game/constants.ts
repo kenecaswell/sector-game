@@ -126,6 +126,19 @@ export const POD_LIGHT_COLOR = 0x3fe0ff; // the glowing band
 export const POD_OUTLINE_COLOR = 0x1b1b1b;
 export const POD_GLOW_MS = 1100;
 
+// Backpacks (game/backpack.ts): your dropped weapons and upgrades, drawn only for you. It sits on its
+// hex BACKPACK_LIFT px up, scaled BACKPACK_SCALE, over a ring that pulses every BACKPACK_RING_MS.
+export const BACKPACK_SCALE = 1.6;
+export const BACKPACK_LIFT = 8;
+export const BACKPACK_RING_MS = 800;
+export const BACKPACK_BODY_COLOR = 0x8a6d3b; // canvas
+export const BACKPACK_FLAP_COLOR = 0x6b532c;
+export const BACKPACK_POCKET_COLOR = 0x9d7f4a;
+export const BACKPACK_STRAP_COLOR = 0x3b2e1c;
+export const BACKPACK_BUCKLE_COLOR = 0xe0c36a; // brass
+export const BACKPACK_OUTLINE_COLOR = 0x1b1b1b;
+export const BACKPACK_RING_COLOR = 0xffd166;
+
 // Upgrade colors for the inventory bar's icons (components/ItemIcon.tsx).
 export const UPGRADE_ICON_COLORS: Record<string, number> = {
     booster: 0xff8c1a, // orange: speed

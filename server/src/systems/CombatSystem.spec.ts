@@ -3,6 +3,7 @@ import {
     PLAYER_RADIUS,
     PROJECTILE_LIFETIME_MS,
     PROJECTILE_RADIUS,
+    RESPAWN_DELAY_MS,
     SCREEN_Y_SCALE as SQ,
     TICK_RATE,
 } from '../constants';
@@ -12,11 +13,12 @@ import { DT, addPlayer, addShot, addStructure, shootAt, world } from '../test/wo
 import { GUN_DAMAGE, type PlayerHitEvent } from '../types/shared';
 import { UpgradeSystem } from './UpgradeSystem';
 import { CombatSystem } from './CombatSystem';
+import { RespawnSystem } from './RespawnSystem';
 
 const quiet = () => {};
 
 describe('CombatSystem — hits and kills', () => {
-    it('a basic-gun hit does 50, and two kill: +1 kill, the target respawns at its spawn', () => {
+    it('a basic-gun hit does 50, and two kill: +1 kill, the target is down, then respawns at its spawn', () => {
         const state = world();
         const shooter = addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 'b', 1500, 1500);
@@ -24,10 +26,30 @@ describe('CombatSystem — hits and kills', () => {
         shootAt(state, 'a', target);
         expect(target.health).toBe(100 - GUN_DAMAGE.basic);
         shootAt(state, 'a', target);
-        const start = spawnPoint(state, 3);
         expect(shooter.kills).toBe(1);
+        expect(target.health).toBe(0);
+        const wait = target.respawnAt - Date.now();
+        expect(wait).toBeGreaterThan(RESPAWN_DELAY_MS - 100);
+        expect(wait).toBeLessThanOrEqual(RESPAWN_DELAY_MS);
+        expect([target.x, target.y]).toEqual([1500, 1500]); // still where it fell
+        RespawnSystem.update(state, quiet, target.respawnAt);
+        const start = spawnPoint(state, 3);
         expect(target.health).toBe(100);
+        expect(target.respawnAt).toBe(0);
         expect([target.x, target.y]).toEqual([start.x, start.y]);
+    });
+
+    it("a player who is down can't be hit, and can't fire", () => {
+        const state = world();
+        const shooter = addPlayer(state, 'a', 100, 100);
+        const target = addPlayer(state, 't');
+        target.gun = 'basic';
+        target.ammo = 5;
+        target.respawnAt = Date.now() + 1000;
+        const shot = shootAt(state, 'a', target);
+        expect(state.projectiles.has(shot.id)).toBe(true); // it flew on through
+        expect(shooter.kills).toBe(0);
+        expect(CombatSystem.fire(state, target, 0)).toBe(false);
     });
 
     it('broadcasts every hit with its damage', () => {
@@ -48,6 +70,7 @@ describe('CombatSystem — hits and kills', () => {
         const target = addPlayer(state, 't');
         shootAt(state, 'a', target, GUN_DAMAGE.big);
         expect(shooter.kills).toBe(1);
+        target.respawnAt = 0; // back in play
         target.armorLevel = 1;
         UpgradeSystem.applyUpgradeEffects(target);
         target.health = target.maxHealth;
@@ -56,7 +79,7 @@ describe('CombatSystem — hits and kills', () => {
         expect(shooter.kills).toBe(1);
     });
 
-    it('respawns at max health (400 with Armor 3)', () => {
+    it('a defeated player drops their Armor with the rest, so comes back with 100 health', () => {
         const state = world();
         addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 't');
@@ -64,7 +87,10 @@ describe('CombatSystem — hits and kills', () => {
         UpgradeSystem.applyUpgradeEffects(target);
         target.health = 50;
         shootAt(state, 'a', target);
-        expect(target.health).toBe(400);
+        expect(target.armorLevel).toBe(0);
+        RespawnSystem.update(state, quiet, target.respawnAt);
+        expect(target.health).toBe(100);
+        expect(target.maxHealth).toBe(100);
     });
 
     it("doesn't hit the shooter, or anyone outside the playing phase", () => {

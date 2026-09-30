@@ -28,8 +28,10 @@ function canPlace(state: GameState, playerId: string, col: number, row: number):
  * placed. People place from GameRoom's `placeStructure` message, bots from BotSystem.
  */
 function place(state: GameState, player: Player, type: unknown, col: number, row: number): boolean {
-    if (state.phase.phase !== 'playing' || !player.connected || !isStructureType(type))
+    if (state.phase.phase !== 'playing' || !player.connected || !isStructureType(type)) {
         return false;
+    }
+    if (player.respawnAt > 0) return false; // defeated, waiting to respawn
     const slot = player.structureInventory.indexOf(type);
     if (slot === -1 || !canPlace(state, player.id, col, row)) return false;
 

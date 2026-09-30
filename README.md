@@ -165,7 +165,7 @@ The Fabricator offers your next level of each upgrade. Levels last the whole mat
 
 The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Drop pods** are scattered on the map, all looking the same: walk onto one to open it and find out what's inside (materials, ammo, a gun, an upgrade or a structure). The further behind you are on score, the better your odds. About 2:50 into the match, empty spots get new pods over the following 15 seconds. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
-Players start on a line near the right-hand edge of the map, each on a round metal spawn platform: the first to join in the middle, later ones further toward the top and bottom. Defeated players respawn at their own starting spot with full health, keeping their tiles and kills.
+Players start on a line near the right-hand edge of the map, each on a round metal spawn platform: the first to join in the middle, later ones further toward the top and bottom. Defeated players are out for **5 seconds**, then respawn at their own starting spot with full health, keeping their tiles, structures, materials and kills. Their gun, ammo and upgrades are dropped in a **backpack** where they fell, which only they can see and pick up: walk onto it to get them back.
 
 ## Project layout
 

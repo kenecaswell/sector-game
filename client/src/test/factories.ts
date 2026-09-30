@@ -35,6 +35,7 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         spawnTileY: 0,
         bot: false,
         botDifficulty: '',
+        respawnAt: 0,
         ...overrides,
     };
 }

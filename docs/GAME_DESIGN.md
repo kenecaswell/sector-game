@@ -41,7 +41,7 @@
 Sector 42 is a real-time multiplayer **territory-claiming** game for mobile and desktop web browsers, inspired by hexar.io. Up to **10 players** share an isometric hex map for a **5-minute match**. You claim hexes by walking over them, earn materials from the territory you hold, spend them on guns, upgrades and structures, and fight other players and teams for ground.
 
 - **Core loop:** move → claim hexes → gather materials from them → fabricate things that help you claim, defend or attack → repeat until time runs out.
-- **Territory is the point.** Fighting is a tool for taking and defending ground, not the goal: defeated players respawn straight away, so a match never ends early from combat.
+- **Territory is the point.** Fighting is a tool for taking and defending ground, not the goal: defeated players are back after a few seconds, so a match never ends early from combat.
 - **Mobile is first-class.** Every action works with touch (a joystick and on-screen buttons) as well as keyboard and mouse.
 
 ## Setting and story
@@ -172,7 +172,13 @@ Implementation: [Terrain](ARCHITECTURE.md#terrain).
 - **Body:** a circle a little smaller than a hex (`PLAYER_RADIUS`, 20, against a hex radius of 32).
 - **Movement:** ✅ continuous, in any direction, with smooth acceleration, turning and stopping rather than snapping. Top speed (`PLAYER_SPEED`) is the same in every direction **as seen on screen**. A joystick pushed part-way moves you more slowly.
 - **Health:** 🧪 100 (`BASE_MAX_HEALTH`), +100 per Armor level (200 / 300 / 400; `ARMOR_HEALTH_PER_LEVEL`).
-- **Death and respawn:** ✅ at 0 health you respawn instantly at your spawn spot with full health. **You keep your tiles, materials, upgrades and kills.** The player who landed the killing blow gets the kill.
+- **Death and respawn:** 🧪 (2026-09-29) at 0 health you're **down for 5 seconds** (`RESPAWN_DELAY_MS`): you vanish from the map and can't move, claim, open pods, build, shoot or be hit, and a "Defeated — respawning in N…" message counts down. Then you respawn at your spawn spot with full health. The player who landed the killing blow gets the kill. You **keep your tiles, structures (placed and in your inventory), materials and kills**. You can still use the Fabricator while you wait.
+- **Backpacks:** 🧪 when you're defeated, your **weapons and upgrades** (your gun, your ammo, and every upgrade level: Booster, Expander, Armor and Wings) drop in a **backpack** on the hex where you fell. Only **you** can see it or pick it up; to everyone else it isn't there. Walk onto its hex (once you've respawned) to get everything back, with a notice saying what was in it ("Got your backpack back: Big gun, 12 ammo, Booster 2").
+  - What you get back merges with what you have now: the better gun, each upgrade at the higher level, the ammo added. The upgrade you had equipped comes back equipped only if your slot is empty. Armor's extra health comes back with it.
+  - If you had nothing to drop, there's no backpack. Each defeat drops its own backpack, and they stay until you pick them up or the match ends (or you leave the game).
+  - If you fell somewhere you can't walk (flying with Wings over a mountain or deep water, whose Wings are now in the backpack), it lands on the nearest hex you can walk to. It never lands inside an enemy's structure.
+  - Since Armor goes in the backpack, you come back with 100 max health until you pick it up.
+  - **Look:** a canvas backpack with a flap, a pocket, straps and a brass buckle, over a softly pulsing gold ring on its hex.
 - **Dropped connection:** ✅ your player stays on the map, frozen and drawn dimmed, and keeps its tiles and structures for **3 minutes** while the game tries to reconnect you. A frozen player can still be shot. Everyone sees a notice when you drop and when you return. After 3 minutes your spot is released and your tiles go back to unclaimed.
 - **Names:** ✅ 2–25 characters (an emoji counts as one), anything allowed. If someone already has your name (ignoring case), you get the first free "name (1)", "name (2)", …. Your last name is remembered on your device for next time.
 
@@ -220,6 +226,7 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 - **Always ready.** Bots never hold up the lobby: on your own with bots, the match starts as soon as you're ready. **Bots alone never start a match**: at least one connected person has to be ready.
 - **Teams:** with teams on, give a bot your color to make it a teammate. With teams off, bots take free colors like anyone.
 - **Spawn mercy:** 🧪 bots leave an enemy alone (don't shoot at them or chase them) while that enemy is within **3 hexes of their own spawn spot** (`BOT_SPAWN_MERCY_RADIUS`), so a bot can't camp your spawn. People get no such protection from people.
+- **Backpacks:** a defeated bot goes back for its own backpack once it has respawned, unless an armed enemy is near it (probably whoever defeated it there); then it claims ground meanwhile and tries again later. Bots ignore players who are down.
 - **What bots know:** they plan on the server and can see the whole map (every player, hex and pod), like a player with a perfect minimap. They only shoot what they have a clear line to (mountains block their view as they block shots) and within their range.
 
 ### Difficulty
@@ -235,7 +242,7 @@ Each difficulty is a profile of numbers (`BOT_PROFILES` in `server/src/constants
 | **Fabricating** | Every 8 s: Basic gun, farm, Armor, Booster, in that order, skipping what it can't afford yet; ammo below 5 shots | Every 3 s, saving up for each: Basic gun, Armor, Expander, fort, Booster, Big gun, Armor 2, fort, then a fort whenever it has none; ammo below 10 | Every second, saving up: Expander, Basic gun, Armor, fort, Expander 2, Big gun, Armor 2, fort, Booster, Expander 3, Armor 3, three forts, then forts; ammo below 20 |
 | **Upgrade slot** | Never switches | Equips the Expander once it has one | The Booster to chase, the Expander to claim |
 
-How they compare, from simulated 5-minute matches on a Small map (`node tools/bot-sim.js`, three seeds): **alone**, Easy claims about 950–1,050 hexes, Medium about 2,300 (and builds some 20 forts), Hard about 3,000–3,400 (25–30 forts); **all three in one match**, about 200–370, 780–1,130 and 2,000–2,400 hexes. Hard is meant to beat a good player, Easy to lose to a new one; that's still to be checked in real play.
+How they compare, from simulated 5-minute matches on a Small map (`node tools/bot-sim.js`, three seeds): **alone**, Easy claims about 950–1,050 hexes, Medium about 2,300 (and builds some 20 forts), Hard about 3,000–3,400 (25–30 forts); **all three in one match**, about 180–500, 90–880 and 2,200–2,700 hexes since defeat drops your gear (2026-09-29; it was 200–370, 780–1,130 and 2,000–2,400 before). Losing its gear each time Hard defeats it hurts Medium most. Hard is meant to beat a good player, Easy to lose to a new one; that's still to be checked in real play.
 
 Implementation: [Bots](ARCHITECTURE.md#bots).
 
@@ -269,7 +276,7 @@ Implementation: [Tile Claiming](ARCHITECTURE.md#tile-claiming).
 - **Fire rate:** up to 5 shots per second while you hold the fire control (200 ms apart, `FIRE_INTERVAL_MS`). 📝 This limit is currently enforced only by the game client; the server should own it.
 - **Shots:** travel in a straight line at the same on-screen speed in every direction, at 🧪 **600 on-screen px/s** (`PROJECTILE_SPEED`; 400 until 2026-09-27), and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`): a range of about 1,200 px, roughly 40% of a Small map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
 - **Friendly fire:** none. Shots pass through teammates and teammates' structures.
-- **Kills:** the shooter's kill count goes up and the victim respawns at their spawn spot (see [Players](#players)). Kills are permanent and count toward score.
+- **Kills:** the shooter's kill count goes up; the victim is down for 5 seconds, drops their gun, ammo and upgrades in a backpack only they can see, and respawns at their spawn spot (see [Players](#players)). Kills are permanent and count toward score.
 
 Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detection](ARCHITECTURE.md#collision-detection).
 
@@ -341,7 +348,7 @@ Implementation: [Pickups](ARCHITECTURE.md#pickups).
 | Structures | **Farm**, **Fabricator**, **Fort**, **Power plant** | 100 each | One more of that structure to place. | Unlimited |
 
 - **Each upgrade is listed once**, offering your next level ("Booster 2" once you own Booster 1); a maxed one shows "Max". A gun you can't improve on shows "Owned".
-- **Upgrade levels are permanent for the match**, and survive respawns. See [Upgrades](#upgrades) for the one-slot rule.
+- **Upgrade levels last the match**, but when you're defeated they drop in your backpack with your gun and ammo until you pick it up ([Players](#players)). See [Upgrades](#upgrades) for the one-slot rule.
 - 📝 **Pacing:** starting kits give at most 50 materials and everything except ammo costs 100 or more, so a first real item waits on territory income and pickups. Worth watching in playtests.
 
 Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materials)](ARCHITECTURE.md#economy-materials).
@@ -350,7 +357,7 @@ Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materia
 
 🧪 Built 2026-09-26.
 
-- **Levels.** Booster, Expander and Armor go up to level 3, Wings has one level. Each level costs 100 materials, fabricated one at a time, and is kept all match (respawns included).
+- **Levels.** Booster, Expander and Armor go up to level 3, Wings has one level. Each level costs 100 materials, fabricated one at a time, and lasts the match, except that defeat drops them in your backpack ([Players](#players)).
 - **One upgrade slot.** Booster, Expander and Wings are *slot* upgrades: you can own all of them, but **only the equipped one works**. Armor isn't a slot upgrade: it always works once bought.
 - **Equipping.** A slot upgrade you fabricate with the slot empty equips itself; otherwise it waits in your inventory. Fabricating the next level of the upgrade you have equipped takes effect at once.
 - **Switching** by clicking an upgrade in the [inventory bar](#inventory-bar): change the equipped upgrade any time during the match, **instantly and as often as you like** (a 5-second cooldown was removed 2026-09-27). You can't empty the slot, only switch to another. You **can't take Wings off while you're over a mountain or deep water** (you'd be stuck inside it).
@@ -472,7 +479,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 
 | Decision | Chosen | Alternatives considered | Rationale |
 |---|---|---|---|
-| PvP death handling | Respawn at your spawn spot (the map center until 2026-09-26), full health, kills/tiles preserved | Elimination, sudden-death end-of-match | This is a territory-claiming game, not a deathmatch — PvP is a tool for defending/contesting tiles, not the win condition, so a defeated player should get back in the fight quickly |
+| PvP death handling — **revised 2026-09-29 (respawn delay and backpacks, below)** | Respawn at your spawn spot (the map center until 2026-09-26), full health, kills/tiles preserved | Elimination, sudden-death end-of-match | This is a territory-claiming game, not a deathmatch — PvP is a tool for defending/contesting tiles, not the win condition, so a defeated player should get back in the fight quickly |
 | Host concept — **superseded 2026-09-26 (ready-up lobby)** | First player to join a room is `hostId`; only they can send `startGame`; reassigned to next connected player on host departure | No host (auto-start at max players or after a lobby timer), server-side matchmaking-assigned host | Simplest to implement for a scaffold; a lobby timer or player-ready-up voting could replace this later without changing the wire protocol much |
 | Ammo — **superseded 2026-09-26 (character kits: only the Explorer starts with ammo, 15; everyone else buys it)** | Finite (30), decrements per shot, no regen yet | Infinite ammo, regen over time, reload mechanic | Left as a known gap — finite ammo without regen makes for a hard stop mid-match, which is a real gameplay concern to resolve before this ships, not just a technical TODO |
 | Materials payout scope | Every player earns 1 material per tile they individually own, during `playing` only (formerly `claiming`/`combat`) | Payouts continuing into `results`, or scoped only to the old `combat` phase | Matches the request's "based on number of tiles they control" without over-scoping into phases where tile ownership isn't changing meaningfully or the match is already decided; open questions about team-pooled materials remain in Planned Features #2 |
@@ -557,3 +564,5 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Bots don't start a match on their own | The match needs at least one connected, ready person; bots are always ready | Bots count like anyone | My addition: otherwise a lobby whose people had all dropped would start with only bots |
 | Spawn mercy for bots | Bots don't shoot or chase an enemy within 3 hexes of that enemy's own spawn spot (`BOT_SPAWN_MERCY_RADIUS`) | No protection | My addition, from simulation: a Hard bot scored 222 kills in 5 minutes by camping the others' respawns, which would feel awful to play against. It applies only to bots; people can still fight anywhere |
 | Difficulty as profiles | Each difficulty is a set of numbers (think rate, speed, look-ahead, reaction time, aim error and lead, fire rate, range, chasing, what to fabricate and in what order, building, upgrade switching); first-pass values tuned in headless simulations | Separate hand-written behavior per difficulty | One behavior with different numbers is easier to tune and keeps the difficulties consistent; `tools/bot-sim.js` plays a match in about 2 seconds, so a change can be compared on the same maps |
+| Respawn delay and backpacks | A defeated player is out for 5 s (`RESPAWN_DELAY_MS`), then respawns at their spawn. Their gun, ammo and every upgrade level drop in a backpack on the hex where they fell, which only they can see and pick up; tiles, structures, materials and kills stay theirs | Instant respawn keeping everything (previous); dropping gear anyone can take | Requested (2026-09-29): 5 s delay; weapons and upgrades (not structures) dropped where you died; nobody else can see or take them; a backpack icon. My choices: **ammo goes in the backpack with the gun** ("weapons"; otherwise you'd respawn with shots and nothing to fire them with); getting it back merges with what you've fabricated since (better gun, higher levels, ammo added) so re-buying is never wasted; while down you can't be hit, act or open pods, but can use the Fabricator; a backpack you couldn't walk to (dropped flying over terrain, with the Wings inside) moves to the nearest walkable hex; backpacks last until picked up or the match ends |
+| Bots and backpacks | Bots go back for their own backpack unless an armed enemy is within their shot range of it; they ignore downed players | Always go back | From simulation: weaker bots kept walking back to where a Hard bot had just defeated them and dying there again, spending up to 40% of the match in "recover" |

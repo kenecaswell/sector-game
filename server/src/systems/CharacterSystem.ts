@@ -20,6 +20,7 @@ function apply(player: Player): void {
     player.equippedUpgrade = character.equipped ?? '';
     UpgradeSystem.applyUpgradeEffects(player);
     player.health = player.maxHealth;
+    player.respawnAt = 0;
 }
 
 export const CharacterSystem = { apply };

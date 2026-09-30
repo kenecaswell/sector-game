@@ -1,25 +1,14 @@
 import { Projectile, type GameState, type Player } from '../state/GameState';
 import { CollisionSystem } from './CollisionSystem';
 import { StructureSystem } from './StructureSystem';
+import { RespawnSystem } from './RespawnSystem';
 import { PROJECTILE_LIFETIME_MS, SHOT_TERRAIN_STEP } from '../constants';
 import { projectileVelocity } from '../../../shared/projectiles';
-import { isMountainAtPoint, spawnPoint } from '../terrain';
+import { isMountainAtPoint } from '../terrain';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
 import { GUN_DAMAGE, isGunId, type PlayerHitEvent } from '../types/shared';
-
-function respawnPlayer(state: GameState, player: Player): void {
-    // Territory-claiming game, not a deathmatch — a defeated player respawns
-    // at their own spot on the spawn line with full health rather than being
-    // eliminated. Kills and tilesOwned are untouched.
-    player.health = player.maxHealth;
-    const start = spawnPoint(state, player.spawnSlot);
-    player.x = start.x;
-    player.y = start.y;
-    player.vx = 0;
-    player.vy = 0;
-}
 
 /**
  * `player` fires a shot heading `angle` (world radians), if it's the match and they have a gun and
@@ -30,6 +19,7 @@ function respawnPlayer(state: GameState, player: Player): void {
  */
 function fire(state: GameState, player: Player, angle: number): boolean {
     if (state.phase.phase !== 'playing' || !player.connected) return false;
+    if (!RespawnSystem.isAlive(player)) return false;
     if (player.gun === '' || player.ammo <= 0 || !Number.isFinite(angle)) return false;
 
     player.ammo--;
@@ -81,7 +71,8 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
         }
 
         state.players.forEach((player) => {
-            if (toRemove.has(id) || !player.connected) return;
+            // Defeated players are out of play until they respawn: shots pass where they fell.
+            if (toRemove.has(id) || !player.connected || !RespawnSystem.isAlive(player)) return;
             if (areAllies(state, proj.ownerId, player.id)) return;
             if (!CollisionSystem.checkProjectilePlayerCollision(proj, player, prev)) return;
 
@@ -96,7 +87,9 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
             if (player.health === 0) {
                 const shooter = state.players.get(proj.ownerId);
                 if (shooter) shooter.kills++;
-                respawnPlayer(state, player);
+                // Territory, not deathmatch: they drop their gear and respawn after a delay,
+                // keeping their tiles, structures, materials and kills (RespawnSystem).
+                RespawnSystem.defeat(state, player);
             }
         });
 

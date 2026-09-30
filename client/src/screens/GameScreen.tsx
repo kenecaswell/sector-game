@@ -15,6 +15,7 @@ import { MobileJoystick } from '../components/MobileJoystick';
 import { DebugStats } from '../components/DebugStats';
 import { FireButton } from '../components/FireButton';
 import { ScoreBadge } from '../components/ScoreBadge';
+import { RespawnOverlay } from '../components/RespawnOverlay';
 import { STRUCTURE_NAMES, type StructureType } from '../types/shared';
 import { cycleStructure, structureToBuild } from '../utils/build';
 import { isTouchDevice } from '../utils/device';
@@ -180,6 +181,12 @@ export function GameScreen() {
             <HUD me={me} phase={phase} phaseEndsAt={phaseEndsAt} />
             <NoticeStack notices={notices} />
             <ScoreBadge score={me ? scoreFor(me) : 0} />
+            <RespawnOverlay
+                respawnAt={me?.respawnAt ?? 0}
+                // Only your own backpacks are ever sent to you. Read live: the overlay re-renders
+                // on its own countdown, and the backpack arrives on the tick you fall.
+                hasBackpack={(room?.state.backpacks?.size ?? 0) > 0}
+            />
 
             <TopButton
                 label="Leaderboard"

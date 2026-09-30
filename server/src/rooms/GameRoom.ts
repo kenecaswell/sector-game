@@ -1,4 +1,5 @@
 import { Room, Client } from 'colyseus';
+import { StateView } from '@colyseus/schema';
 import { GameState, Player, Tile } from '../state/GameState';
 import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
@@ -13,6 +14,7 @@ import { StructureSystem } from '../systems/StructureSystem';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { PickupSystem } from '../systems/PickupSystem';
 import { BotSystem } from '../systems/BotSystem';
+import { RespawnSystem, type Notify } from '../systems/RespawnSystem';
 import { generatePickups } from '../pickups';
 import { assignSpawn, generateTerrain, seededRandom } from '../terrain';
 import type { Broadcast } from '../systems/Broadcast';
@@ -58,6 +60,8 @@ export class GameRoom extends Room<GameState> {
     private listedPhase: GamePhase = 'lobby';
 
     private readonly broadcastEvent: Broadcast = (type, payload) => this.broadcast(type, payload);
+    private readonly notifyPlayer: Notify = (playerId, type, payload) =>
+        this.clients.find((c) => c.sessionId === playerId)?.send(type, payload);
 
     /**
      * A new game, with the settings from the Create game screen (`options.game`, cleaned up by
@@ -149,6 +153,10 @@ export class GameRoom extends Room<GameState> {
     }
 
     onJoin(client: Client, options?: JoinOptions): void {
+        // Each client has its own view of the state, so it's sent its own backpacks and nobody
+        // else's (see showBackpacks). A reconnecting client keeps its view.
+        client.view = new StateView();
+        client.view.add(this.state);
         const player = new Player();
         player.id = client.sessionId;
         // The client sends its saved name; otherwise "Player N". Made unique among the others.
@@ -216,6 +224,7 @@ export class GameRoom extends Room<GameState> {
             if (tile.ownerId === sessionId) tile.ownerId = '';
         });
         this.state.players.delete(sessionId);
+        RespawnSystem.removeBackpacksOf(this.state, sessionId);
         this.playerInputs.delete(sessionId);
     }
 
@@ -268,11 +277,24 @@ export class GameRoom extends Room<GameState> {
         MovementSystem.update(this.state, this.playerInputs, dt);
         CollisionSystem.update(this.state, this.broadcastEvent);
         PickupSystem.update(this.state, this.broadcastEvent);
+        RespawnSystem.update(this.state, this.notifyPlayer); // respawns, and backpacks taken back
         CombatSystem.update(this.state, dt, this.broadcastEvent);
         PhaseSystem.update(this.state, this.broadcastEvent);
         this.closeFinishedMatch();
         ScoreSystem.update(this.state);
+        this.showBackpacks();
         if (this.state.phase.phase !== this.listedPhase) this.updateListing();
+    }
+
+    /**
+     * Adds any new backpack to its owner's view, so only the owner's client receives it (a removed
+     * one leaves every view by itself). Bots have no client, and need no view.
+     */
+    private showBackpacks(): void {
+        this.state.backpacks.forEach((pack) => {
+            const owner = this.clients.find((c) => c.sessionId === pack.ownerId);
+            if (owner?.view && !owner.view.has(pack)) owner.view.add(pack);
+        });
     }
 
     private handleInput(client: Client, msg: InputMessage): void {

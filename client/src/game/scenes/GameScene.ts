@@ -1,12 +1,14 @@
 import Phaser from 'phaser';
 import { getStateCallbacks, type GameRoom } from '../../net/GameConnection';
 import type {
+    BackpackState,
     PickupState,
     PlayerState,
     ProjectileState,
     StructureState,
 } from '../../types/gameState';
 import { drawDropPod, drawDropPodGlow } from '../pickups';
+import { drawBackpack, drawBackpackRing } from '../backpack';
 import { drawSpawnPad } from '../spawnPad';
 import { GUN_DAMAGE, TERRAIN } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
@@ -67,6 +69,9 @@ import {
     PICKUP_BOB_MS,
     PICKUP_LIFT,
     PICKUP_SCALE,
+    BACKPACK_LIFT,
+    BACKPACK_RING_MS,
+    BACKPACK_SCALE,
     POD_GLOW_MS,
 } from '../constants';
 import {
@@ -168,6 +173,7 @@ export class GameScene extends Phaser.Scene {
     private projectileViews = new Map<string, ProjectileView>();
     private structureSprites = new Map<string, Phaser.GameObjects.Graphics>();
     private pickupViews = new Map<string, Phaser.GameObjects.Container>();
+    private backpackViews = new Map<string, Phaser.GameObjects.Container>(); // only ever your own
     // Touch has no hover, so a refused build tap shows its red outline here for a moment.
     private tapPreview: { col: number; row: number; until: number } | null = null;
 
@@ -221,6 +227,7 @@ export class GameScene extends Phaser.Scene {
         this.projectileViews.clear();
         this.structureSprites.clear();
         this.pickupViews.clear();
+        this.backpackViews.clear();
         this.tapPreview = null;
         this.joystick = { x: 0, y: 0 };
     }
@@ -285,6 +292,9 @@ export class GameScene extends Phaser.Scene {
                 ),
                 $(this.room.state).pickups.onAdd((pickup) => this.addPickupView(pickup)),
                 $(this.room.state).pickups.onRemove((_pickup, id) => this.removePickupView(id)),
+                // The server sends each client only its own backpacks.
+                $(this.room.state).backpacks.onAdd((pack) => this.addBackpackView(pack)),
+                $(this.room.state).backpacks.onRemove((_pack, id) => this.removeBackpackView(id)),
                 this.room.onMessage('tilesClaimed', () => {
                     this.claimsDirty = true;
                 })
@@ -303,6 +313,7 @@ export class GameScene extends Phaser.Scene {
         this.room.state.projectiles.forEach((projectile) => this.addProjectileView(projectile));
         this.room.state.structures.forEach((structure) => this.addStructureSprite(structure));
         this.room.state.pickups.forEach((pickup) => this.addPickupView(pickup));
+        this.room.state.backpacks.forEach((pack) => this.addBackpackView(pack));
 
         if (this.input.keyboard) {
             this.cursorKeys = this.input.keyboard.createCursorKeys();
@@ -1075,6 +1086,40 @@ export class GameScene extends Phaser.Scene {
         this.pickupViews.delete(id);
     }
 
+    /** Your backpack: the gear you dropped where you were defeated, on its hex (you alone see it). */
+    private addBackpackView(pack: BackpackState): void {
+        if (this.backpackViews.has(pack.id)) return;
+        const center = hexCenter(pack.tileX, pack.tileY);
+        const ground = project(center.x, center.y);
+        const ring = this.add.graphics();
+        drawBackpackRing(ring, HEX_SIZE * 1.5, HEX_SIZE * 1.5 * ISO_SQUASH);
+        const shadow = this.add.ellipse(0, 0, 28, 28 * ISO_SQUASH, 0x000000, 0.35);
+        const bag = this.add.graphics();
+        drawBackpack(bag);
+        bag.setScale(BACKPACK_SCALE).setY(-BACKPACK_LIFT);
+        this.tweens.add({
+            targets: ring,
+            alpha: { from: 0.3, to: 1 },
+            scale: { from: 0.85, to: 1.05 },
+            duration: BACKPACK_RING_MS,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+        });
+        const container = this.add.container(ground.x, ground.y, [ring, shadow, bag]);
+        container.setDepth(ground.y);
+        this.backpackViews.set(pack.id, container);
+    }
+
+    private removeBackpackView(id: string): void {
+        const view = this.backpackViews.get(id);
+        if (view) {
+            this.tweens.killTweensOf(view.list);
+            view.destroy();
+        }
+        this.backpackViews.delete(id);
+    }
+
     /**
      * Eases every entity's drawn position toward the server's latest state.
      * The server updates at 20Hz; chasing that with exponential smoothing
@@ -1097,6 +1142,9 @@ export class GameScene extends Phaser.Scene {
 
             const at = project(view.wx, view.wy);
             view.container.setPosition(at.x, at.y).setDepth(at.y);
+            // Defeated players are out of play until they respawn: not drawn (the camera stays
+            // where you fell, and the respawn jump snaps rather than glides; see SNAP_DISTANCE).
+            view.container.setVisible(player.respawnAt === 0);
             // Disconnected players are frozen in place on the server, so keep drawing them, dimmed.
             view.container.setAlpha(
                 player.connected || id === this.sessionId ? 1 : DISCONNECTED_ALPHA

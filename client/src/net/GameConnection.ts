@@ -12,6 +12,7 @@ import { Client, getStateCallbacks, type Room } from 'colyseus.js';
 import { SERVER_HTTP_URL, SERVER_URL } from './config';
 import type {
     AddBotMessage,
+    BackpackCollectedEvent,
     RemoveBotMessage,
     UpdateBotMessage,
     GameListing,
@@ -56,6 +57,7 @@ export interface GameEventHandlers {
     onPlayerReconnected?: (event: PlayerReconnectedEvent) => void;
     onGameOver?: (event: GameOverEvent) => void;
     onPickupCollected?: (event: PickupCollectedEvent) => void;
+    onBackpackCollected?: (event: BackpackCollectedEvent) => void;
 }
 
 // A single Client per tab is all colyseus.js needs — it just holds the HTTP
@@ -84,6 +86,9 @@ function bindMessageHandlers(room: GameRoom, handlers: GameEventHandlers): void 
     if (handlers.onGameOver) room.onMessage<GameOverEvent>('gameOver', handlers.onGameOver);
     if (handlers.onPickupCollected)
         room.onMessage<PickupCollectedEvent>('pickupCollected', handlers.onPickupCollected);
+    // Sent to you only: you took back one of your backpacks.
+    if (handlers.onBackpackCollected)
+        room.onMessage<BackpackCollectedEvent>('backpackCollected', handlers.onBackpackCollected);
 }
 
 function saveReconnectionToken(room: GameRoom): void {

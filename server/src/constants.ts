@@ -23,6 +23,8 @@ export const PLAYER_ACCEL = 1200; // pixels/sec^2 — speeding up, slowing down,
 export const MAP_EDGE_MARGIN = 20;
 
 // Damage per hit comes from the shooter's gun (GUN_DAMAGE in types/shared.ts: basic 50, big 100).
+// A defeated player is out of the match this long, then respawns at their spawn spot (RespawnSystem).
+export const RESPAWN_DELAY_MS = 5_000;
 export const BASE_MAX_HEALTH = 100; // two basic-gun hits kill; Armor adds ARMOR_HEALTH_PER_LEVEL a level
 export const PROJECTILE_SPEED = 600; // on-screen px/sec (was 400 until 2026-09-27); see projectileVelocity
 export const PROJECTILE_LIFETIME_MS = 2000; // with PROJECTILE_SPEED, a shot's range: 1,200 on-screen px

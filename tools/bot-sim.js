@@ -24,6 +24,7 @@ const { CharacterSystem } = dist('systems/CharacterSystem.js');
 const { MovementSystem } = dist('systems/MovementSystem.js');
 const { CollisionSystem } = dist('systems/CollisionSystem.js');
 const { PickupSystem } = dist('systems/PickupSystem.js');
+const { RespawnSystem } = dist('systems/RespawnSystem.js');
 const { CombatSystem } = dist('systems/CombatSystem.js');
 const { PhaseSystem } = dist('systems/PhaseSystem.js');
 const { ScoreSystem } = dist('systems/ScoreSystem.js');
@@ -76,6 +77,7 @@ while (state.phase.phase === 'playing') {
     MovementSystem.update(state, inputs, dt);
     CollisionSystem.update(state, quiet);
     PickupSystem.update(state, quiet, random, clock);
+    RespawnSystem.update(state, quiet, clock);
     CombatSystem.update(state, dt, quiet);
     PhaseSystem.update(state, quiet);
     ScoreSystem.update(state);

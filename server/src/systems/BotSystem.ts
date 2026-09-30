@@ -139,6 +139,7 @@ const UNSTICK_MS = 450; // then it walks a random way this long
 const STRAFE_FLIP_MS = 1500; // about how often a strafing bot changes direction
 const FACE_SHOT_MS = 400; // after a shot it keeps facing where it fired this long
 const CHASE_EXTRA_DEPTH = 8; // route search reaches this much further when chasing
+const RECOVER_DEPTH = 30; // route search reach toward its backpack (re-planned as it goes)
 const BUILD_RADIUS = 5; // hexes: how far it looks for a structure spot to work toward
 const CASUAL_BUILD_RADIUS = 3; // without buildSites: only spots it already owns, this close
 const BUILD_GIVE_UP_MS = 10_000; // working toward one spot longer than this, it gives up ...
@@ -166,6 +167,7 @@ function toward(from: { x: number; y: number }, x: number, y: number, speed: num
  */
 function isFairGame(state: GameState, bot: Player, other: Player): boolean {
     if (other === bot || !other.connected || areAllies(state, bot.id, other.id)) return false;
+    if (other.respawnAt > 0) return false; // defeated: out of play until they respawn
     const spawn = { col: other.spawnTileX, row: other.spawnTileY };
     return hexDistance(hexOf(state, other.x, other.y), spawn) > BOT_SPAWN_MERCY_RADIUS;
 }
@@ -249,6 +251,27 @@ function goalStillWorthIt(state: GameState, bot: Player, route: HexCoord[]): boo
     );
 }
 
+/**
+ * The hex of the bot's own backpack nearest to it, or null. A backpack with an armed enemy within
+ * `range` of it (probably whoever defeated it there) is left for later, rather than walking back
+ * into the same gun.
+ */
+function nearestBackpack(state: GameState, bot: Player, range: number): HexCoord | null {
+    const here = hexOf(state, bot.x, bot.y);
+    const guards = Array.from(state.players.values()).filter(
+        (p) => isFairGame(state, bot, p) && p.gun !== '' && p.ammo > 0
+    );
+    let best: HexCoord | null = null;
+    state.backpacks.forEach((pack) => {
+        if (pack.ownerId !== bot.id) return;
+        const hex = { col: pack.tileX, row: pack.tileY };
+        const at = hexCenter(hex.col, hex.row);
+        if (guards.some((p) => screenDistance(p, at) <= range)) return;
+        if (!best || hexDistance(here, hex) < hexDistance(here, best)) best = hex;
+    });
+    return best;
+}
+
 function think(
     state: GameState,
     bot: Player,
@@ -278,6 +301,13 @@ function think(
         brain.goal = 'chase';
         const depth = profile.searchDepth + CHASE_EXTRA_DEPTH;
         brain.route = planRouteToward(state, bot, hexOf(state, prey.x, prey.y), depth);
+        return;
+    }
+    // Its gear, dropped where it was defeated: go and get it back (the nearest unguarded one).
+    const pack = nearestBackpack(state, bot, profile.range);
+    if (pack) {
+        brain.goal = 'recover';
+        brain.route = planRouteToward(state, bot, pack, RECOVER_DEPTH);
         return;
     }
     if (bot.structureInventory.length > 0 && planBuild(state, bot, brain, profile, now)) return;
@@ -473,6 +503,14 @@ function update(
             return;
         }
         const profile = profileOf(bot);
+
+        // Defeated: nothing to do until it respawns (fabricating aside).
+        if (bot.respawnAt > 0) {
+            inputs.set(id, { dir: STOP, seq: 0, receivedAt: now });
+            brain.targetId = '';
+            fabricate(bot, brain, profile, now);
+            return;
+        }
 
         // Defeated and respawned: whatever it was doing, it's somewhere else now.
         if (Math.hypot(bot.x - brain.lastX, bot.y - brain.lastY) > RESPAWN_JUMP) {

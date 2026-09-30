@@ -1,8 +1,8 @@
-import { Decoder, Encoder } from '@colyseus/schema';
+import { Decoder, Encoder, StateView } from '@colyseus/schema';
 import { describe, expect, it } from 'vitest';
 import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH } from '../constants';
 import { DEFAULT_CHARACTER, GUN_DAMAGE, TERRAIN } from '../types/shared';
-import { GameState, Pickup, Player, Projectile, Structure, Tile } from './GameState';
+import { Backpack, GameState, Pickup, Player, Projectile, Structure, Tile } from './GameState';
 
 describe('GameState schema', () => {
     // Guards the setup gotcha in ARCHITECTURE.md: without `useDefineForClassFields: false` the field
@@ -106,5 +106,52 @@ describe('GameState schema', () => {
         expect(state.phase.phase).toBe('lobby');
         expect(state.phase.endsAt).toBe(0);
         expect([state.mapWidth, state.mapHeight]).toEqual([64, 64]);
+    });
+});
+
+describe('GameState — backpacks are private', () => {
+    it("only a client whose view holds a backpack gets it, and never what's inside", () => {
+        const state = new GameState();
+        const encoder = new Encoder(state);
+        const ownerView = new StateView();
+        const otherView = new StateView();
+        ownerView.add(state);
+        otherView.add(state);
+        const owner = new GameState();
+        const other = new GameState();
+        const ownerDecoder = new Decoder(owner);
+        const otherDecoder = new Decoder(other);
+        // What Colyseus's SchemaSerializer does: encode the shared changes, then each view's extra.
+        const sync = (full: boolean) => {
+            const it = { offset: 0 };
+            if (full) encoder.encodeAll(it);
+            else encoder.encode(it);
+            const shared = it.offset;
+            ownerDecoder.decode(
+                full
+                    ? encoder.encodeAllView(ownerView, shared, { ...it })
+                    : encoder.encodeView(ownerView, shared, it)
+            );
+            otherDecoder.decode(
+                full
+                    ? encoder.encodeAllView(otherView, shared, { ...it })
+                    : encoder.encodeView(otherView, shared, it)
+            );
+            encoder.discardChanges();
+        };
+        sync(true);
+
+        const pack = new Backpack();
+        Object.assign(pack, { id: 'b1', ownerId: 'a', tileX: 5, tileY: 6, gun: 'big', ammo: 9 });
+        state.backpacks.set('b1', pack);
+        ownerView.add(pack);
+        sync(false);
+        expect(owner.backpacks.get('b1')).toMatchObject({ ownerId: 'a', tileX: 5, tileY: 6 });
+        expect(owner.backpacks.get('b1')?.gun).toBe(''); // contents stay on the server
+        expect(other.backpacks.size).toBe(0);
+
+        state.backpacks.delete('b1');
+        sync(false);
+        expect(owner.backpacks.size).toBe(0);
     });
 });

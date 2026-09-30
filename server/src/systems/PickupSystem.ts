@@ -101,7 +101,7 @@ function update(
 
     const scores = Array.from(state.players.values(), (player) => player.score);
     state.players.forEach((player) => {
-        if (!player.connected) return;
+        if (!player.connected || player.respawnAt > 0) return;
         const { col, row } = pixelToHex(player.x, player.y);
         state.pickups.forEach((pod, id) => {
             if (pod.tileX !== col || pod.tileY !== row) return;

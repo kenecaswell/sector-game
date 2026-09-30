@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOT_PROFILES, SPAWN_SLOTS } from '../constants';
+import { BOT_PROFILES, RESPAWN_DELAY_MS, SPAWN_SLOTS } from '../constants';
 import { hexCenter, hexNeighbors } from '../hex';
 import { GameState, type Player } from '../state/GameState';
 import { DT, addPlayerAt, ownFootprint, setTerrain, world } from '../test/world';
@@ -11,6 +11,7 @@ import { CollisionSystem } from './CollisionSystem';
 import { CombatSystem } from './CombatSystem';
 import { LobbySystem } from './LobbySystem';
 import { MovementSystem, type PlayerInput } from './MovementSystem';
+import { RespawnSystem } from './RespawnSystem';
 import { StructureSystem } from './StructureSystem';
 
 const quiet = () => {};
@@ -243,6 +244,42 @@ describe('BotSystem — playing', () => {
             expect(after).toBeLessThan(before - 100);
             expect(after).toBeGreaterThan(BOT_PROFILES.medium.keepDistance - 60);
         });
+    });
+
+    it('sits out its respawn delay, then goes back for its backpack and gets its gear back', () => {
+        const state = world();
+        const bot = botInMatch(state, 'medium', 30, 20, { gun: 'big', ammo: 20 });
+        bot.structureInventory.clear();
+        RespawnSystem.defeat(state, bot);
+        const inputs = new Map<string, PlayerInput>();
+        BotSystem.update(state, inputs, seededRandom(1), Date.now());
+        expect(inputs.get(bot.id)?.dir).toEqual({ x: 0, y: 0 });
+
+        const run = (seconds: number) => {
+            for (let i = 0; i < seconds / DT; i++) {
+                vi.advanceTimersByTime(DT * 1000);
+                RespawnSystem.update(state, quiet);
+                BotSystem.update(state, inputs, seededRandom(i), Date.now());
+                MovementSystem.update(state, inputs, DT);
+                CollisionSystem.update(state, quiet);
+            }
+        };
+        run(RESPAWN_DELAY_MS / 1000 + 0.1);
+        expect(bot.respawnAt).toBe(0); // back at its spawn, near the east edge
+        run(15);
+        expect(state.backpacks.size).toBe(0);
+        expect(bot).toMatchObject({ gun: 'big' });
+    });
+
+    it("doesn't shoot at or chase a player who is down", () => {
+        const state = world('playing', { teams: false });
+        const bot = botInMatch(state, 'hard', 20, 20, { gun: 'basic', ammo: 30 });
+        const enemy = addPlayerAt(state, 'foe', 24, 20, 'blue');
+        enemy.spawnTileX = 60;
+        enemy.spawnTileY = 60;
+        enemy.respawnAt = Date.now() + 60_000;
+        play(state, 1);
+        expect(bot.ammo).toBe(30);
     });
 
     it('forgets a bot whose player has gone', () => {

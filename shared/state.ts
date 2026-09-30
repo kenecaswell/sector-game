@@ -41,6 +41,7 @@ export interface PlayerState {
     spawnTileY: number;
     bot: boolean; // computer-controlled (see BotSystem on the server); always ready
     botDifficulty: string; // a BotDifficulty for a bot, '' for a person
+    respawnAt: number; // defeated, respawning at this server time (ms); 0 = alive
 }
 
 export interface TileState {
@@ -75,6 +76,15 @@ export interface PickupState {
     tileY: number;
 }
 
+// Weapons and upgrades a player dropped where they were defeated. The server only sends a player
+// their own backpacks; what's inside isn't synced.
+export interface BackpackState {
+    id: string;
+    ownerId: string;
+    tileX: number; // the hex it lies on (col, row)
+    tileY: number;
+}
+
 // The game's settings, fixed when it's created (see GameSettings in types.ts).
 export interface GameSettingsState {
     name: string;
@@ -94,6 +104,7 @@ export interface GameStateShape {
     structures: ReadonlyMap<string, StructureState>;
     projectiles: ReadonlyMap<string, ProjectileState>;
     pickups: ReadonlyMap<string, PickupState>; // empty when the PICKUPS_ENABLED flag is off
+    backpacks: ReadonlyMap<string, BackpackState>; // only your own
     tiles: readonly TileState[];
     phase: GamePhaseStateShape;
     settings: GameSettingsState;

@@ -1,4 +1,4 @@
-import { Schema, MapSchema, ArraySchema, type } from '@colyseus/schema';
+import { Schema, MapSchema, ArraySchema, type, view } from '@colyseus/schema';
 import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH, PROJECTILE_SPEED } from '../constants';
 import {
     DEFAULT_CHARACTER,
@@ -11,6 +11,7 @@ import type {
     GamePhaseStateShape,
     GameSettingsState,
     GameStateShape,
+    BackpackState,
     PickupState,
     PlayerState,
     ProjectileState,
@@ -59,6 +60,8 @@ export class Player extends Schema implements PlayerState {
     // Computer-controlled players (BotSystem): no client, always connected and ready.
     @type('boolean') bot: boolean = false;
     @type('string') botDifficulty: string = ''; // a BotDifficulty, or '' for a person
+    // Defeated: waiting to respawn until this server time (ms); 0 = alive. See RespawnSystem.
+    @type('number') respawnAt: number = 0;
     // Server only (not synced): which spawn-line slot this player starts and respawns at.
     spawnSlot: number = 0;
 }
@@ -100,6 +103,25 @@ export class Pickup extends Schema implements PickupState {
     cell: number = -1;
 }
 
+/**
+ * The weapons and upgrades a player dropped where they were defeated (RespawnSystem). Only its owner's
+ * client gets it (GameState.backpacks is a view-filtered collection); the contents are server only.
+ */
+export class Backpack extends Schema implements BackpackState {
+    @type('string') id: string = '';
+    @type('string') ownerId: string = '';
+    @type('uint8') tileX: number = 0;
+    @type('uint8') tileY: number = 0;
+    // Server only (not synced): what's inside.
+    gun: string = '';
+    ammo: number = 0;
+    boosterLevel: number = 0;
+    expanderLevel: number = 0;
+    armorLevel: number = 0;
+    wingsLevel: number = 0;
+    equippedUpgrade: string = '';
+}
+
 /** A pod waiting to appear in a respawn wave (server only). */
 export interface PendingPod {
     col: number;
@@ -122,17 +144,24 @@ export class GamePhaseState extends Schema implements GamePhaseStateShape {
     @type('number') endsAt: number = 0; // server timestamp ms
 }
 
-// GameState checks everything but its five collections: MapSchema/ArraySchema don't match
+// GameState checks everything but its six collections: MapSchema/ArraySchema don't match
 // ReadonlyMap / readonly T[] exactly for the compiler (they do structurally at runtime, which is
 // what the client's cast relies on), and their element classes above are checked individually.
 export class GameState
     extends Schema
-    implements Omit<GameStateShape, 'players' | 'structures' | 'projectiles' | 'pickups' | 'tiles'>
+    implements
+        Omit<
+            GameStateShape,
+            'players' | 'structures' | 'projectiles' | 'pickups' | 'backpacks' | 'tiles'
+        >
 {
     @type({ map: Player }) players = new MapSchema<Player>();
     @type({ map: Structure }) structures = new MapSchema<Structure>();
     @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();
     @type({ map: Pickup }) pickups = new MapSchema<Pickup>(); // see pickups.ts; empty if the flag is off
+    // Each client sees only its own backpacks: GameRoom gives every client a StateView and adds its
+    // player's backpacks to it (see RespawnSystem and GameRoom.showBackpacks).
+    @view() @type({ map: Backpack }) backpacks = new MapSchema<Backpack>();
     @type([Tile]) tiles = new ArraySchema<Tile>(); // flat array, index = y*width+x
     @type(GamePhaseState) phase = new GamePhaseState();
     @type(GameSettingsSchema) settings = new GameSettingsSchema();
@@ -144,6 +173,7 @@ export class GameState
     podsMade: number = 0; // for unique pod ids
     shotsFired: number = 0; // for unique projectile ids
     botsMade: number = 0; // for unique bot ids
+    backpacksMade: number = 0; // for unique backpack ids
     // Server only: what each bot is thinking (BotSystem), keyed by its player id.
     botBrains = new Map<string, BotBrain>();
 }

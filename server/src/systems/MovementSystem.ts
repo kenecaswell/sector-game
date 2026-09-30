@@ -61,7 +61,8 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
     const now = Date.now();
 
     state.players.forEach((player, sessionId) => {
-        if (!player.connected) {
+        // Disconnected players freeze; defeated ones wait out their respawn delay.
+        if (!player.connected || player.respawnAt > 0) {
             player.vx = 0;
             player.vy = 0;
             return;

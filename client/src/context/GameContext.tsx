@@ -29,6 +29,7 @@ import {
     type ConnectTarget,
 } from '../net/GameConnection';
 import type {
+    BackpackCollectedEvent,
     BotDifficulty,
     CharacterId,
     GameOverEvent,
@@ -179,6 +180,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
                             `Picked up ${pickupLabel(event.kind, event.itemId, event.amount)}`
                         );
                     },
+                    onBackpackCollected: (event: BackpackCollectedEvent) => {
+                        pushNotice('success', `Got your backpack back: ${event.contents}`);
+                    },
                     onPlayerReconnected: (event: PlayerReconnectedEvent) => {
                         if (event.playerId === roomRef.current?.sessionId) return; // that's us
                         pushNotice('success', `${event.name} reconnected`);
@@ -222,7 +226,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         const signature = roster
                             .map(
                                 (p) =>
-                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}|${p.botDifficulty}`
+                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}|${p.botDifficulty}|${p.respawnAt}`
                             )
                             .join(';');
                         if (signature === lastSignature) return;
