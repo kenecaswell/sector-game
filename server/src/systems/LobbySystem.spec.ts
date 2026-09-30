@@ -78,7 +78,8 @@ describe('LobbySystem — ready-up and countdown', () => {
             PhaseSystem.matchDurationMs(state) - 100
         );
         expect(Array.from(a.structureInventory)).toEqual(['farm']);
-        expect([b.gun, b.ammo, b.materials]).toEqual(['basic', 15, 15]);
+        // The Explorer: no gun or ammo (since 2026-09-29), Armor 1 and so 200 health, 15 materials.
+        expect([b.gun, b.ammo, b.materials, b.armorLevel, b.health]).toEqual(['', 0, 15, 1, 200]);
     });
 });
 

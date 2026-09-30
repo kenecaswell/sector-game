@@ -4,7 +4,7 @@ import { hexCenter, hexNeighbors } from '../hex';
 import { GameState, type Player } from '../state/GameState';
 import { DT, addPlayerAt, ownFootprint, setTerrain, world } from '../test/world';
 import { seededRandom } from '../terrain';
-import { TERRAIN, type BotDifficulty } from '../types/shared';
+import { SHOP_ITEMS, TERRAIN, type BotDifficulty } from '../types/shared';
 import { BotSystem } from './BotSystem';
 import { CharacterSystem } from './CharacterSystem';
 import { CollisionSystem } from './CollisionSystem';
@@ -181,10 +181,11 @@ describe('BotSystem — playing', () => {
 
     it('fabricates from its list: a Medium bot makes a gun first', () => {
         const state = world();
-        const bot = botInMatch(state, 'medium', 20, 20, { materials: 100 });
+        const cost = SHOP_ITEMS.basicGun.cost;
+        const bot = botInMatch(state, 'medium', 20, 20, { materials: cost });
         play(state, 0.1);
         expect(bot.gun).toBe('basic');
-        expect(bot.materials).toBeLessThan(100);
+        expect(bot.materials).toBeLessThan(cost);
     });
 
     describe('shooting', () => {

@@ -211,9 +211,9 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 | **Builder** | Starts with a fort. | none | 0 | 50 | fort | — |
 | **Robot** | Moves faster than everyone else. | none | 0 | 50 | — | Booster 1, equipped (133% speed) |
 | **Scientist** | Starts with a power plant. | none | 0 | 50 | power plant | — |
-| **Explorer** | The only one who starts armed, but with few materials. | Basic gun | 15 | 15 | — | — |
+| **Explorer** | Starts with Armor (200 health), but few materials. | none | 0 | 15 | — | Armor 1 (200 health) |
 
-- Only the Explorer can shoot from the start. Everyone else has to fabricate a gun (or find one).
+- **Nobody starts armed** (since 2026-09-29; the Explorer had a Basic gun and 15 shots until then). Everyone has to fabricate a gun (200 materials) or find one in a drop pod.
 - The four structure-starting characters differ only in which structure type they get, and 📝 structure types don't behave differently yet ([Structures](#structures)).
 - 📝 Each character is planned to get its own art; today everyone is a circle in their team color.
 
@@ -272,7 +272,7 @@ Implementation: [Tile Claiming](ARCHITECTURE.md#tile-claiming).
   | **Big gun** | 100 | 1 hit | 2 hits |
 
   You have at most one gun. The Big gun replaces the Basic gun, and you can fabricate it without owning the Basic gun first. You can't go back to the Basic gun.
-- **Ammo:** each shot uses 1. You can fabricate ammo before you have a gun. 📝 Ammo **never regenerates and has no cap**; the only source is buying ammo packs. Running out means you can't shoot until you buy more.
+- **Ammo:** each shot uses 1 (an ammo pack of 30 costs 60 materials). You can fabricate ammo before you have a gun. 📝 Ammo **never regenerates and has no cap**; the only source is buying ammo packs. Running out means you can't shoot until you buy more.
 - **Fire rate:** up to 5 shots per second while you hold the fire control (200 ms apart, `FIRE_INTERVAL_MS`). 📝 This limit is currently enforced only by the game client; the server should own it.
 - **Shots:** travel in a straight line at the same on-screen speed in every direction, at 🧪 **600 on-screen px/s** (`PROJECTILE_SPEED`; 400 until 2026-09-27), and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`): a range of about 1,200 px, roughly 40% of a Small map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
 - **Friendly fire:** none. Shots pass through teammates and teammates' structures.
@@ -338,9 +338,9 @@ Implementation: [Pickups](ARCHITECTURE.md#pickups).
 
 | Category | Item | Cost | What it does | Limit |
 |---|---|---|---|---|
-| Weapons | **Basic gun** | 100 | Lets you shoot; 50 damage per hit. | Not if you have any gun |
-| Weapons | **Big gun** | 200 | 100 damage per hit. Replaces the Basic gun. | One |
-| Weapons | **Ammo pack** | 30 | +30 shots (1 material per shot). | Unlimited; no ammo cap |
+| Weapons | **Basic gun** | 200 | Lets you shoot; 50 damage per hit. | Not if you have any gun |
+| Weapons | **Big gun** | 400 | 100 damage per hit. Replaces the Basic gun. | One |
+| Weapons | **Ammo pack** | 60 | +30 shots (2 materials per shot, `AMMO_MATERIALS_PER_SHOT`). | Unlimited; no ammo cap |
 | Upgrades | **Booster** 1–3 | 100 a level | Top speed 133 / 166 / 199% of normal (`BOOSTER_SPEED_PER_LEVEL`, +33% a level). Uses the upgrade slot. | 3 levels |
 | Upgrades | **Expander** 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once, but top speed drops to 90 / 80 / 70% of normal (`EXPANDER_SLOW_PER_LEVEL`, −10% a level). Uses the upgrade slot. | 3 levels |
 | Upgrades | **Armor** 1–3 | 100 a level | Max health 200 / 300 / 400, and +100 health right away. **Always on**, no slot. | 3 levels |
@@ -349,7 +349,8 @@ Implementation: [Pickups](ARCHITECTURE.md#pickups).
 
 - **Each upgrade is listed once**, offering your next level ("Booster 2" once you own Booster 1); a maxed one shows "Max". A gun you can't improve on shows "Owned".
 - **Upgrade levels last the match**, but when you're defeated they drop in your backpack with your gun and ammo until you pick it up ([Players](#players)). See [Upgrades](#upgrades) for the one-slot rule.
-- 📝 **Pacing:** starting kits give at most 50 materials and everything except ammo costs 100 or more, so a first real item waits on territory income and pickups. Worth watching in playtests.
+- **Weapons cost double** since 2026-09-29 (they were 100 / 200 / 30): fighting is meant to be an investment rather than the obvious first buy.
+- 📝 **Pacing:** starting kits give at most 50 materials, and everything costs 60 or more (a gun 200), so a first real item waits on territory income and pickups, and a gun takes about 150 fresh hexes. Worth watching in playtests.
 
 Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materials)](ARCHITECTURE.md#economy-materials).
 
@@ -436,8 +437,8 @@ Things that need a design decision, not just code. Where one is also tracked in 
 - **More items:** stronger armor, and whatever structure types end up doing.
 - **Shopping risk:** maybe only allow buying while standing on your own territory (or near a city hall). Not decided.
 - **Snowballing:** territory income and purchases compound for whoever is ahead. The Expander in particular is strong (up to 9 hexes at a time) for 100 materials. Options: rising prices, a radius cap, or stackable upgrades with rising costs.
-- **Early game:** nothing but ammo is affordable at the start; at 1 material a fresh hex, a 100-material item is about 50 new hexes away (starting materials cover the rest), so pickups matter. Check whether that feels right.
-- **Pickups:** should players see where they are from afar (a minimap or edge markers)? Tune the tier odds (and maybe the amounts per tier) in playtests. Is a gun too strong early for whoever reaches a pod first?
+- **Early game:** nothing is affordable at the start (even an ammo pack is 60); at 1 material a fresh hex, a 100-material item is about 50 new hexes away and a gun (200) about 150, so pickups matter. Since nobody starts armed (2026-09-29), the opening minutes are all claiming. Check whether that feels right.
+- **Pickups:** should players see where they are from afar (a minimap or edge markers)? Tune the tier odds (and maybe the amounts per tier) in playtests. Is a gun too strong early for whoever reaches a pod first? That matters more now: a pod gun is worth 200 materials and nobody starts armed.
 
 ### Map and spawning
 - **Starting positions:** ✅ decided 2026-09-26 (spawn line, see [The map](#the-map)). Still open: should teammates start next to each other rather than in join order?
@@ -566,3 +567,5 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Difficulty as profiles | Each difficulty is a set of numbers (think rate, speed, look-ahead, reaction time, aim error and lead, fire rate, range, chasing, what to fabricate and in what order, building, upgrade switching); first-pass values tuned in headless simulations | Separate hand-written behavior per difficulty | One behavior with different numbers is easier to tune and keeps the difficulties consistent; `tools/bot-sim.js` plays a match in about 2 seconds, so a change can be compared on the same maps |
 | Respawn delay and backpacks | A defeated player is out for 5 s (`RESPAWN_DELAY_MS`), then respawns at their spawn. Their gun, ammo and every upgrade level drop in a backpack on the hex where they fell, which only they can see and pick up; tiles, structures, materials and kills stay theirs | Instant respawn keeping everything (previous); dropping gear anyone can take | Requested (2026-09-29): 5 s delay; weapons and upgrades (not structures) dropped where you died; nobody else can see or take them; a backpack icon. My choices: **ammo goes in the backpack with the gun** ("weapons"; otherwise you'd respawn with shots and nothing to fire them with); getting it back merges with what you've fabricated since (better gun, higher levels, ammo added) so re-buying is never wasted; while down you can't be hit, act or open pods, but can use the Fabricator; a backpack you couldn't walk to (dropped flying over terrain, with the Wings inside) moves to the nearest walkable hex; backpacks last until picked up or the match ends |
 | Bots and backpacks | Bots go back for their own backpack unless an armed enemy is within their shot range of it; they ignore downed players | Always go back | From simulation: weaker bots kept walking back to where a Hard bot had just defeated them and dying there again, spending up to 40% of the match in "recover" |
+| Weapons cost double | Basic gun 200, Big gun 400, ammo pack 60 (2 materials a shot) | 100 / 200 / 30 (previous) | Requested (2026-09-29). My reading: "weapons" is the Fabricator's Weapons category, so the ammo pack doubles too |
+| Explorer starts with Armor | The Explorer has no gun or ammo; it starts with Armor 1 (200 health) and keeps its 15 materials. Nobody starts armed | Basic gun and 15 shots (previous) | Requested (2026-09-29). Keeping 15 materials (my choice): Armor 1 is worth 100 materials, so it's still the kit with the least to spend |

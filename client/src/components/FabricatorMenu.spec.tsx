@@ -50,10 +50,11 @@ describe('FabricatorMenu', () => {
     });
 
     it('only enables what you can afford', () => {
-        renderMenu(makePlayer({ materials: 50 }));
-        expect(buttonFor('Ammo pack')).toBeEnabled(); // 30
-        expect(buttonFor('Basic gun')).toBeDisabled(); // 100
-        expect(buttonFor('Big gun')).toBeDisabled(); // 200
+        renderMenu(makePlayer({ materials: 100 }));
+        expect(buttonFor('Ammo pack')).toBeEnabled(); // 60
+        expect(buttonFor('Booster')).toBeEnabled(); // 100
+        expect(buttonFor('Basic gun')).toBeDisabled(); // 200
+        expect(buttonFor('Big gun')).toBeDisabled(); // 400
         expect(buttonFor('Basic gun')).toHaveAttribute('title', 'Not enough materials');
     });
 

@@ -272,8 +272,10 @@ async function lifecycle() {
                 me(a).ammo === farmer.ammo &&
                 kitMaterials(me(a)) === farmer.materials &&
                 Array.from(me(a).structureInventory).join() === farmer.structures.join() &&
-                b.state.players.get(b.sessionId).gun === explorer.gun &&
+                b.state.players.get(b.sessionId).gun === (explorer.gun ?? '') &&
                 me(b).ammo === explorer.ammo &&
+                me(b).armorLevel === (explorer.upgrades.armor ?? 0) &&
+                me(b).health === me(b).maxHealth &&
                 kitMaterials(me(b)) === explorer.materials
         );
 
@@ -281,6 +283,13 @@ async function lifecycle() {
         await sleep(300);
         check('an unarmed player cannot shoot', a.state.projectiles.size === 0);
 
+        // Nobody starts armed (since 2026-09-29): the Explorer fabricates a gun and ammo with the dev
+        // materials.
+        b.send('devMaterials');
+        await waitFor(() => me(b).materials >= C.DEV_MATERIALS, 2000);
+        b.send('purchase', { itemId: 'basicGun' });
+        b.send('purchase', { itemId: 'ammo' });
+        await waitFor(() => me(b).gun === 'basic' && me(b).ammo > 0, 2000);
         const before = { x: me(b).x, ammo: me(b).ammo };
         await hold(b, 1, 0, 1200);
         b.send('shoot', { angle: 0, seq: ++seq });
@@ -423,30 +432,32 @@ async function shop() {
             bot().equippedUpgrade === 'booster'
         );
 
-        // A Farmer starts with 50 materials: enough for an ammo pack, not for anything that costs 100.
+        // A Farmer starts with 50 materials: not enough for an ammo pack (60 since weapons doubled
+        // in price, 2026-09-29) or anything that costs 100 or more.
         const start = me(a).materials;
-        for (const itemId of ['basicGun', 'expander', 'farm']) a.send('purchase', { itemId });
+        for (const itemId of ['ammo', 'basicGun', 'expander', 'farm']) a.send('purchase', { itemId });
         await sleep(300);
         check(
             "items you can't afford are refused",
             me(a).gun === '' &&
+                me(a).ammo === 0 &&
                 me(a).claimRadius === C.BASE_CLAIM_RADIUS &&
                 me(a).structureInventory.length === 1 &&
                 me(a).materials === start
         );
+        a.send('devMaterials');
+        await sleep(300);
+        check(
+            'DEV: the devMaterials message (the M key) adds DEV_MATERIALS',
+            me(a).materials === start + C.DEV_MATERIALS
+        );
+        const rich = me(a).materials;
         a.send('purchase', { itemId: 'ammo' });
         await sleep(300);
         check(
             'buying ammo over the wire costs its price and adds the pack',
             me(a).ammo === shared.AMMO_PACK_SIZE &&
-                me(a).materials === start - shared.SHOP_ITEMS.ammo.cost
-        );
-        const beforeDev = me(a).materials;
-        a.send('devMaterials');
-        await sleep(300);
-        check(
-            'DEV: the devMaterials message (the M key) adds DEV_MATERIALS',
-            me(a).materials === beforeDev + C.DEV_MATERIALS
+                me(a).materials === rich - shared.SHOP_ITEMS.ammo.cost
         );
 
         const late = await join(new Client(URL));
@@ -727,11 +738,14 @@ async function backpacks() {
             const collected = [];
             a.onMessage('backpackCollected', (m) => collected.push(['a', m]));
             b.onMessage('backpackCollected', (m) => collected.push(['b', m]));
-            a.send('selectCharacter', { characterId: 'explorer' }); // a Basic gun and 15 shots
             b.send('selectCharacter', { characterId: 'robot' }); // Booster 1, equipped
             await sleep(300);
             await startMatch(a, b);
-            await waitFor(() => me(b).boosterLevel === 1 && me(a).gun === 'basic', 2000);
+            a.send('devMaterials'); // the shooter fabricates a Basic gun and ammo
+            await waitFor(() => me(a).materials >= C.DEV_MATERIALS, 2000);
+            a.send('purchase', { itemId: 'basicGun' });
+            a.send('purchase', { itemId: 'ammo' });
+            await waitFor(() => me(b).boosterLevel === 1 && me(a).gun === 'basic' && me(a).ammo > 0, 2000);
 
             // The robot walks a few hexes west of its spawn, then the shooter fires twice at it.
             const spawn = { x: me(b).x, y: me(b).y };

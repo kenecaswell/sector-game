@@ -8,9 +8,9 @@ import { ShopSystem } from './ShopSystem';
 const buyer = (materials = 1000) => Object.assign(new Player(), { materials });
 
 describe('ShopSystem — prices', () => {
-    it('guns 100 / 200, upgrades and structures 100, ammo 1 material per shot', () => {
-        expect(SHOP_ITEMS.basicGun.cost).toBe(100);
-        expect(SHOP_ITEMS.bigGun.cost).toBe(200);
+    it('weapons cost double: guns 200 / 400, ammo 2 materials a shot; upgrades and structures 100', () => {
+        expect(SHOP_ITEMS.basicGun.cost).toBe(200);
+        expect(SHOP_ITEMS.bigGun.cost).toBe(400);
         for (const id of [
             'booster',
             'armor',
@@ -23,7 +23,7 @@ describe('ShopSystem — prices', () => {
         ] as const) {
             expect(SHOP_ITEMS[id].cost, id).toBe(100);
         }
-        expect(SHOP_ITEMS.ammo.cost).toBe(AMMO_PACK_SIZE);
+        expect(SHOP_ITEMS.ammo.cost).toBe(AMMO_PACK_SIZE * 2);
     });
 
     it("refuses what you can't afford, charging nothing", () => {
@@ -65,7 +65,7 @@ describe('ShopSystem — weapons', () => {
         expect(ShopSystem.purchase(p, 'basicGun')).toBe(true);
         expect(p.gun).toBe('basic');
         expect(ShopSystem.purchase(p, 'basicGun')).toBe(false);
-        expect(p.materials).toBe(900);
+        expect(p.materials).toBe(800);
     });
 
     it("the big gun replaces the basic one, and you can't go back or buy it twice", () => {
@@ -75,7 +75,7 @@ describe('ShopSystem — weapons', () => {
         expect(p.gun).toBe('big');
         expect(ShopSystem.purchase(p, 'basicGun')).toBe(false);
         expect(ShopSystem.purchase(p, 'bigGun')).toBe(false);
-        expect(p.materials).toBe(700);
+        expect(p.materials).toBe(400);
     });
 
     it("the big gun doesn't need the basic one first", () => {

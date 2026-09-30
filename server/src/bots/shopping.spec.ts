@@ -25,7 +25,7 @@ const plan = (shopPlan: ShopItemId[], saveUp = true, keepBuilding = false) => ({
 describe('nextPurchase', () => {
     it('follows the list in order, skipping what it already has', () => {
         const list = plan(['basicGun', 'expander', 'expander', 'fort']);
-        expect(nextPurchase(buyer({ materials: 100 }), list, 0)).toBe('basicGun');
+        expect(nextPurchase(buyer({ materials: 200 }), list, 0)).toBe('basicGun'); // guns cost 200
         expect(nextPurchase(buyer({ materials: 100, gun: 'basic', ammo: 30 }), list, 0)).toBe(
             'expander'
         );

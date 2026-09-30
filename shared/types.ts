@@ -450,12 +450,12 @@ export const CHARACTERS: Record<CharacterId, Character> = {
     explorer: {
         id: 'explorer',
         name: 'Explorer',
-        description: 'The only one who starts armed, but with few materials.',
-        gun: 'basic',
-        ammo: 15,
+        description: 'Starts with Armor (200 health), but few materials.',
+        gun: null,
+        ammo: 0,
         structures: [],
         materials: 15,
-        upgrades: {},
+        upgrades: { armor: 1 },
     },
 };
 
@@ -507,7 +507,7 @@ export interface ShopItem {
 }
 
 export const AMMO_PACK_SIZE = 30; // shots per purchase
-export const AMMO_MATERIALS_PER_SHOT = 1;
+export const AMMO_MATERIALS_PER_SHOT = 2; // 1 until 2026-09-29, when weapons doubled in price
 export const STRUCTURE_COST = 100;
 
 const UPGRADE_COST = 100; // materials per level
@@ -537,7 +537,7 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
         category: 'weapons',
         name: GUN_NAMES.basic,
         description: `Lets you shoot (you still need ammo). ${GUN_DAMAGE.basic} damage per hit.`,
-        cost: 100,
+        cost: 200, // weapons doubled in price 2026-09-29 (Basic 100, Big 200, ammo 1 a shot before)
         gun: 'basic',
     },
     bigGun: {
@@ -545,7 +545,7 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
         category: 'weapons',
         name: GUN_NAMES.big,
         description: `${GUN_DAMAGE.big} damage per hit (double). Replaces the basic gun.`,
-        cost: 200,
+        cost: 400,
         gun: 'big',
     },
     ammo: {

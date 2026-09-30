@@ -135,7 +135,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      | Builder | — | 0 | 50 | Fort | — |
      | Robot | — | 0 | 50 | — | Booster 1, equipped (+33% top speed) |
      | Scientist | — | 0 | 50 | Power plant | — |
-     | Explorer | Basic gun | 15 | 15 | — | — |
+     | Explorer | — | 0 | 15 | — | Armor 1 (200 health) |
 
      The four structure types all work the same for now.
    - **Ready** — press it when you're set (press again to cancel). Team and character are locked while you're ready.
@@ -143,16 +143,16 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
    - **Bots** — under the player list, pick **Easy**, **Medium** or **Hard** and press **+ Add bot** for a computer-controlled player. Anyone in the lobby can change a bot's color (or team), character and difficulty, or remove it (✕). Bots count toward the 10 players and are always ready. They leave you alone near your own spawn. What each difficulty does is in [GAME_DESIGN → Bots](docs/GAME_DESIGN.md#bots-single-player).
 
    When everyone connected is ready, a **3-second countdown** starts. It's cancelled if anyone un-readies or someone new joins. Bots alone never start a match.
-2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — only the Explorer starts with one), place the structures your character started with on hexes you own, and gather materials. The Fabricator stays available from the **Fabricator** button — the game keeps running while it's open.
+2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — nobody starts with one: fabricate it or find it in a drop pod), place the structures your character started with on hexes you own, and gather materials. The Fabricator stays available from the **Fabricator** button — the game keeps running while it's open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
 **Fabricator** (during the match; the **Fabricator** button or `F`). Items aren't bought, they're fabricated from materials:
 
 | | Item | Cost | What it does |
 |---|---|---|---|
-| Weapons | Basic gun | 100 | Lets you shoot, 50 damage per hit |
-| | Big gun | 200 | 100 damage per hit; replaces the basic gun |
-| | Ammo pack | 30 | 30 shots |
+| Weapons | Basic gun | 200 | Lets you shoot, 50 damage per hit |
+| | Big gun | 400 | 100 damage per hit; replaces the basic gun |
+| | Ammo pack | 60 | 30 shots |
 | Upgrades | Booster 1–3 | 100 a level | 133 / 166 / 199% speed |
 | | Expander 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you); 90 / 80 / 70% speed |
 | | Armor 1–3 | 100 a level | 200 / 300 / 400 health; always on |
@@ -209,7 +209,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 | `EADDRINUSE` on port 2567 | Another server instance is running. Stop it, or set a different `PORT` |
 | The match doesn't start | Every connected player has to press **Ready**. A newcomer joining (not ready yet) cancels the countdown |
 | Can't change team or character | You're ready — press **✓ Ready** again to un-ready, then change it |
-| Shooting does nothing | You need a gun: fabricate the Basic gun in the **Fabricator** or find one (only the Explorer starts armed), plus ammo |
+| Shooting does nothing | You need a gun: fabricate the Basic gun in the **Fabricator** or find one in a drop pod (nobody starts armed), plus ammo |
 | Results screen says "This room has closed." | Expected: finished rooms close after the results period. Choose **Play again** for a fresh lobby |
 | Server restarts mid-game and everyone is dropped | Expected: `npm run dev` restarts on any file change and rooms live in memory |
 

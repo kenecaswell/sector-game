@@ -115,7 +115,7 @@ describe('LobbyScreen — team, character and ready', () => {
         showLobby({ character: 'explorer' }, [makePlayer({ id: 'b', name: 'Bo', teamId: 'red' })]);
         expect(screen.getByRole('option', { name: 'Red (2)' })).toBeInTheDocument();
         expect(screen.getByText('Explorer', { selector: 'strong' })).toBeInTheDocument(); // the card's title
-        expect(screen.getByText('Basic gun')).toBeInTheDocument();
+        expect(screen.getByText('Armor 1')).toBeInTheDocument(); // the Explorer's kit, since 2026-09-29
     });
 
     it('Ready toggles, and locks team and character while you are ready', async () => {
