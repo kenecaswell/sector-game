@@ -605,6 +605,22 @@ async function games() {
         );
         check('...drop pods off means no pods on the map', a.state.pickups.size === 0);
 
+        // Each game gets a random color scheme: create games until every scheme has come up.
+        const themes = new Set([a.state.theme]);
+        for (let i = 0; i < 30 && themes.size < shared.TERRAIN_THEME_IDS.length; i++) {
+            const extra = await client.create('GameRoom', {});
+            if (!extra.state?.phase) await new Promise((resolve) => extra.onStateChange.once(resolve));
+            themes.add(extra.state.theme);
+            await extra.leave(true);
+        }
+        check(
+            'each game picks a random color scheme, and every scheme comes up',
+            [...themes].every((t) => shared.isTerrainThemeId(t)) &&
+                themes.size === shared.TERRAIN_THEME_IDS.length,
+            [...themes].join(', ')
+        );
+        await sleep(500); // the extra games close as they empty, before the list is checked below
+
         const other = await client.create('GameRoom', {});
         let listed = await fetchGames();
         const ours = listed.find((g) => g.code === code);

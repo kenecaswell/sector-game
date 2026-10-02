@@ -622,6 +622,15 @@ export interface EquipUpgradeMessage {
 export const TERRAIN = { ground: 0, mountain: 1, water: 2 } as const;
 export type Terrain = (typeof TERRAIN)[keyof typeof TERRAIN];
 
+// The terrain's color scheme, picked at random for each match by the server (GameState.theme) so
+// everyone in it sees the same map. The client's palettes are in client/src/game/terrainPalettes.ts.
+export type TerrainThemeId = 'slate' | 'titan';
+export const TERRAIN_THEME_IDS: TerrainThemeId[] = ['slate', 'titan'];
+
+export function isTerrainThemeId(value: unknown): value is TerrainThemeId {
+    return typeof value === 'string' && (TERRAIN_THEME_IDS as string[]).includes(value);
+}
+
 // --- Pickups -----------------------------------------------------------------------------------
 // Identical drop pods lying on the map, placed when the room is created (server/src/pickups.ts)
 // when the PICKUPS_ENABLED feature flag is on. Walk onto one's hex to open it (see PickupSystem):

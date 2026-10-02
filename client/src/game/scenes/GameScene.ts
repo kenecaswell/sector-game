@@ -11,35 +11,25 @@ import { drawDropPod, drawDropPodGlow } from '../pickups';
 import { drawBackpack, drawBackpackRing } from '../backpack';
 import { drawSpawnPad } from '../spawnPad';
 import {
-    CRACK_COLOR,
-    FROST_COLOR,
+    DEEP_BANK_HEIGHT,
+    SHALLOW_BANK_HEIGHT,
+    drawMountain,
     groundColor,
     groundDetails,
     groundDust,
-    DEEP_BANK_HEIGHT,
-    DEEP_WATER_COLOR,
-    DEEP_WATER_DARK,
-    FOAM_COLOR,
-    RIPPLE_COLOR,
-    SCREE_COLOR,
-    SCREE_SPECK_COLOR,
-    SHALLOW_BANK_HEIGHT,
-    SHALLOW_BED_COLOR,
-    SHALLOW_WATER_COLOR,
-    SPARKLE_COLOR,
-    drawMountain,
     hexSeed,
     mixColor,
     mountainModel,
     pebbles,
     rippleMarks,
     seededRandom,
+    skyReflection,
 } from '../terrainArt';
+import { paletteFor, type TerrainPalette } from '../terrainPalettes';
 import { GUN_DAMAGE, TERRAIN } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
 import { isShallowWater } from '../terrain';
 import {
-    BACKGROUND_COLOR,
     BASE_CLAIM_RADIUS,
     BODY_LIFT,
     CLAIM_BLEND,
@@ -53,11 +43,7 @@ import {
     EXTRAPOLATION_S,
     FIRE_INTERVAL_MS,
     HEX_DEPTH,
-    HEX_OUTLINE_COLOR,
-    HEX_SIDE_COLOR,
-    HEX_SIDE_DARK_COLOR,
     HEX_SIZE,
-    HEX_TOP_COLOR,
     INPUT_KEEPALIVE_MS,
     INPUT_SEND_INTERVAL_MS,
     ISO_SQUASH,
@@ -165,6 +151,8 @@ const AIM_MIN_DISTANCE = 6; // world px — closer than this to the player, keep
  */
 export class GameScene extends Phaser.Scene {
     private room!: GameRoom;
+    // The match's terrain colors (Slate or Titan: GameState.theme, picked by the server).
+    private palette!: TerrainPalette;
     private sessionId = '';
     private callbacks!: GameSceneCallbacks;
 
@@ -256,7 +244,8 @@ export class GameScene extends Phaser.Scene {
 
         // Deliberately no camera bounds: the camera always centers on your player, even at the
         // map's edge (showing empty space beyond it), so you can never walk off the screen.
-        this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
+        this.palette = paletteFor(this.room.state.theme);
+        this.cameras.main.setBackgroundColor(this.palette.background);
 
         const layerWidth = Math.ceil(world.width) + 1;
         const layerHeight = Math.ceil(world.height * ISO_SQUASH + HEX_DEPTH) + 1;
@@ -625,6 +614,7 @@ export class GameScene extends Phaser.Scene {
      */
     private drawBase(): void {
         const { mapWidth, mapHeight, tiles } = this.room.state;
+        const { liquid } = this.palette;
         const terrainAt = (col: number, row: number): number =>
             isValidHex(col, row, mapWidth, mapHeight)
                 ? (tiles[hexIndex(col, row, mapWidth)]?.terrain ?? TERRAIN.ground)
@@ -637,12 +627,16 @@ export class GameScene extends Phaser.Scene {
         // to hex so a lake isn't one flat color.
         const topColor = (terrain: number, col: number, row: number, center: Point): number => {
             const index = hexIndex(col, row, mapWidth);
-            if (terrain === TERRAIN.mountain) return SCREE_COLOR;
-            if (terrain !== TERRAIN.water) return groundColor(center, index);
-            if (shallow(col, row)) return SHALLOW_WATER_COLOR;
+            if (terrain === TERRAIN.mountain) return this.palette.scree;
+            if (terrain !== TERRAIN.water) return groundColor(center, index, this.palette);
+            // Shallow liquid is one flat color of its own, so it's never mistaken for deep.
+            if (shallow(col, row)) return liquid.shallow;
             const wet = hexNeighbors(col, row).filter((n) => isWater(n.col, n.row)).length;
             const jitter = seededRandom(hexSeed(index, 1))() * 0.15;
-            return mixColor(DEEP_WATER_COLOR, DEEP_WATER_DARK, (wet / 6) * 0.6 + jitter);
+            const deep = mixColor(liquid.deep, liquid.deepDark, (wet / 6) * 0.6 + jitter);
+            // Deep liquid mirrors the sky in smooth patches across a lake (skyReflection), so
+            // neighboring hexes gleam together; how much depends on the palette (none for Slate).
+            return mixColor(deep, liquid.reflection, skyReflection(center) * liquid.deepGleam);
         };
 
         const order: Array<{ col: number; row: number; center: Point }> = [];
@@ -681,7 +675,7 @@ export class GameScene extends Phaser.Scene {
                 for (let i = 0; i < 3; i++) {
                     const a = corners[i];
                     const b = corners[i + 1];
-                    g.fillStyle(i === 1 ? HEX_SIDE_DARK_COLOR : HEX_SIDE_COLOR, 1);
+                    g.fillStyle(i === 1 ? this.palette.cliffDark : this.palette.cliff, 1);
                     g.fillPoints(
                         [
                             a,
@@ -700,7 +694,7 @@ export class GameScene extends Phaser.Scene {
                 }
                 if (terrain !== TERRAIN.ground) continue; // its details come in the second pass
                 this.drawGroundDetails(g, col, row, corners, center);
-                g.lineStyle(1, HEX_OUTLINE_COLOR, 0.6);
+                g.lineStyle(1, this.palette.outline, 0.6);
                 this.forEachEdge(col, row, corners, (a, b, neighbor) => {
                     if (terrainAt(neighbor.col, neighbor.row) === TERRAIN.ground)
                         g.lineBetween(a.x, a.y, b.x, b.y);
@@ -716,7 +710,7 @@ export class GameScene extends Phaser.Scene {
                 const corners = this.hexCornerCache[index];
                 if (terrain === TERRAIN.mountain) {
                     // Scree under the mountain: a few darker stones.
-                    g.fillStyle(SCREE_SPECK_COLOR, 0.8);
+                    g.fillStyle(this.palette.screeSpeck, 0.8);
                     for (const [x, y, w, h] of pebbles(center, hexSeed(index, 2))) {
                         g.fillEllipse(x, y, w, h);
                     }
@@ -745,13 +739,19 @@ export class GameScene extends Phaser.Scene {
         center: Point
     ): void {
         const index = hexIndex(col, row, this.room.state.mapWidth);
-        const { grains, cracks, frost } = groundDetails(center, index, groundDust(center));
+        const palette = this.palette;
+        const { grains, cracks, frost } = groundDetails(
+            center,
+            index,
+            groundDust(center, palette),
+            palette
+        );
         for (const patch of frost) {
-            g.fillStyle(FROST_COLOR, 0.05);
+            g.fillStyle(palette.ground.frost, 0.05);
             g.fillEllipse(patch.x, patch.y, patch.w, patch.h);
         }
         for (const crack of cracks) {
-            g.lineStyle(1, CRACK_COLOR, 0.3);
+            g.lineStyle(1, palette.ground.crack, 0.3);
             g.strokePoints(crack as Phaser.Math.Vector2[], false);
         }
         for (const grain of grains) {
@@ -784,12 +784,30 @@ export class GameScene extends Phaser.Scene {
         isWater: (col: number, row: number) => boolean
     ): void {
         const index = hexIndex(col, row, this.room.state.mapWidth);
+        const { liquid } = this.palette;
+        // Where deep liquid mirrors the sky most (its top is already tinted there: drawBase), thin
+        // horizontal glints, like sunset light on dark water. Not on shallows, nor in palettes
+        // without reflections.
+        const gleam = isShallow || liquid.deepGleam === 0 ? 0 : skyReflection(center);
+        if (gleam > 0.25) {
+            const random = seededRandom(hexSeed(index, 8));
+            const glints = Math.round(gleam * 3);
+            for (let k = 0; k < glints; k++) {
+                g.fillStyle(liquid.glint, 0.3 * gleam);
+                g.fillEllipse(
+                    center.x + (random() * 2 - 1) * 14,
+                    center.y + (random() * 2 - 1) * 7,
+                    10 + random() * 14,
+                    1.5
+                );
+            }
+        }
         if (isShallow) {
-            g.fillStyle(SHALLOW_BED_COLOR, 0.3);
+            g.fillStyle(liquid.shallowBed, 0.3);
             for (const [x, y, w, h] of pebbles(center, hexSeed(index, 3)))
                 g.fillEllipse(x, y, w, h);
         }
-        g.lineStyle(1, RIPPLE_COLOR, isShallow ? 0.28 : 0.2);
+        g.lineStyle(1, liquid.ripple, isShallow ? 0.3 : 0.28);
         for (const wave of rippleMarks(center, hexSeed(index, 4), isShallow ? 1 : 2)) {
             g.strokePoints(wave as Phaser.Math.Vector2[], false);
         }
@@ -801,7 +819,7 @@ export class GameScene extends Phaser.Scene {
             const ay = a.y + (center.y - a.y) * 0.06;
             const bx = b.x + (center.x - b.x) * 0.06;
             const by = b.y + (center.y - b.y) * 0.06;
-            g.lineStyle(1.5, FOAM_COLOR, 0.45);
+            g.lineStyle(1.5, liquid.foam, 0.45);
             g.lineBetween(ax, ay, bx, by);
         });
     }
@@ -826,9 +844,9 @@ export class GameScene extends Phaser.Scene {
             if (isWater(neighbor.col, neighbor.row) || corners.indexOf(a) < 3) return;
             const a2 = new Phaser.Math.Vector2(a.x, a.y + bank);
             const b2 = new Phaser.Math.Vector2(b.x, b.y + bank);
-            g.fillStyle(HEX_SIDE_COLOR, 1);
+            g.fillStyle(this.palette.cliff, 1);
             g.fillPoints([a, b, b2, a2], true);
-            g.lineStyle(1.5, FOAM_COLOR, 0.55);
+            g.lineStyle(1.5, this.palette.liquid.foam, 0.55);
             g.lineBetween(a2.x, a2.y, b2.x, b2.y);
         });
     }
@@ -855,13 +873,14 @@ export class GameScene extends Phaser.Scene {
                 centers,
                 piece.size >= 7,
                 hexSeed(hexes[0], 5),
-                ISO_SQUASH
+                ISO_SQUASH,
+                this.palette
             );
             const { minX, minY, maxX, maxY } = model.bounds;
             const key = `mountain-${i}`;
             if (this.textures.exists(key)) this.textures.remove(key);
             const g = this.make.graphics({}, false);
-            drawMountain(g, model, pad - minX, pad - minY);
+            drawMountain(g, model, pad - minX, pad - minY, this.palette);
             g.generateTexture(
                 key,
                 Math.ceil(maxX - minX) + pad * 2,
@@ -897,7 +916,7 @@ export class GameScene extends Phaser.Scene {
                     at.y + (random() * 2 - 1) * 7,
                     5,
                     2,
-                    SPARKLE_COLOR,
+                    this.palette.liquid.sparkle,
                     1
                 )
                 .setAlpha(0)
@@ -1026,7 +1045,7 @@ export class GameScene extends Phaser.Scene {
             // The tint washes out the base layer's outline, so draw a border again — otherwise
             // a group of same-colored hexes merges into one blob.
             // The owner's color at CLAIM_BLEND strength, see-through so the ground's texture shows.
-            const fill = blendColors(HEX_TOP_COLOR, ownerColor, CLAIM_BLEND);
+            const fill = blendColors(this.palette.ground.base, ownerColor, CLAIM_BLEND);
             g.fillStyle(ownerColor, CLAIM_BLEND);
             g.fillPoints(this.hexCornerCache[i], true);
             g.lineStyle(CLAIM_BORDER_WIDTH, blendColors(fill, 0x000000, CLAIM_BORDER_DARKEN), 1);

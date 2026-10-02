@@ -13,7 +13,7 @@ export function createPhaserGame(
         parent,
         width: parent.clientWidth || window.innerWidth,
         height: parent.clientHeight || window.innerHeight,
-        backgroundColor: '#1a1a2e',
+        backgroundColor: '#141414', // until GameScene sets the match's palette background
         scale: {
             mode: Phaser.Scale.RESIZE,
         },

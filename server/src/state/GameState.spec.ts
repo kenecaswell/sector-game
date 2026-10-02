@@ -183,3 +183,14 @@ describe('GameState — mountains', () => {
         ]);
     });
 });
+
+describe('GameState — theme', () => {
+    it("syncs the match's color scheme", () => {
+        const state = new GameState();
+        expect(state.theme).toBe('slate');
+        state.theme = 'titan';
+        const client = new GameState();
+        new Decoder(client).decode(new Encoder(state).encodeAll());
+        expect(client.theme).toBe('titan');
+    });
+});

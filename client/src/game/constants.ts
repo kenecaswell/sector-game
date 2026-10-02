@@ -78,11 +78,8 @@ export const CLAIM_CHUNK_SIZE = 512;
 export const BASE_TILE_SIZE = 2048;
 
 // --- Colors ---
-export const BACKGROUND_COLOR = 0x1a1a2e;
-export const HEX_TOP_COLOR = 0x3a4763;
-export const HEX_SIDE_COLOR = 0x2c2a3d; // cliffs and water banks: slate warmed toward brown (0x262f45 until 2026-09-30)
-export const HEX_SIDE_DARK_COLOR = 0x211f2e;
-export const HEX_OUTLINE_COLOR = 0x1a1a2e;
+// The terrain's colors (background, ground, cliffs, outlines, mountains, liquid) come from the
+// match's palette: game/terrainPalettes.ts.
 // Terrain (mountains, water) has its own look and colors in game/terrainArt.ts.
 export const CLAIM_BLEND = 0.65; // how strongly an owner's color tints a claimed hex top
 export const CLAIM_BORDER_DARKEN = 0.1; // border of a claimed hex: its fill, darkened by this much

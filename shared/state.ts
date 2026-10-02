@@ -115,6 +115,7 @@ export interface GameStateShape {
     backpacks: ReadonlyMap<string, BackpackState>; // only your own
     tiles: readonly TileState[];
     mountains: readonly MountainPieceState[]; // how the mountain hexes group into mountains
+    theme: string; // a TerrainThemeId: the match's color scheme, fixed for the match
     phase: GamePhaseStateShape;
     settings: GameSettingsState;
     mapWidth: number;

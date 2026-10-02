@@ -180,6 +180,7 @@ export class GameState
     @view() @type({ map: Backpack }) backpacks = new MapSchema<Backpack>();
     @type([Tile]) tiles = new ArraySchema<Tile>(); // flat array, index = y*width+x
     @type([MountainPiece]) mountains = new ArraySchema<MountainPiece>(); // set once, for drawing
+    @type('string') theme: string = 'slate'; // a TerrainThemeId: the terrain's color scheme
     @type(GamePhaseState) phase = new GamePhaseState();
     @type(GameSettingsSchema) settings = new GameSettingsSchema();
     @type('number') mapWidth: number = 64;

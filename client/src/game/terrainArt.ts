@@ -6,6 +6,7 @@
 // ISO_SQUASH), with y down. Heights are screen px straight up.
 
 import type Phaser from 'phaser';
+import type { TerrainPalette } from './terrainPalettes';
 
 export interface Pt {
     x: number;
@@ -13,17 +14,9 @@ export interface Pt {
 }
 
 // --- Look -------------------------------------------------------------------------------------
-// Titan's mountains are cold rock with ice on top; its lakes are dark, its shallows sandy.
+// The colors come from the match's palette (terrainPalettes.ts: Slate or Titan); the shapes are the
+// same for every palette.
 
-// Mountain rock and snow: each facet is shaded between these by how much it faces the light.
-export const ROCK_SHADOW = 0x262838;
-export const ROCK_MID = 0x5d6076;
-export const ROCK_LIGHT = 0xc2c5d3;
-export const SNOW_SHADOW = 0x9fb0c8;
-export const SNOW_LIGHT = 0xf5f8fc;
-// The rubble the mountain stands on (the tops of mountain hexes, mostly hidden by the sprite).
-export const SCREE_COLOR = 0x4a4858;
-export const SCREE_SPECK_COLOR = 0x35333f;
 // Peak heights (screen px): a small (3-hex) mountain and a large (7-hex) one.
 export const SMALL_PEAK_HEIGHT = 62;
 export const LARGE_PEAK_HEIGHT = 108;
@@ -31,16 +24,9 @@ export const LARGE_PEAK_HEIGHT = 108;
 export const SNOW_LINE = 0.6;
 // Light from the upper left, a little from behind: (x right, y toward the viewer, z up).
 const LIGHT = normalize({ x: -0.6, y: -0.35, z: 0.72 });
-
-// Water. Deep water is a dark blue; shallow (wadeable) water is lighter and shows its sandy bed.
-export const DEEP_WATER_COLOR = 0x1b477d;
-export const DEEP_WATER_DARK = 0x143760;
-export const SHALLOW_WATER_COLOR = 0x2d7f98;
-export const SHALLOW_BED_COLOR = 0xa7b58c; // sand and pebbles under shallow water
-export const RIPPLE_COLOR = 0x9ed4f0;
-export const FOAM_COLOR = 0xdcf1fb;
-export const SPARKLE_COLOR = 0xffffff;
-// How far the water surface sits below the ground: the bank shown along a shore at the back of a
+// Sky-reflection patches on deep liquid: how big (scene px).
+const REFLECTION_SCALE = 180;
+// How far the liquid's surface sits below the ground: the bank shown along a shore at the back of a
 // water hex (screen px).
 export const DEEP_BANK_HEIGHT = 7;
 export const SHALLOW_BANK_HEIGHT = 4;
@@ -129,9 +115,11 @@ export interface Facet {
     points: Pt[]; // on screen (scene px)
     color: number;
     depth: number; // for drawing back to front
+    snow: boolean; // part of the frost cap (else rock)
 }
 
 export interface MountainModel {
+    seed: number; // for its texture (drawMountain)
     facets: Facet[]; // back to front
     shadow: { x: number; y: number; width: number; height: number }; // an ellipse on the ground
     anchor: Pt; // the middle of its footprint on the ground: where it sorts against players
@@ -163,15 +151,17 @@ function splitAtHeight(
  * A mountain standing on the hexes whose (projected) corners are `corners` and centers `centers`:
  * a faceted peak over their outline, lit from the upper left, snow on top. `large` is the 7-hex
  * mountain (taller, with two ridge rings); `seed` varies its shape. `squash` is ISO_SQUASH, used
- * to light it as the 3D shape it stands for.
+ * to light it as the 3D shape it stands for; `palette` colors its rock and snow.
  */
 export function mountainModel(
     corners: readonly Pt[],
     centers: readonly Pt[],
     large: boolean,
     seed: number,
-    squash: number
+    squash: number,
+    palette: TerrainPalette
 ): MountainModel {
+    const { rock: rockColors, snow } = palette;
     const random = seededRandom(seed);
     const jitter = (amount: number) => (random() * 2 - 1) * amount;
     const anchor = {
@@ -261,22 +251,28 @@ export function mountainModel(
         const snowLine = height * (SNOW_LINE + jitter(0.07));
         const { below, above } = splitAtHeight(tri, snowLine);
         if (below.length >= 3) {
+            // The lower slopes carry some of the plains' dust.
+            const low = 1 - below.reduce((sum, p) => sum + p.z, 0) / below.length / height;
+            const rock = shade(rockColors.shadow, rockColors.mid, rockColors.light, brightness);
+            const dust = ramp(low, 0.55, 1) * rockColors.slopeDustAmount;
             facets.push({
                 points: below.map(toScreen),
-                color: shade(ROCK_SHADOW, ROCK_MID, ROCK_LIGHT, brightness),
+                color: mixColor(rock, rockColors.slopeDust, dust),
                 depth,
+                snow: false,
             });
         }
         if (above.length >= 3) {
             facets.push({
                 points: above.map(toScreen),
                 color: shade(
-                    SNOW_SHADOW,
-                    mixColor(SNOW_SHADOW, SNOW_LIGHT, 0.6),
-                    SNOW_LIGHT,
+                    snow.shadow,
+                    mixColor(snow.shadow, snow.light, 0.6),
+                    snow.light,
                     brightness
                 ),
                 depth: depth + 0.001, // just after its rock, which it sits on
+                snow: true,
             });
         }
     }
@@ -303,6 +299,7 @@ export function mountainModel(
         ...baseYs,
     ];
     return {
+        seed,
         facets,
         shadow,
         anchor,
@@ -315,14 +312,16 @@ export function mountainModel(
     };
 }
 
-/** Draws a mountain model into `g`, shifted by (dx, dy). */
+/** Draws a mountain model into `g`, shifted by (dx, dy), its texture in `palette`'s colors. */
 export function drawMountain(
     g: Phaser.GameObjects.Graphics,
     model: MountainModel,
     dx: number,
-    dy: number
+    dy: number,
+    palette: TerrainPalette
 ): void {
     const { shadow } = model;
+    const random = seededRandom(model.seed ^ 0x5bd1e995);
     g.fillStyle(0x000000, 0.22);
     g.fillEllipse(shadow.x + dx, shadow.y + dy, shadow.width, shadow.height);
     for (const facet of model.facets) {
@@ -332,6 +331,56 @@ export function drawMountain(
         // A hairline in the facet's own color hides the seams between neighboring triangles.
         g.lineStyle(1, facet.color, 1);
         g.strokePoints(points as Phaser.Math.Vector2[], true);
+        drawFacetTexture(g, points, facet.snow, random, palette);
+    }
+}
+
+/** A polygon's area (the shoelace formula). */
+function polygonArea(points: readonly Pt[]): number {
+    let twice = 0;
+    points.forEach((p, i) => {
+        const q = points[(i + 1) % points.length];
+        twice += p.x * q.y - q.x * p.y;
+    });
+    return Math.abs(twice) / 2;
+}
+
+/** A random point inside a convex polygon (a random blend of its corners). */
+function pointInside(points: readonly Pt[], random: () => number): Pt {
+    const weights = points.map(() => random() + 0.05);
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    return {
+        x: points.reduce((sum, p, i) => sum + p.x * weights[i], 0) / total,
+        y: points.reduce((sum, p, i) => sum + p.y * weights[i], 0) / total,
+    };
+}
+
+/**
+ * The same quiet texture as the ground, on one facet: specks of soot and pale grit (more on bigger
+ * facets), and on larger rock facets a faint stratum line across it.
+ */
+function drawFacetTexture(
+    g: Phaser.GameObjects.Graphics,
+    points: readonly Pt[],
+    snow: boolean,
+    random: () => number,
+    palette: TerrainPalette
+): void {
+    const { soot, grit } = palette.rock;
+    const area = polygonArea(points);
+    const specks = Math.min(7, Math.floor(area / 90));
+    for (let k = 0; k < specks; k++) {
+        const p = pointInside(points, random);
+        const dark = random() < 0.6;
+        if (snow) g.fillStyle(palette.snow.shadow, 0.3);
+        else g.fillStyle(dark ? soot : grit, dark ? 0.35 : 0.22);
+        g.fillCircle(p.x, p.y, 0.6 + random() * 0.8);
+    }
+    if (!snow && area > 220 && random() < 0.6) {
+        const a = pointInside(points, random);
+        const b = pointInside(points, random);
+        g.lineStyle(1, soot, 0.22);
+        g.lineBetween(a.x, a.y, b.x, b.y);
     }
 }
 
@@ -375,21 +424,10 @@ export function pebbles(center: Pt, seed: number): Array<[number, number, number
 }
 
 // --- Ground -----------------------------------------------------------------------------------
-// Titan's plains: slate ice, dusted in drifting patches of reddish-brown tholin (the organic haze
-// that settles out of its sky). Each tile gets a subtle texture: ice grains, dark and maroon specks,
-// now and then a hairline crack or a patch of frost, and a soft bevel so tiles read as sleek panels.
-
-export const GROUND_SLATE = 0x3a4763; // HEX_TOP_COLOR: the base
-export const GROUND_BROWN = 0x4b4249; // warm brown-gray dust
-export const GROUND_MAROON = 0x503546; // deeper maroon deposits
-export const ICE_GRAIN_COLOR = 0xdde6f0;
-export const DARK_GRAIN_COLOR = 0x222a3b;
-export const THOLIN_GRAIN_COLOR = 0x7c4049;
-export const CRACK_COLOR = 0x212838;
-export const FROST_COLOR = 0xe6edf5;
-// Patch sizes (scene px) of the two noise layers: broad brown drifts, smaller maroon deposits.
-const BROWN_PATCH_SCALE = 300;
-const MAROON_PATCH_SCALE = 150;
+// The plains: the palette's base color drifting toward its patch colors in smooth patches spanning
+// several hexes (Slate: brown and maroon dust; Titan: tan dunes and charcoal ice rock). Each tile
+// gets a subtle texture: pale grains, dark pebbles, accent specks, now and then a hairline crack or a
+// patch of frost, and (GameScene) a soft bevel so tiles read as sleek panels.
 
 /** A pseudo-random number in [0, 1) for a lattice point (ix, iy) and a seed. */
 function latticeRandom(ix: number, iy: number, seed: number): number {
@@ -417,16 +455,21 @@ function ramp(value: number, from: number, to: number): number {
     return t * t * (3 - 2 * t);
 }
 
+/** How much of a ground patch layer lies at `center`, 0..1 (before its `amount`). */
+function patchStrength(center: Pt, patch: TerrainPalette['ground']['patches'][number]): number {
+    return ramp(valueNoise(center.x, center.y, patch.scale, patch.seed), patch.from, patch.to);
+}
+
 /**
- * The top color of a ground hex centered on `center` (scene px): slate, drifting toward brown and
- * maroon where the dust lies (smooth patches spanning several hexes), plus a hint of per-hex
- * variation. `index` is the hex's tile index.
+ * The top color of a ground hex centered on `center` (scene px): the palette's base color, drifting
+ * toward each patch layer's color where it lies (smooth patches spanning several hexes), plus a hint
+ * of per-hex variation. `index` is the hex's tile index.
  */
-export function groundColor(center: Pt, index: number): number {
-    const brown = ramp(valueNoise(center.x, center.y, BROWN_PATCH_SCALE, 11), 0.45, 0.85) * 0.6;
-    const maroon = ramp(valueNoise(center.x, center.y, MAROON_PATCH_SCALE, 12), 0.62, 0.9) * 0.55;
-    let color = mixColor(GROUND_SLATE, GROUND_BROWN, brown);
-    color = mixColor(color, GROUND_MAROON, maroon);
+export function groundColor(center: Pt, index: number, palette: TerrainPalette): number {
+    let color = palette.ground.base;
+    for (const patch of palette.ground.patches) {
+        color = mixColor(color, patch.color, patchStrength(center, patch) * patch.amount);
+    }
     const tint = seededRandom(hexSeed(index, 13))();
     return tint < 0.5
         ? mixColor(color, 0x000000, (0.5 - tint) * 0.08)
@@ -440,12 +483,18 @@ export interface GroundDetails {
 }
 
 /**
- * The texture of one ground hex centered on `center`: a few grains (ice-white, dark, or maroon
- * where the ground is dusty), sometimes a hairline crack, sometimes a faint patch of frost. All
- * inside the hex's top and all faint, so the ground stays calm. `dust` (0..1) is how brown/maroon
- * this hex is, which makes maroon grains likelier.
+ * The texture of one ground hex centered on `center`: a few grains (pale, dark, or the palette's
+ * accent where its patches lie), sometimes a hairline crack, sometimes a faint patch of frost. All
+ * inside the hex's top and all faint, so the ground stays calm. `dust` (0..1) is how much of the
+ * patches this hex shows (groundDust), which makes accent grains likelier.
  */
-export function groundDetails(center: Pt, index: number, dust: number): GroundDetails {
+export function groundDetails(
+    center: Pt,
+    index: number,
+    dust: number,
+    palette: TerrainPalette
+): GroundDetails {
+    const { lightGrain, darkGrain, accentGrain } = palette.ground;
     const random = seededRandom(hexSeed(index, 14));
     // A point within the hex top: an ellipse well inside it (the top is ~64 x 33 px on screen).
     const inside = (rx: number, ry: number): Pt => {
@@ -465,21 +514,21 @@ export function groundDetails(center: Pt, index: number, dust: number): GroundDe
             grains.push({
                 ...p,
                 r: 0.7 + random() * 0.6,
-                color: ICE_GRAIN_COLOR,
+                color: lightGrain,
                 alpha: 0.12 + random() * 0.1,
             });
         } else if (kind < 0.45 + 0.35 * (0.4 + dust)) {
             grains.push({
                 ...p,
                 r: 0.9 + random() * 0.9,
-                color: THOLIN_GRAIN_COLOR,
+                color: accentGrain,
                 alpha: 0.25 + random() * 0.15,
             });
         } else {
             grains.push({
                 ...p,
                 r: 0.8 + random() * 0.8,
-                color: DARK_GRAIN_COLOR,
+                color: darkGrain,
                 alpha: 0.2 + random() * 0.15,
             });
         }
@@ -506,10 +555,16 @@ export function groundDetails(center: Pt, index: number, dust: number): GroundDe
     return { grains, cracks, frost };
 }
 
-/** How dusty (brown/maroon) the ground is at `center`, 0..1: for groundDetails. */
-export function groundDust(center: Pt): number {
-    return Math.max(
-        ramp(valueNoise(center.x, center.y, BROWN_PATCH_SCALE, 11), 0.45, 0.85),
-        ramp(valueNoise(center.x, center.y, MAROON_PATCH_SCALE, 12), 0.62, 0.9)
-    );
+/** How much of the palette's patches the ground shows at `center`, 0..1: for groundDetails. */
+export function groundDust(center: Pt, palette: TerrainPalette): number {
+    return Math.max(0, ...palette.ground.patches.map((patch) => patchStrength(center, patch)));
+}
+
+/**
+ * How strongly the deep liquid at `center` mirrors the sky, 0..1: smooth patches across a lake, so
+ * it gleams in places rather than tile by tile. (How much that shows is the palette's `deepGleam`;
+ * Slate's water doesn't reflect.)
+ */
+export function skyReflection(center: Pt): number {
+    return ramp(valueNoise(center.x, center.y, REFLECTION_SCALE, 21), 0.35, 0.8);
 }

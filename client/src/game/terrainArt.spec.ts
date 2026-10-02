@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { hexCenter, hexCorners, hexNeighbors, project } from './hex';
 import { ISO_SQUASH } from './constants';
+import { TERRAIN_PALETTES, paletteFor } from './terrainPalettes';
+import { TERRAIN_THEME_IDS } from '../types/shared';
 import {
-    GROUND_SLATE,
-    SNOW_LIGHT,
+    skyReflection,
     groundColor,
     groundDetails,
     valueNoise,
@@ -30,7 +31,7 @@ const modelFor = (
     centers: Array<{ x: number; y: number }>,
     large: boolean,
     seed: number
-) => mountainModel(corners, centers, large, seed, ISO_SQUASH);
+) => mountainModel(corners, centers, large, seed, ISO_SQUASH, TERRAIN_PALETTES.titan);
 
 const large = [{ col: 10, row: 10 }, ...hexNeighbors(10, 10)];
 // Three hexes that all touch: (10, 10), its lower-right neighbor, and the one below it.
@@ -89,7 +90,20 @@ describe('mountainModel', () => {
             const blue = top.color & 0xff;
             expect(blue).toBeGreaterThan(0xa0);
         }
-        expect(mixColor(SNOW_LIGHT, SNOW_LIGHT, 0.3)).toBe(SNOW_LIGHT);
+    });
+
+    it('rock and frost facets are marked, and its lower slopes are dustier (warmer) than its peak', () => {
+        const { model } = mountainOn(large);
+        expect(model.facets.some((f) => f.snow)).toBe(true);
+        expect(model.facets.some((f) => !f.snow)).toBe(true);
+        const warmth = (c: number) => ((c >> 16) & 0xff) - (c & 0xff);
+        const rock = model.facets.filter((f) => !f.snow);
+        const bottomY = (f: (typeof rock)[number]) => Math.max(...f.points.map((p) => p.y));
+        const sorted = [...rock].sort((a, b) => bottomY(a) - bottomY(b));
+        const third = Math.floor(sorted.length / 3);
+        const average = (list: typeof rock) =>
+            list.reduce((sum, f) => sum + warmth(f.color), 0) / list.length;
+        expect(average(sorted.slice(-third))).toBeGreaterThan(average(sorted.slice(0, third)));
     });
 
     it('draws back to front', () => {
@@ -147,32 +161,76 @@ describe('ground', () => {
         expect(valueNoise(123, 456, 100, 3)).toBe(valueNoise(123, 456, 100, 3));
     });
 
-    it('is mostly slate, with patches of brown and maroon across the map, never far from slate', () => {
-        const channels = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
-        let warm = 0;
-        let total = 0;
-        for (let row = 0; row < 64; row++) {
-            for (let col = 0; col < 64; col++) {
-                const c = hexCenter(col, row);
-                const color = groundColor(project(c.x, c.y), row * 64 + col);
-                const [r, g, b] = channels(color);
-                const [sr, sg, sb] = channels(GROUND_SLATE);
-                // Subtle: each channel within 30 of slate.
-                expect(Math.max(Math.abs(r - sr), Math.abs(g - sg), Math.abs(b - sb))).toBeLessThan(
-                    30
-                );
-                if (r > sr + 6) warm++;
-                total++;
+    it.each(Object.values(TERRAIN_PALETTES))(
+        '$name: its base color, with patches across the map, never far from it',
+        (palette) => {
+            const channels = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+            const base = palette.ground.base;
+            let varied = 0;
+            let total = 0;
+            for (let row = 0; row < 64; row++) {
+                for (let col = 0; col < 64; col++) {
+                    const c = hexCenter(col, row);
+                    const color = groundColor(project(c.x, c.y), row * 64 + col, palette);
+                    const diff = Math.max(
+                        ...channels(color).map((v, k) => Math.abs(v - channels(base)[k]))
+                    );
+                    expect(diff).toBeLessThan(45); // subtle
+                    if (diff > 8) varied++;
+                    total++;
+                }
+            }
+            expect(varied / total).toBeGreaterThan(0.1); // there are patches ...
+            expect(varied / total).toBeLessThan(0.75); // ... on mostly plain ground
+        }
+    );
+
+    it.each(Object.values(TERRAIN_PALETTES))(
+        "$name: shallow liquid can't be mistaken for deep liquid (even gleaming) or the ground",
+        (palette) => {
+            const brightness = (c: number) =>
+                (((c >> 16) & 0xff) + ((c >> 8) & 0xff) + (c & 0xff)) / 3;
+            const { liquid, ground } = palette;
+            const deepest = liquid.deepDark;
+            const brightestDeep = mixColor(liquid.deep, liquid.reflection, liquid.deepGleam);
+            const shallow = brightness(liquid.shallow);
+            expect(
+                shallow - Math.max(brightness(deepest), brightness(brightestDeep))
+            ).toBeGreaterThan(30);
+            // Against the ground: a clearly different color (by the largest channel difference).
+            const channels = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+            const apart = (a: number, b: number) =>
+                Math.max(...channels(a).map((v, k) => Math.abs(v - channels(b)[k])));
+            for (const groundColorOf of [ground.base, ...ground.patches.map((p) => p.color)]) {
+                expect(apart(liquid.shallow, groundColorOf)).toBeGreaterThan(30);
             }
         }
-        expect(warm / total).toBeGreaterThan(0.1); // there are dusty patches ...
-        expect(warm / total).toBeLessThan(0.6); // ... but slate is still the ground
+    );
+
+    it('picks a palette by theme id, Slate for anything unknown', () => {
+        expect(paletteFor('titan').name).toBe('Titan');
+        expect(paletteFor('slate').name).toBe('Slate');
+        expect(paletteFor('nonsense').id).toBe('slate');
+        expect(Object.keys(TERRAIN_PALETTES).sort()).toEqual([...TERRAIN_THEME_IDS].sort());
+    });
+
+    it('lakes mirror the sky in patches: some liquid gleams, most does not', () => {
+        let gleaming = 0;
+        for (let k = 0; k < 2000; k++) {
+            const v = skyReflection({ x: (k % 50) * 40, y: Math.floor(k / 50) * 25 });
+            expect(v).toBeGreaterThanOrEqual(0);
+            expect(v).toBeLessThanOrEqual(1);
+            if (v > 0) gleaming++;
+        }
+        expect(gleaming / 2000).toBeGreaterThan(0.1);
+        expect(gleaming / 2000).toBeLessThan(0.85);
     });
 
     it("keeps a tile's texture inside its top, faint, and the same every time", () => {
         const center = { x: 500, y: 300 };
-        const details = groundDetails(center, 42, 0.5);
-        expect(groundDetails(center, 42, 0.5)).toEqual(details);
+        const titan = TERRAIN_PALETTES.titan;
+        const details = groundDetails(center, 42, 0.5, titan);
+        expect(groundDetails(center, 42, 0.5, titan)).toEqual(details);
         expect(details.grains.length).toBeGreaterThanOrEqual(4);
         for (const grain of details.grains) {
             expect(Math.abs(grain.x - center.x)).toBeLessThanOrEqual(22);
@@ -180,7 +238,7 @@ describe('ground', () => {
             expect(grain.alpha).toBeLessThanOrEqual(0.4);
         }
         // Across many tiles, some have cracks and some frost, most have neither.
-        const many = Array.from({ length: 400 }, (_, i) => groundDetails(center, i, 0.5));
+        const many = Array.from({ length: 400 }, (_, i) => groundDetails(center, i, 0.5, titan));
         const cracked = many.filter((d) => d.cracks.length > 0).length;
         expect(cracked).toBeGreaterThan(40);
         expect(cracked).toBeLessThan(200);

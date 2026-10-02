@@ -44,7 +44,13 @@ import type {
     RemoveBotMessage,
     UpdateBotMessage,
 } from '../types/shared';
-import { MAP_SIZES, normalizeGameSettings, type GamePhase, type MapSizeId } from '../types/shared';
+import {
+    MAP_SIZES,
+    TERRAIN_THEME_IDS,
+    normalizeGameSettings,
+    type GamePhase,
+    type MapSizeId,
+} from '../types/shared';
 import { uniqueGameCode, type GameMetadata } from '../games';
 
 export class GameRoom extends Room<GameState> {
@@ -86,6 +92,8 @@ export class GameRoom extends Room<GameState> {
             tile.terrain = terrain[i];
             state.tiles.push(tile);
         }
+        // The terrain's color scheme for this match, at random (see TERRAIN_THEME_IDS).
+        state.theme = TERRAIN_THEME_IDS[Math.floor(random() * TERRAIN_THEME_IDS.length)];
         // Which hexes make up each mountain, so clients can draw each one as a single sprite.
         for (const feature of features) {
             for (const piece of feature.pieces ?? []) {
