@@ -44,7 +44,9 @@ export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
                     </div>
                     <div>Gun: {GUN_NAMES[me.gun as GunId] ?? 'none'}</div>
                     <div>Ammo: {me.ammo}</div>
-                    <div>Tiles: {me.tilesOwned}</div>
+                    <div style={me.tilesOwned >= me.tileCap ? { color: '#ff7675' } : undefined}>
+                        Tiles: {me.tilesOwned} / {me.tileCap}
+                    </div>
                     <div>Materials: {me.materials}</div>
                 </>
             )}

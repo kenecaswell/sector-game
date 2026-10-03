@@ -23,16 +23,39 @@ function fire(state: GameState, player: Player, angle: number): boolean {
     if (player.gun === '' || player.ammo <= 0 || !Number.isFinite(angle)) return false;
 
     player.ammo--;
+    spawnShot(
+        state,
+        player.id,
+        player.x,
+        player.y,
+        angle,
+        GUN_DAMAGE[isGunId(player.gun) ? player.gun : 'basic']
+    );
+    return true;
+}
+
+/**
+ * Starts a projectile for `ownerId` (who gets the credit if it kills, and whose teammates it
+ * passes through) at world point (x, y) heading `angle`. Players' guns and Guard Towers both
+ * shoot through here; the caller has already checked the shooter is allowed to and paid for it.
+ */
+function spawnShot(
+    state: GameState,
+    ownerId: string,
+    x: number,
+    y: number,
+    angle: number,
+    damage: number
+): void {
     const projectile = new Projectile();
-    projectile.id = `${player.id}-${state.shotsFired++}`;
-    projectile.ownerId = player.id;
-    projectile.x = player.x;
-    projectile.y = player.y;
+    projectile.id = `${ownerId}-${state.shotsFired++}`;
+    projectile.ownerId = ownerId;
+    projectile.x = x;
+    projectile.y = y;
     projectile.angle = angle;
     projectile.spawnedAt = Date.now();
-    projectile.damage = GUN_DAMAGE[isGunId(player.gun) ? player.gun : 'basic'];
+    projectile.damage = damage;
     state.projectiles.set(projectile.id, projectile);
-    return true;
 }
 
 /**
@@ -109,4 +132,4 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
     toRemove.forEach((id) => state.projectiles.delete(id));
 }
 
-export const CombatSystem = { update, fire };
+export const CombatSystem = { update, fire, spawnShot };

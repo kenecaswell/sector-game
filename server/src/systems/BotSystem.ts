@@ -11,9 +11,11 @@ import {
 import {
     CHARACTER_IDS,
     DEFAULT_BOT_DIFFICULTY,
-    SHOP_ITEMS,
+    GUN_FIRE_INTERVAL_MS,
     isBotDifficulty,
+    isGunId,
     isCharacterId,
+    type StructureType,
     type UpdateBotMessage,
     type UpgradeId,
 } from '../types/shared';
@@ -23,7 +25,7 @@ import { areAllies } from '../teams';
 import { newBrain, type BotBrain } from '../bots/brain';
 import { findBuildSite, hexOf, planClaimRoute, planRouteToward } from '../bots/navigation';
 import { aimAngle, aimWobble, hasLineOfSight, screenDistance } from '../bots/aim';
-import { nextPurchase } from '../bots/shopping';
+import { FARM_MARGIN, RESERVE_MARGIN, nextPurchase } from '../bots/shopping';
 import { LobbySystem } from './LobbySystem';
 import { CombatSystem } from './CombatSystem';
 import { ShopSystem } from './ShopSystem';
@@ -198,7 +200,18 @@ function equipFor(state: GameState, bot: Player, profile: BotProfile, chasing: b
 }
 
 /**
- * Holding a structure: places it if there's a spot it already owns all 7 hexes of, else (with
+ * Which structure it builds next from those it holds: what it needs most first (a Fabricator, then
+ * a farm), then whatever it got first.
+ */
+function structureToBuild(bot: Player): StructureType {
+    for (const type of ['fabricator', 'farm'] as const) {
+        if (bot.structureInventory.includes(type)) return type;
+    }
+    return bot.structureInventory[0] as StructureType;
+}
+
+/**
+ * Holding a structure: places it if there's a spot it already owns every footprint hex of, else (with
  * profile.buildSites) sets a route to claim the next hex the best nearby spot needs. Returns
  * whether building is now its goal.
  */
@@ -210,15 +223,16 @@ function planBuild(
     now: number
 ): boolean {
     if (now < brain.nextBuildAt) return false;
-    const site = findBuildSite(state, bot, profile.buildSites ? BUILD_RADIUS : CASUAL_BUILD_RADIUS);
+    const type = structureToBuild(bot);
+    const site = findBuildSite(
+        state,
+        bot,
+        profile.buildSites ? BUILD_RADIUS : CASUAL_BUILD_RADIUS,
+        type,
+        bot.tilesOwned >= bot.tileCap ? 0 : Infinity // at its limit it can't claim what a site lacks
+    );
     if (site && site.missing.length === 0) {
-        StructureSystem.place(
-            state,
-            bot,
-            bot.structureInventory[0],
-            site.center.col,
-            site.center.row
-        );
+        StructureSystem.place(state, bot, type, site.center.col, site.center.row, site.rotation);
         brain.goal = 'claim';
         brain.route = [];
         return false;
@@ -465,7 +479,9 @@ function shoot(
         brain.sightedAt = now;
     }
     if (now - brain.sightedAt < profile.reactionMs) return false;
-    if (now - brain.lastShotAt < profile.fireIntervalMs) return false;
+    // Never faster than its gun allows, whatever its difficulty says.
+    const gunInterval = GUN_FIRE_INTERVAL_MS[isGunId(bot.gun) ? bot.gun : 'basic'];
+    if (now - brain.lastShotAt < Math.max(profile.fireIntervalMs, gunInterval)) return false;
 
     const angle = aimAngle(bot, target, profile.lead) + aimWobble(profile.aimError, random);
     if (!CombatSystem.fire(state, bot, angle)) return false;
@@ -475,11 +491,23 @@ function shoot(
 }
 
 /** Fabricates the next thing on its list, if it's time to look and it can afford it. */
-function fabricate(bot: Player, brain: BotBrain, profile: BotProfile, now: number): void {
+function fabricate(
+    state: GameState,
+    bot: Player,
+    brain: BotBrain,
+    profile: BotProfile,
+    now: number
+): void {
     if (now < brain.nextShopAt) return;
     brain.nextShopAt = now + profile.shopMs;
-    const item = nextPurchase(bot, profile, brain.structuresBought);
-    if (item && ShopSystem.purchase(bot, item) && SHOP_ITEMS[item].structure) {
+    const hasFabricator = StructureSystem.hasFabricator(state, bot.id);
+    const item = nextPurchase(bot, profile, brain.structuresBought, {
+        hasFabricator,
+        nearTileCap: bot.tilesOwned >= bot.tileCap - FARM_MARGIN,
+        approachingTileCap: bot.tilesOwned >= bot.tileCap - RESERVE_MARGIN,
+    });
+    // A Fabricator or farm bought because it had to is not one of the list's structures.
+    if (item && ShopSystem.purchase(bot, item, hasFabricator) && item === 'guardTower') {
         brain.structuresBought++;
     }
 }
@@ -508,7 +536,7 @@ function update(
         if (bot.respawnAt > 0) {
             inputs.set(id, { dir: STOP, seq: 0, receivedAt: now });
             brain.targetId = '';
-            fabricate(bot, brain, profile, now);
+            fabricate(state, bot, brain, profile, now);
             return;
         }
 
@@ -535,7 +563,7 @@ function update(
         if (!fired && now - brain.lastShotAt > FACE_SHOT_MS && (dir.x !== 0 || dir.y !== 0)) {
             bot.angle = Math.atan2(dir.y, dir.x);
         }
-        fabricate(bot, brain, profile, now);
+        fabricate(state, bot, brain, profile, now);
 
         brain.lastX = bot.x;
         brain.lastY = bot.y;

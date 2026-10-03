@@ -64,8 +64,8 @@ This game has a few primary sources of inspiration:
 
 ### Notes
 
-- A cast of six roles: Farmer, Miner, Builder, Robot, Scientist and Explorer ([Characters](#characters)).
-- Four kinds of structure: farm, fabricator, fort and power plant ([Structures](#structures)). Dorm? Processing facilities?
+- A cast of six roles: Farmer, Engineer, Builder, Robot, Scientist and Explorer ([Characters](#characters)).
+- Four kinds of structure: farm, fabricator, Guard Tower and power plant ([Structures](#structures)). Dorm? Processing facilities?
 - Reference art showing hex terrain with mountains, trees, water and cliffs (mood only, see [Look and feel](#look-and-feel)).
 
 This is the section to grow as the world takes shape.
@@ -153,7 +153,7 @@ Terrain comes in features, each a contiguous group of hexes (every hex touches a
 ### Claiming and building
 
 - **Nobody can claim mountain or water hexes**, Wings or not. They stay neutral all match and never count toward anyone's hexes or income.
-- **Structures can't sit on terrain.** A structure needs all 7 hexes of its footprint to be yours, and terrain can't be yours. So a structure never covers a mountain or water hex.
+- **Structures can't sit on terrain.** A structure needs every hex of its footprint (7, or 3 for a Guard Tower) to be yours, and terrain can't be yours. So a structure never covers a mountain or water hex.
 
 ### Combat
 
@@ -207,14 +207,14 @@ Implementation: [Lobby, characters and teams](ARCHITECTURE.md#lobby-characters-a
 | Character | Pitch | Gun | Ammo | Materials | Structures | Upgrades |
 |---|---|---|---|---|---|---|
 | **Farmer** | Starts with a farm. | none | 0 | 50 | farm | — |
-| **Miner** | Starts with a fabricator. | none | 0 | 50 | fabricator | — |
-| **Builder** | Starts with a fort. | none | 0 | 50 | fort | — |
+| **Engineer** | Starts with a fabricator. | none | 0 | 50 | fabricator | — |
+| **Builder** | Starts with a Guard Tower. | none | 0 | 50 | Guard Tower | — |
 | **Robot** | Moves faster than everyone else. | none | 0 | 50 | — | Booster 1, equipped (133% speed) |
 | **Scientist** | Starts with a power plant. | none | 0 | 50 | power plant | — |
 | **Explorer** | Starts with Armor (200 health), but few materials. | none | 0 | 15 | — | Armor 1 (200 health) |
 
 - **Nobody starts armed** (since 2026-09-29; the Explorer had a Basic gun and 15 shots until then). Everyone has to fabricate a gun (200 materials) or find one in a drop pod.
-- The four structure-starting characters differ only in which structure type they get, and 📝 structure types don't behave differently yet ([Structures](#structures)).
+- The four structure-starting characters differ in which structure type they get ([Structures](#structures)); the Farmer's farms also score more. 📝 Only the Engineer starts with a fabricator, so everyone else buys one (100 materials) in the Build menu before the Fabricator opens to them.
 - 📝 Each character is planned to get its own art; today everyone is a circle in their team color.
 
 ## Bots (single player)
@@ -238,11 +238,12 @@ Each difficulty is a profile of numbers (`BOT_PROFILES` in `server/src/constants
 | **Moving** | 75% speed; dawdles now and then; looks 6 hexes ahead and often picks a so-so spot | 85% speed; looks 8 hexes ahead | Full speed; looks 14 hexes ahead; efficient |
 | **Shooting** | Fires 1 s after spotting you, a shot every 0.8 s, strays up to ±20°, aims where you are, range 380 | 0.5 s, every 0.4 s, ±8°, allows for half your movement, range 520 | 0.22 s, every 0.25 s, ±3°, leads you fully, range 650 |
 | **Chasing** (while armed) | Never | Enemies within 420; stops at 200 and stands its ground; not below 30% health | Within 650; circles at 260, changing direction; not below 35% health |
-| **Structures** | Places one only where it happens to own a spot; doesn't shoot structures | Claims the hexes a spot needs, then builds; shoots enemy structures when it has ammo to spare | The same, faster |
-| **Fabricating** | Every 8 s: Basic gun, farm, Armor, Booster, in that order, skipping what it can't afford yet; ammo below 5 shots | Every 3 s, saving up for each: Basic gun, Armor, Expander, fort, Booster, Big gun, Armor 2, fort, then a fort whenever it has none; ammo below 10 | Every second, saving up: Expander, Basic gun, Armor, fort, Expander 2, Big gun, Armor 2, fort, Booster, Expander 3, Armor 3, three forts, then forts; ammo below 20 |
+| **Structures** | Places one only where it happens to own a spot (so it often stays stuck at its tile limit); doesn't shoot structures | Claims the hexes a spot needs, then builds; shoots enemy structures when it has ammo to spare | The same, faster |
+| **Fabricating** | Every 8 s: a Fabricator first if it has none, then Basic gun, Armor, Booster, in that order, skipping what it can't afford yet; ammo below 5 shots | Every 3 s, saving up for each: a Fabricator if it has none, Basic gun, Armor, Expander, Guard Tower, Booster, Big gun, Armor 2, Guard Tower, then a Guard Tower whenever it has none; ammo below 10 | Every second, saving up: a Fabricator if it has none, Expander, Basic gun, Armor, Guard Tower, Expander 2, Big gun, Armor 2, Guard Tower, Booster, Expander 3, Armor 3, three Guard Towers, then more; ammo below 20 |
+| **Farms** (all three) | Within 250 hexes of its tile limit it keeps 100 materials back, and within 150 it buys a farm and builds it before the limit (a bot at the limit earns nothing, so one that had spent everything could never afford one) | The same | The same |
 | **Upgrade slot** | Never switches | Equips the Expander once it has one | The Booster to chase, the Expander to claim |
 
-How they compare, from simulated 5-minute matches on a Small map (`node tools/bot-sim.js`, three seeds): **alone**, Easy claims about 950–1,050 hexes, Medium about 2,300 (and builds some 20 forts), Hard about 3,000–3,400 (25–30 forts); **all three in one match**, about 180–500, 90–880 and 2,200–2,700 hexes since defeat drops your gear (2026-09-29; it was 200–370, 780–1,130 and 2,000–2,400 before). Losing its gear each time Hard defeats it hurts Medium most. Hard is meant to beat a good player, Easy to lose to a new one; that's still to be checked in real play.
+How they compare, from simulated 5-minute matches on a Small map (`node tools/bot-sim.js`, three seeds), after the tile limit and Fabricator rules (2026-10-03): **alone**, Easy claims about 500–1,000 hexes (it mostly stops at the 500-hex limit, since it only builds where it happens to own a spot), Medium about 2,000–2,300 (and builds 13–20 Guard Towers), Hard about 3,200–3,300 (23–30 Guard Towers); **all three in one match**, Hard takes about 2,300–3,300 hexes, Medium 100–270 and Easy 60–200. Hard's Guard Towers (it builds 24–50) shoot everyone nearby with the Basic gun, so the match is a landslide: that's the Basic gun still to be nerfed ([Open design questions](#open-design-questions-and-plans)). Before these rules (2026-09-29): alone about 950–1,050, 2,300 and 3,000–3,400 hexes; all three in one match about 180–500, 90–880 and 2,200–2,700. Hard is meant to beat a good player, Easy to lose to a new one; that's still to be checked in real play.
 
 Implementation: [Bots](ARCHITECTURE.md#bots).
 
@@ -254,7 +255,8 @@ Implementation: [Bots](ARCHITECTURE.md#bots).
 - **Expander:** 🧪 while equipped, raises your claim radius so that standing mid-hex you claim **7 / 19 / 37 hexes** at levels 1 / 2 / 3 (1, 2 or 3 rings of neighbors; `EXPANDER_CLAIM_RADII` 80 / 125 / 180 world px, `EXPANDER_HEXES`). Off-center you catch a few more at the edge. Everyone can see an Expander's claim radius as a tinted circle around its owner. See [Upgrades](#upgrades).
 - **Stealing:** walking over (or near, with the Expander) an **enemy's** hex takes it from them. A **teammate's** hex is never taken.
 - **Terrain:** mountain and water hexes can never be claimed, not even the shallow water you wade through ([Terrain](#terrain)).
-- **Protected hexes:** the 7 hexes under an **enemy's structure** can't be claimed. Destroy the structure first.
+- **Protected hexes:** the hexes under an **enemy's structure** (7, or 3 for a Guard Tower) can't be claimed. Destroy the structure first.
+- **Tile limit:** 🧪 (2026-10-03) you can hold at most **500 hexes** (`BASE_TILE_CAP`), plus **500 for every farm you own** (`TILES_PER_FARM`; `tileCap` on the player). It counts the hexes you hold now, enemy hexes you take included. At the limit, walking over ground you could have claimed claims nothing, from the unclaimed and from enemies alike (and so pays no materials), and you get a notice, "Tile limit reached (500). Build more farms to claim more.", repeated at most every 8 s (`TILE_LIMIT_NOTICE_INTERVAL_MS`) while you keep walking over it. With the Expander and room for only some of its hexes, the one under you and then the nearest are taken. The HUD shows **Tiles: 312 / 500**, turning red at the limit. Losing a farm lowers the limit but never takes hexes away: over the new limit you keep what you hold and just can't claim more. 📝 See the open question about earning materials at the limit.
 - **Ties:** if two players reach the same hex at the same moment, the one who joined the room first gets it. 📝 Not a deliberate rule; see open questions.
 - **When a player leaves for good,** their hexes go back to unclaimed.
 
@@ -268,12 +270,12 @@ Implementation: [Tile Claiming](ARCHITECTURE.md#tile-claiming).
 
   | Gun | Damage per hit | Unarmored player dies in | Armored (200) player dies in |
   |---|---|---|---|
-  | **Basic gun** | 50 | 2 hits | 4 hits |
+  | **Basic gun** | 25 | 4 hits | 8 hits |
   | **Big gun** | 100 | 1 hit | 2 hits |
 
   You have at most one gun. The Big gun replaces the Basic gun, and you can fabricate it without owning the Basic gun first. You can't go back to the Basic gun.
 - **Ammo:** each shot uses 1 (an ammo pack of 30 costs 60 materials). You can fabricate ammo before you have a gun. 📝 Ammo **never regenerates and has no cap**; the only source is buying ammo packs. Running out means you can't shoot until you buy more.
-- **Fire rate:** up to 5 shots per second while you hold the fire control (200 ms apart, `FIRE_INTERVAL_MS`). 📝 This limit is currently enforced only by the game client; the server should own it.
+- **Fire rate:** 🧪 (2026-10-03) set per gun in `GUN_FIRE_INTERVAL_MS`: the **Basic gun fires once a second** (it was 5 a second) and the **Big gun keeps 5 a second** (200 ms), a first guess to tune; so a Basic-gun kill takes 4 hits, about 3 seconds. Bots never fire faster than their gun, whatever their difficulty. 📝 The limit is enforced only by the game client for people (the server limits towers and bots); the server should own it.
 - **Shots:** travel in a straight line at the same on-screen speed in every direction, at 🧪 **600 on-screen px/s** (`PROJECTILE_SPEED`; 400 until 2026-09-27), and vanish after **2 seconds** (`PROJECTILE_LIFETIME_MS`): a range of about 1,200 px, roughly 40% of a Small map's width sideways. A shot stops at the first enemy player or enemy structure it hits, or at a mountain ([Terrain](#terrain)); it flies over water. Both guns' shots have the same hit size; the Big gun's shots only *look* larger.
 - **Friendly fire:** none. Shots pass through teammates and teammates' structures.
 - **Kills:** the shooter's kill count goes up; the victim is down for 5 seconds, drops their gun, ammo and upgrades in a backpack only they can see, and respawns at their spawn spot (see [Players](#players)). Kills are permanent and count toward score.
@@ -282,16 +284,24 @@ Implementation: [PvP Shooting](ARCHITECTURE.md#pvp-shooting), [Collision Detecti
 
 ## Structures
 
-✅ Structures claim a large area permanently, block enemies, and add to your score.
+🧪 Rebuilt 2026-10-03: structures are now part of how you play, not just score. Each type has its own cost, health, points and job (`STRUCTURE_SPECS` in `shared/types.ts`).
 
-- **Getting them:** each structure-starting character begins with one, and you can fabricate more (100 materials each). You hold them in a **structure inventory** until you place them.
-- **Footprint:** a structure sits on a center hex and **covers that hex plus its 6 neighbors**.
-- **Placing:** click a structure's icon in the **inventory bar** on the right of the screen ([Inventory bar](#inventory-bar)), then pick a spot. `B` does the same for the structure you picked last, or the first you have. While placing, **`Tab` switches to the next structure type you hold** (`Shift+Tab` the previous), in catalog order. A hint at the bottom says what you're placing. **All 7 hexes must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can place it there, red if not.
+| Type | Footprint | Cost | Health | Points | What it does |
+|---|---|---|---|---|---|
+| **Farm** | 7 hexes | 100 | 1000 | 100 (a **Farmer's** farm: 150) | Raises your [tile limit](#territory) by 500 |
+| **Fabricator** | 7 hexes | 100 | 1000 | 100 | Opens the [Fabricator](#fabricator) (guns, ammo, upgrades) while you own one. More than one does nothing extra but score another 100 each |
+| **Guard Tower** (the *fort* until 2026-10-03) | **3 hexes** that all touch | 100 | **500** | 50 | Shoots enemy players nearby with the Basic gun, with unlimited ammo |
+| **Power plant** | 7 hexes | 100 | 1000 | 100 | 📝 Essential, but its job isn't designed yet |
+
+- **Getting them:** the Engineer, Farmer, Builder and Scientist begin with a fabricator, farm, Guard Tower and power plant. Everyone else buys them for 100 materials in the **Build menu** ([Build menu](#build-menu)), which never needs a Fabricator (so the first one can be bought). You hold them in a **structure inventory** until you place them.
+- **Footprint:** a 7-hex structure sits on a center hex and **covers that hex plus its 6 neighbors**. A Guard Tower covers **3 hexes that all touch each other**: the anchor hex and two neighbors next to each other (six ways to turn it).
+- **Placing:** click a structure's icon in the **inventory bar** on the right of the screen ([Inventory bar](#inventory-bar)), or press **Place** next to it in the Build menu, then pick a spot. `P` does the same for the structure you picked last, or the first you have. While placing, **`Tab` switches to the next structure type you hold** (`Shift+Tab` the previous), in catalog order. A hint at the bottom says what you're placing. **Every hex of the footprint must be yours** (a teammate's don't count), all on the map, and none already under another structure. Since terrain can't be claimed, structures never cover mountains or water. Structures can touch but not overlap. While you choose, an outline shows the structure's shape: yellow if you can place it there, red if not. For a Guard Tower the outline follows the pointer: it turns to the clump of three hexes nearest the pointer, so aim at the corner where you want it (on touch, tap near that corner).
 - **Solid:** enemies can't walk through your structure; they slide around it. You and your teammates can walk over it.
-- **Protection:** enemies can't claim any of its 7 hexes.
-- **Health and destruction:** 🧪 100 health. Enemy shots damage it, and at 0 it's destroyed and removed. 📝 There's no visible damage state yet (planned: intact → cracked → heavily damaged).
-- **Score:** 🧪 +25 per structure you own (`STRUCTURE_POINTS`), lost if it's destroyed.
-- **Types:** farm, fabricator (called the *mine* until 2026-09-27), fort and power plant. 📝 **They all behave the same for now**, with the same health and points. They differ only in color. Giving each type a purpose is the biggest open design task ([Open design questions](#open-design-questions-and-plans)).
+- **Protection:** enemies can't claim any hex it covers.
+- **Health and destruction:** 🧪 1000 health (a Guard Tower 500, `STRUCTURE_HEALTH`). Enemy shots damage it, and at 0 it's destroyed and removed, which also removes what it gave you: a farm's 500 tiles (you keep your hexes but can't claim more over the limit), a fabricator's access to the Fabricator, its points. 📝 There's no visible damage state yet (planned: intact → cracked → heavily damaged).
+- **Score:** 🧪 each structure scores its own points while you own it (table above), lost if it's destroyed. Fabricating and buying structures costs materials, never points.
+- **Guard Tower fire:** 🧪 each tower fires the Basic gun (25 damage, the same shot speed) at the **nearest enemy player within 550 px** (`TOWER_RANGE`; mountains block its line, defeated players aren't targets) at most once a second (`TOWER_FIRE_INTERVAL_MS`, the Basic gun's rate). It has no ammo to run out of, shoots players only (never structures), passes through your teammates, and a kill it makes counts for its owner (it scores nothing, since kills are worth 0). It fires from the middle of its three hexes. 📝 Both numbers are first-pass. A tower finds targets within 550 px, although its shots fly about 1,200 px like any Basic-gun shot.
+- 📝 **Not yet:** the power plant's job, and a Fabricator-like use for dorms and processing facilities.
 
 Implementation: [Structures: footprint and shape](ARCHITECTURE.md#structures-footprint-and-shape), [Destructible Structures](ARCHITECTURE.md#destructible-structures).
 
@@ -317,8 +327,8 @@ Implementation: [Structures: footprint and shape](ARCHITECTURE.md#structures-foo
 
 | Contents | Tier 1 (leader) | Tier 2 | Tier 3 | Tier 4 (back) | Gives |
 |---|---|---|---|---|---|
-| Materials | 50% | 42% | 32% | 22% | 10–50 materials |
-| Ammo | 35% | 30% | 25% | 20% | 10–30 shots |
+| Materials | 60% | 52% | 42% | 32% | 10–50 materials |
+| Ammo | 25% | 20% | 15% | 10% | 10–30 shots |
 | Upgrade | 5% | 10% | 15% | 20% | Level 1 of an upgrade you don't have yet |
 | Basic gun | 5% | 8% | 10% | 10% | The Basic gun |
 | Big gun | 3% | 5% | 8% | 10% | The Big gun |
@@ -334,18 +344,17 @@ Implementation: [Pickups](ARCHITECTURE.md#pickups).
 
 ### Fabricator
 
-🧪 Items aren't bought, they're **fabricated** from materials. Open the **Fabricator** any time during the match with the **Fabricator** button or **`F`** (it was the Shop, on `E`, until 2026-09-27; `E` is now unbound, kept for something later). Placing a structure you have is still **Build** (`B`). The game keeps running while it's open, so fabricating in the middle of a fight is risky. The catalog is `SHOP_ITEMS` in `shared/types.ts` (the code keeps its shop names). Prices show as "100 mat".
+🧪 Items aren't bought, they're **fabricated** from materials. Once you **own a Fabricator** ([Structures](#structures)), open the **Fabricator** any time during the match with the **Fabricator** button or **`F`** (it was the Shop, on `E`, until 2026-09-27; `E` is now unbound, kept for something later). **Until you own one the button is grayed out** and the server refuses guns, ammo and upgrades; if your last fabricator is destroyed it locks again. Structures are bought in the [Build menu](#build-menu) instead, which is never locked. Pods can still give you guns and upgrades without one. The game keeps running while the Fabricator is open, so fabricating in the middle of a fight is risky. The catalog is `SHOP_ITEMS` in `shared/types.ts` (the code keeps its shop names). Prices show as "100 mat".
 
 | Category | Item | Cost | What it does | Limit |
 |---|---|---|---|---|
-| Weapons | **Basic gun** | 200 | Lets you shoot; 50 damage per hit. | Not if you have any gun |
+| Weapons | **Basic gun** | 200 | Lets you shoot; 25 damage per hit, 1 shot a second. | Not if you have any gun |
 | Weapons | **Big gun** | 400 | 100 damage per hit. Replaces the Basic gun. | One |
 | Weapons | **Ammo pack** | 60 | +30 shots (2 materials per shot, `AMMO_MATERIALS_PER_SHOT`). | Unlimited; no ammo cap |
 | Upgrades | **Booster** 1–3 | 100 a level | Top speed 133 / 166 / 199% of normal (`BOOSTER_SPEED_PER_LEVEL`, +33% a level). Uses the upgrade slot. | 3 levels |
 | Upgrades | **Expander** 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once, but top speed drops to 90 / 80 / 70% of normal (`EXPANDER_SLOW_PER_LEVEL`, −10% a level). Uses the upgrade slot. | 3 levels |
 | Upgrades | **Armor** 1–3 | 100 a level | Max health 200 / 300 / 400, and +100 health right away. **Always on**, no slot. | 3 levels |
 | Upgrades | **Wings** | 100 | Walk over mountains and deep water ([Terrain](#terrain)). You still can't claim them, and mountains still stop your shots. Uses the upgrade slot. | One |
-| Structures | **Farm**, **Fabricator**, **Fort**, **Power plant** | 100 each | One more of that structure to place. | Unlimited |
 
 - **Each upgrade is listed once**, offering your next level ("Booster 2" once you own Booster 1); a maxed one shows "Max". A gun you can't improve on shows "Owned".
 - **Upgrade levels last the match**, but when you're defeated they drop in your backpack with your gun and ammo until you pick it up ([Players](#players)). See [Upgrades](#upgrades) for the one-slot rule.
@@ -353,6 +362,10 @@ Implementation: [Pickups](ARCHITECTURE.md#pickups).
 - 📝 **Pacing:** starting kits give at most 50 materials, and everything costs 60 or more (a gun 200), so a first real item waits on territory income and pickups, and a gun takes about 150 fresh hexes. Worth watching in playtests.
 
 Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materials)](ARCHITECTURE.md#economy-materials).
+
+### Build menu
+
+🧪 (2026-10-03) The **Build** button or **`B`** opens a popup listing the four structures, each with its cost (100 materials), points, health and what it does, a buy button, and, for any you hold, how many and a **Place** button (it closes the menu and starts placing). It also shows your materials and **Tiles: 312 / 500**. It needs no Fabricator, which is how you buy the first one. The structures are still part of the shared catalog (`SHOP_ITEMS`, bought with the same `purchase` message); only the Fabricator menu hides them.
 
 ### Upgrades
 
@@ -365,7 +378,7 @@ Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materia
 
 ### Inventory bar
 
-✅ Your structures and upgrades are shown **on screen, down the right side** (under the Leaderboard and Fabricator buttons), as clickable icons. It replaced the Build button and the Inventory popup (2026-09-27). **`I` hides and shows it.**
+✅ Your structures and upgrades are shown **on screen, down the right side** (under the Leaderboard, Fabricator and Build buttons), as clickable icons. It replaced the Build button and the Inventory popup (2026-09-27). **`I` hides and shows it.**
 
 - **Structures:** one icon per type you hold, with how many (a Farm icon with "2"), in catalog order. **Click one to build it**: build mode starts with that type and a hint appears at the bottom ("Pick a spot for the Farm…"). Click it again, press `Esc` or `B` to stop. The icon being built is outlined in yellow.
 - **Upgrades:** one icon per upgrade you own, with its level for the three-level ones. **Click one to switch to it**, instantly. The one in use is outlined and can't be clicked. Armor is shown, outlined, because it's always on. While you're over a mountain or deep water with Wings on, the others are disabled.
@@ -374,11 +387,12 @@ Implementation: [Fabricator (the shop)](ARCHITECTURE.md#shop), [Economy (Materia
 
 
 
-✅ first version. Your score is shown at the top of the screen all match and recalculated continuously (`TILE_POINTS`, `KILL_POINTS`, `STRUCTURE_POINTS`):
+✅ first version. Your score is shown at the top of the screen all match and recalculated continuously (`TILE_POINTS`, `KILL_POINTS`, and `STRUCTURE_SPECS` / `structurePoints`):
 
-**score = hexes owned × 1 + kills × 50 + structures owned × 25**
+**score = hexes owned × 1 + the points of each structure you own** (kills score 0 since 2026-10-03, `KILL_POINTS`) (farm 100, a Farmer's farm 150, fabricator 100, power plant 100, Guard Tower 50; see [Structures](#structures))
 
-- Score **goes down** when you lose hexes or structures. Kills are banked for good.
+- Score **goes down** when you lose hexes or structures. Kills are counted (and shown on the results screen) but are worth **0 points**, so fighting is for territory, not score (2026-10-03). 📝 They still break ties, as the placeholder tie-break below goes score, kills, hexes.
+- **Results screen breakdown:** each row shows score, tiles, structures as a count with their points ("2 (+250)") and kills, and the note under the table spells out the scoring.
 - Materials don't count.
 - **Winning:** when time runs out, the **highest score wins**. Players with the same score share a rank, and every rank-1 player is a co-winner. The standings are ordered by score, then kills, then hexes (📝 a placeholder tie-break order).
 - **Teams:** the results screen shows each team's total score when a team had two or more players, but 📝 there is no team win condition yet.
@@ -393,7 +407,7 @@ The full list of controls for players is in the README's [Controls](../README.md
 - **Right-click to walk to a spot** on desktop. Any movement key cancels it.
 - **Shooting:** Space (hold to keep firing) or click, toward the mouse. On touch, the **FIRE** button fires along your movement direction, and tapping the map fires toward that spot.
 - **Touch:** a virtual joystick (bottom left), the FIRE button (bottom right), and the inventory bar's icons (right side) for building and switching upgrades. The FIRE button only appears once you have a gun.
-- **Hotkeys:** `B` build mode (no time limit; `B` again or `Esc` to leave it; `Tab` / `Shift+Tab` switch structure while in it), `F` the Fabricator, `I` hides/shows the inventory bar, `E` unused (it opened the Shop; kept free for something later), `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout. `M` (dev builds only, temporary) adds 500 materials.
+- **Hotkeys:** `B` the Build menu (buy structures), `P` place mode (no time limit; `P` again or `Esc` to leave it; `Tab` / `Shift+Tab` switch structure while in it), `F` the Fabricator (once you own one), `I` hides/shows the inventory bar, `E` unused (it opened the Shop; kept free for something later), `L` leaderboard, `Esc` closes popups. `` ` `` (backtick) shows a performance readout. `M` (dev builds only, temporary) adds 500 materials.
 - 📝 **Touch aiming** is limited to your movement direction or a tapped spot; there's no second aiming stick.
 
 Implementation: [Input — desktop and mobile share one message contract](ARCHITECTURE.md#input--desktop-and-mobile-share-one-message-contract), [Movement](ARCHITECTURE.md#movement).
@@ -416,7 +430,7 @@ Implementation: [Input — desktop and mobile share one message contract](ARCHIT
 - **Hexes:** claimed hexes are tinted in the owner's color, with a slightly darker border so neighboring hexes of one color stay distinguishable.
 - **Pickups:** identical drop pods floating over a hex; see [Pickups](#pickups).
 - **Spawn platforms:** a low round metal pad on each player's spawn hex, with a small light in their team color.
-- **Structures:** a raised hexagonal slab. The **top shows the type** (farm pale lime, fabricator dark brown, fort sandstone, power plant pale cyan, muted so they don't read as team colors) and the **sides and border show the owner's team color**.
+- **Structures:** a raised slab in the shape of its footprint (a hexagon, or three joined hexes for a Guard Tower). The **top shows the type** (farm pale lime, fabricator dark brown, Guard Tower sandstone, power plant pale cyan, muted so they don't read as team colors) and the **sides and border show the owner's team color**.
 - **Shots:** Basic-gun shots are small white bolts; Big-gun shots are larger yellow bolts.
 - **Expander:** a translucent circle in the owner's color on the ground, showing their claim radius.
 - **Reference art** (hex tiles with mountains, trees, water and cliff faces) is AI-generated with unclear licensing, so it's for mood only. Planned art direction is under [Open design questions and plans](#open-design-questions-and-plans).
@@ -433,7 +447,12 @@ Things that need a design decision, not just code. Where one is also tracked in 
 - **Team size and balance:** today anyone can join any color, including everyone on one team.
 
 ### Structures and scoring (Planned Features #3)
-- **What each structure type does.** Farm, fabricator, fort and power plant are identical except for color. Each needs a purpose and probably its own point value in place of the flat 25. (An earlier idea had city hall 1000, school 250, house 100 and fort 25 points.)
+- **What each structure type does.** ✅ Partly decided 2026-10-03: farms give tile capacity, fabricators open the Fabricator, Guard Towers shoot, each with its own points and health ([Structures](#structures)). Still open: **what a power plant does** (K.C. will add details), and dorms and processing facilities.
+- **Earning materials at the tile limit (important).** Materials come only from claiming a hex for the first time and from pods, and a player at their limit can't claim, so they earn nothing. A player who has spent everything by then can never afford the farm that would lift the limit. Bots now keep 100 materials back near the limit to avoid it. Options for players: farms (or something else) produce materials; the first farm is free; claims blocked by the limit still pay out for first-time hexes; a periodic income. Not decided.
+- **Duplicate fabricators.** Another fabricator adds nothing but 100 points for 100 materials and 7 hexes (as asked 2026-10-03). Once you're at your limit that is an easy way to turn materials into score. Maybe only the first one scores in full.
+- **The Basic gun's nerf** (K.C., 2026-10-03): damage 50 → 25 and fire rate 5 → 1 a second are in; the range stays about 1,200 px. Still open: the right rate (1 a second is a first guess), the Big gun (100 damage at 5 a second is now 20 times the Basic gun's damage output), and moving the fire-rate limit to the server. Before the nerf, bot simulations had Hard build 24–50 towers and flatten everyone else; to re-check.
+- **Guard Tower tuning:** its range (550 px, was 450 until 2026-10-03) and fire interval (1 s, the Basic gun's) are first-pass; should it also shoot structures, or need the owner nearby?
+- **Fabricator lock:** should losing your only fabricator lock the Fabricator again (as built), and should the lock apply to pod finds?
 - **Tie-break** for the win, beyond shared ranks.
 - The point values (1 / 50 / 25) are first-pass, to tune in playtesting.
 
@@ -494,7 +513,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Leaderboard presentation | Popup over the canvas, toggled by a button or `L` (closed by `Esc`/×/backdrop), hidden by default | Always-on corner panel (previous) | The always-on panel was clipped and covered the play area on small screens; a popup is roomier and only costs space when wanted. The player's own score stays visible in a small always-on badge instead |
 | Fire input | Space, click and a touch FIRE button all go through `GameScene.tryShoot` with a 200ms client-side interval | Click only (previous); server-enforced fire rate first | Requested controls; a shared gate avoids three divergent code paths. Server enforcement is the right long-term home but is a game-rule decision, so it's deferred and logged as a Known Issue |
 | Match phases | One `playing` phase (5 min) between `lobby` and `results` (a `buying` phase was added before it afterwards — see below) | Separate `claiming` (90s) and `combat` (120s) phases (previous); a separate "buying" phase | Claiming and fighting should happen together, and buying is better as an in-game menu than a phase that pauses everyone. The early-shooting problem the claiming phase solved goes away once guns/ammo are purchases |
-| Score formula | `tiles × 1 + kills × 50 + structures × 25`, computed server-side into `Player.score`; materials excluded | Score from materials (previous); client-side derivation | Requested. Materials will be spent, so scoring them would make buying cost points. A synced server field keeps every client identical and lets the leaderboard/badge just read it |
+| Score formula — **revised 2026-10-03 (kills 0, structure points by type; see the last row)** | `tiles × 1 + kills × 50 + structures × 25`, computed server-side into `Player.score`; materials excluded | Score from materials (previous); client-side derivation | Requested. Materials will be spent, so scoring them would make buying cost points. A synced server field keeps every client identical and lets the leaderboard/badge just read it |
 | Damage — **superseded 2026-09-26 (per-gun damage: Basic gun 50, Big gun 100; Armor gives 200 health)** | 50 per hit vs 100 health (two-hit kill) | 25 per hit (previous) | Requested. Armor and better guns will modify this later |
 | Structures are solid — **superseded 2026-09-26 (structures now cover 7 hexes and use a hexagon shape; still solid to enemies, and teammates pass too)** | Others can't enter a structure's hex; they slide around it; the owner passes freely; a player already inside can walk out | Structures only stop projectiles (previous); no exceptions for owners | Requested. Implemented as circle-vs-hexagon with rounded corners; sliding uses the push-out direction at the player's *current* position (using the destination's normal leaves players frozen at corners), and a small distance tolerance so tangential slides aren't mistaken for approaching. Validated with a 744-approach sweep (0 overlaps, 0 frozen; the only stops were dead-on flat-wall hits) and a two-client run |
 | Buying phase — **superseded 2026-09-26 (ready-up lobby)** | A 30s `buying` phase between lobby and playing (nothing else allowed), plus in-play shopping on the player's own time | No buying phase, only an in-game menu (decided earlier the same day); a long shopping phase | Reversed by request: a quick shared shopping window gives a clean start, while play-time buying keeps the game continuous. Also removes the "shoot before anyone has claimed anything" problem without a protected phase |
@@ -554,7 +573,7 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Income from claiming (revised) | A hex pays MATERIALS_PER_CLAIM only the first time anyone claims it in the match; re-takes and released hexes pay nothing | Every claim pays (previous, 2026-09-26) | Requested (2026-09-27): border fights shouldn't be a material farm. The value was also lowered from 5 to 1 by the developer |
 | Pickups | 12 locations in a 4 × 3 grid, nudged ±2 hexes and moved off terrain and spawn areas; materials 40% (10–50), ammo 25% (10–30), level-1 upgrade 10%, basic gun 10%, big gun 5%, structure 5%, nothing 5%; one-time; behind the PICKUPS_ENABLED flag | Random scatter; respawning items | Locations, chances and amounts requested (2026-09-27). My choices: the grid-plus-nudge reading of "evenly distributed"; keeping them out of spawn areas so nobody starts on one; taking only items you can use (the shop's rules), so a pickup isn't wasted on someone who can't benefit; walking onto the hex (like claiming) to take one |
 | Credits become materials | The currency is **materials**, needed to make items; renamed everywhere (UI, code, protocol, docs). Shop prices show as "100 mat"; the pickup pile is a wooden crate instead of a gold coin | Keep "credits" in code and only change the UI text | Requested (2026-09-27) as a new concept. Renaming the code too keeps one word for one thing. Wording like "buy" and "shop" is left for the fabricate change |
-| Fabricate, not buy or build | The Shop is now the **Fabricate** menu (still `E`; "Fabricate" buttons, "Fabricating is on your own time"); placing a structure is **Fabricate** too, on `F` (was `B`, which now does nothing); the Mine is now the **Fabricator** | Separate words for the menu and for placing | Requested (2026-09-27): items are fabricated from materials, not bought or built. The Miner keeps its name (it now starts with a fabricator), and so does the Builder; the fabricator keeps the mine's dark-brown color until art |
+| Fabricate, not buy or build | The Shop is now the **Fabricate** menu (still `E`; "Fabricate" buttons, "Fabricating is on your own time"); placing a structure is **Fabricate** too, on `F` (was `B`, which now does nothing); the Mine is now the **Fabricator** | Separate words for the menu and for placing | Requested (2026-09-27): items are fabricated from materials, not bought or built. The Engineer keeps its name (it now starts with a fabricator), and so does the Builder; the fabricator keeps the mine's dark-brown color until art |
 | Fabricator, Build and `E` (revised) | The menu is the **Fabricator** (button only; `E` is unbound and kept for later); placing a structure is **Build** on `B` again | "Fabricate" for both, with `F` for placing (previous, same day) | Requested (2026-09-27). The menu shares its name with the Fabricator structure for now |
 | No switching cooldown | Switch the equipped upgrade instantly, as often as you like; the Wings-over-terrain rule stays | At most once every 5 s (previous) | Requested (2026-09-27), ahead of the planned HUD inventory where clicking an upgrade switches to it. This allows flicking Wings on to cross a river mid-chase; revisit if it's abused |
 | Smuggler renamed Explorer | The armed starting character is the **Explorer** (id `explorer`); same kit (Basic gun, 15 ammo, 15 materials) and description. Older text was reworded | Keep the id `smuggler` and change only the name | Requested (2026-09-27). Renaming the id too keeps code and game in step, as with mine → fabricator |
@@ -579,3 +598,6 @@ Gameplay, balance, controls and presentation decisions, and why they were made. 
 | Ground texture | Slate tiles with a subtle texture (grains, the odd crack or frost patch) and a soft bevel; smooth patches of brown and maroon dust across the map; claim tints see-through | Per-tile random colors; a strong pattern | Requested (2026-09-30): texture that stays subtle, using the brown and maroon of the look-and-feel notes (Titan: icy, hazy, futuristic, sleek yet cartoony). My choices: the brown and maroon as tholin dust (it's real on Titan) in patches that span several tiles rather than tile by tile, so it reads as terrain and not noise; the bevel for the "sleek panel" feel; see-through claim tints so owned ground keeps its texture |
 | Titan palette | Ground coffee brown with tan dune drifts and charcoal ice-rock outcrops; mountains charcoal and brown-gray with cream frost caps, dusty lower slopes and the ground's texture; deep liquid inky black with patches of metallic gold sky reflection; shallow liquid dark amber-brown; dark warm browns for cliffs, outlines and the area around the map | Slate ground with blue water and white snow (previous); a full orange-sky look | Requested (2026-10-01) from research on Titan's colors (amber, tangerine, coffee, cocoa, rust, tan, inky black, charcoal, brick red), but without looking too alien. My choices: keep shapes that read as Earth-like (brown earth, dark water with sunset reflections, snowcap-like frost) and only shift the colors; gold in smooth patches across a lake, not per tile; shallow water darker than the ground so walkable liquid still reads as liquid; the gold kept saturated so it never looks like the dull tan dunes |
 | Two color schemes | Slate (the original) and Titan; the server picks one at random for each game, and everyone in it sees the same one. Shallow liquid is one flat, much brighter color in each, so it's never confused with deep | Titan only (previous); letting the creator pick a scheme; a scheme per player | Requested (2026-10-02): keep the original scheme too and have the game choose randomly. My choices: per game, not per player, so everyone sees the same map; in Titan, deep liquid's gold sheen toned down to dark bronze plus glints and shallows made a bright golden amber, because gleaming deep liquid looked like the old amber shallows. A unit check holds every scheme to that rule |
+| Structures become essential (tile limit, Fabricator, Guard Tower, power plant) | Tile limit of 500 hexes, +500 per farm, enforced on every claim (enemy hexes too) with a notice and a Tiles x / y readout. Guards: farm 100 points (Farmer 150), fabricator 100, Guard Tower 50, power plant 100; all health 1000 except the Guard Tower's 500; all cost 100. The Fabricator menu and the server's gun, ammo and upgrade purchases need an owned fabricator. The fort is now the Guard Tower: 3 touching hexes, fires the Basic gun with unlimited ammo | Structures all identical (previous); a hard cap that takes hexes away when a farm is lost; a notice on every blocked tick | Requested (2026-10-03). My choices: structures are bought in a separate **Build menu** (`B`), never locked, because the Fabricator menu used to sell them and nobody but the Engineer could otherwise buy a first fabricator (K.C. picked this); losing a farm or fabricator takes away its effect but never your hexes (K.C. picked this); towers auto-fire at the nearest enemy player (K.C. picked this) with their own range and fire interval, never at structures; the notice repeats at most every 8 s; a Guard Tower's rotation follows the pointer so there's no rotate key; "farmers score 50% more" means the Farmer character's farms; placing a structure moved from `B` to `P` |
+| Kills score nothing; Engineer rename | `KILL_POINTS` is 0: score is tiles plus structure points. Kills are still counted and shown. The results screen breaks the score down per player (tiles, structures with their points, kills) and its footnote states the rule. The Miner is now the **Engineer** (id `engineer`) | Kills 50 points (previous); dropping kills from the results table | Requested (2026-10-03): deincentivize killing. My choices: keep the kill counter, the column and the tie-break (kills, then tiles) rather than remove them, and keep `KILL_POINTS` as a constant at 0 so it can be turned back on; the final standings carry `structurePoints` so the breakdown adds up |
+| Basic gun nerf; pod odds | Basic gun and Guard Tower damage 50 → 25 (four hits kill an unarmored player); Basic gun fire rate 5 → 1 a second (`GUN_FIRE_INTERVAL_MS`, the Big gun stays at 5 a second), which the Guard Tower shares; every pod tier gets 10 points more materials and 10 less ammo (60/52/42/32% materials, 25/20/15/10% ammo) | 50 damage, 5 a second (previous); the tower on its own 0.7 s interval | Requested (2026-10-03): the Basic gun was too strong now that towers use it, and players who run out of materials but need a farm can find materials in pods. My choices: the rate is per gun, in shared code, so the client, the tower and the bots agree (bots can't fire faster than their gun); I read "ammo to 25%" as the leader's row (35 → 25) and moved every tier's ammo down by the same 10 points that materials gained, so each row still adds up to 100; the Big gun's damage and rate are untouched |

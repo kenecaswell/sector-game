@@ -19,7 +19,7 @@ describe('CharacterSystem.apply', () => {
         player.ammo = 999;
         player.gun = 'big';
         player.health = 1;
-        player.structureInventory.push('fort', 'fort');
+        player.structureInventory.push('guardTower', 'guardTower');
         player.expanderLevel = 3;
         player.armorLevel = 2;
         player.equippedUpgrade = 'expander';

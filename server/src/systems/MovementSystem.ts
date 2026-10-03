@@ -194,10 +194,10 @@ function findBlockingStructure(
     for (const structure of state.structures.values()) {
         if (areAllies(state, structure.ownerId, playerId)) continue;
 
-        const to = structureContact(toX, toY, structure.tileX, structure.tileY);
+        const to = structureContact(toX, toY, structure);
         if (to.distance >= PLAYER_RADIUS) continue;
 
-        const from = structureContact(fromX, fromY, structure.tileX, structure.tileY);
+        const from = structureContact(fromX, fromY, structure);
         // Tolerance: sliding along an edge keeps the distance the same up to floating-point
         // noise, and that must not count as "getting closer" or the player freezes in place.
         if (to.distance < from.distance - APPROACH_EPSILON) return { nx: from.nx, ny: from.ny };

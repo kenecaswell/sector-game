@@ -108,8 +108,8 @@ export function ResultsScreen({
                             <th style={cell}>Player</th>
                             <th style={numberCell}>Score</th>
                             <th style={numberCell}>Tiles</th>
-                            <th style={numberCell}>Kills</th>
                             <th style={numberCell}>Structures</th>
+                            <th style={numberCell}>Kills</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -145,8 +145,10 @@ export function ResultsScreen({
                                         {entry.score}
                                     </td>
                                     <td style={numberCell}>{entry.tilesOwned}</td>
+                                    <td style={numberCell}>
+                                        {entry.structures} (+{entry.structurePoints})
+                                    </td>
                                     <td style={numberCell}>{entry.kills}</td>
-                                    <td style={numberCell}>{entry.structures}</td>
                                 </tr>
                             );
                         })}
@@ -154,7 +156,9 @@ export function ResultsScreen({
                 </table>
 
                 <div style={{ margin: '14px 0 18px', fontSize: 13, opacity: 0.7 }}>
-                    Score = 1 per tile + 50 per kill + 25 per structure.{' '}
+                    Score = 1 per tile + each structure&apos;s points (farm 100, fabricator 100,
+                    power plant 100, Guard Tower 50; a Farmer&apos;s farm 150). Kills don&apos;t
+                    score.{' '}
                     {roomOpen && secondsLeft !== null
                         ? `This room closes in ${secondsLeft}s.`
                         : 'This room has closed.'}

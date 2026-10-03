@@ -14,7 +14,8 @@ const path = require('path');
 const { root, serverDist, dist, colyseusClient, section, check, finish, sleep } = require('./lib');
 
 const { Client } = colyseusClient();
-const { pixelToHex, hexCenter, hexNeighbors, mapPixelSize, structureFootprint } = dist('hex.js');
+const { pixelToHex, hexCenter, hexNeighbors, mapPixelSize, structureFootprint, compactFootprint } =
+    dist('hex.js');
 const C = dist('constants.js');
 const shared = dist('types/shared.js');
 
@@ -132,10 +133,36 @@ async function goTo(room, target, ms = 4000) {
     move(room, 0, 0);
     await sleep(250);
 }
+// A player's first structure, if they have built one (everyone sees everyone's).
+const ownedBy = (room) =>
+    Array.from(room.state.structures.values()).find((s) => s.ownerId === room.sessionId);
 const hexUnder = (room) => pixelToHex(me(room).x, me(room).y);
 // A player's materials minus what they earned claiming (MATERIALS_PER_CLAIM a hex; the spawn hex is
 // claimed at once), i.e. what's left of their character's starting materials if they bought nothing.
 const kitMaterials = (p) => p.materials - p.tilesOwned * C.MATERIALS_PER_CLAIM;
+/**
+ * Gives the player a Fabricator, which guns, ammo and upgrades now need: buys one with the dev
+ * materials (structures can be bought without a Fabricator), claims a footprint two hexes to the
+ * side of where they stand (inside the spawn area, which is never terrain) and builds it.
+ */
+async function buildFabricator(room, side = -1) {
+    const start = hexUnder(room);
+    const spot = { col: start.col + 2 * side, row: start.row };
+    room.send('devMaterials');
+    await waitFor(() => me(room).materials >= C.DEV_MATERIALS, 2000);
+    room.send('purchase', { itemId: 'fabricator' });
+    await waitFor(() => Array.from(me(room).structureInventory).includes('fabricator'), 2000);
+    await goTo(room, hexCenter(spot.col, spot.row));
+    for (const n of hexNeighbors(spot.col, spot.row)) await goTo(room, hexCenter(n.col, n.row));
+    room.send('placeStructure', {
+        tileX: spot.col,
+        tileY: spot.row,
+        structureType: 'fabricator',
+        seq: ++seq,
+    });
+    await waitFor(() => me(room).hasFabricator, 2000);
+    return spot;
+}
 const drop = (room) => room.connection.transport.ws.close(4001); // an unclean close, like a network drop
 
 // ---------------------------------------------------------------------------------------------
@@ -284,9 +311,9 @@ async function lifecycle() {
         check('an unarmed player cannot shoot', a.state.projectiles.size === 0);
 
         // Nobody starts armed (since 2026-09-29): the Explorer fabricates a gun and ammo with the dev
-        // materials.
-        b.send('devMaterials');
-        await waitFor(() => me(b).materials >= C.DEV_MATERIALS, 2000);
+        // materials, once it has built a Fabricator.
+        await buildFabricator(b, 1);
+        check('building a Fabricator opens the Fabricator to its owner', me(b).hasFabricator);
         b.send('purchase', { itemId: 'basicGun' });
         b.send('purchase', { itemId: 'ammo' });
         await waitFor(() => me(b).gun === 'basic' && me(b).ammo > 0, 2000);
@@ -298,9 +325,14 @@ async function lifecycle() {
             'during playing you can move, claim and shoot (with a gun)',
             me(b).x > before.x + 30 && me(b).tilesOwned > 0 && me(b).ammo === before.ammo - 1
         );
+        // b built a Fabricator above (100 points: STRUCTURE_SPECS.fabricator.points).
+        await waitFor(
+            () => me(b).score === me(b).tilesOwned + shared.STRUCTURE_SPECS.fabricator.points,
+            2000
+        );
         check(
-            'score = tiles while there are no kills or structures',
-            me(b).score === me(b).tilesOwned,
+            'score = tiles + 100 for the Fabricator, while there are no kills',
+            me(b).score === me(b).tilesOwned + shared.STRUCTURE_SPECS.fabricator.points,
             `score ${me(b).score}, tiles ${me(b).tilesOwned}`
         );
 
@@ -321,7 +353,7 @@ async function lifecycle() {
         await sleep(300);
         check(
             "you can't build unless all 7 footprint hexes are yours",
-            a.state.structures.size === 0 && me(a).structureInventory.length === 1
+            !ownedBy(a) && me(a).structureInventory.length === 1
         );
         for (const n of hexNeighbors(spot.col, spot.row)) await goTo(a, hexCenter(n.col, n.row));
         await sleep(300);
@@ -329,16 +361,16 @@ async function lifecycle() {
         const ownsAll = structureFootprint(spot.col, spot.row).every(
             (h) => tiles[h.row * 64 + h.col].ownerId === a.sessionId
         );
-        tryBuild('fort');
+        tryBuild('guardTower');
         await sleep(300);
         check(
             'you can only build what is in your inventory',
-            ownsAll && a.state.structures.size === 0,
+            ownsAll && !ownedBy(a),
             ownsAll ? '' : 'did not manage to claim the whole footprint'
         );
         tryBuild('farm');
         await sleep(300);
-        const built = Array.from(a.state.structures.values())[0];
+        const built = ownedBy(a);
         check(
             'building on a fully owned footprint uses up a structure from the inventory',
             !!built &&
@@ -451,13 +483,44 @@ async function shop() {
             'DEV: the devMaterials message (the M key) adds DEV_MATERIALS',
             me(a).materials === start + C.DEV_MATERIALS
         );
+        check('nobody starts with a Fabricator open', me(a).hasFabricator === false);
         const rich = me(a).materials;
+        for (const itemId of ['ammo', 'basicGun', 'armor']) a.send('purchase', { itemId });
+        await sleep(300);
+        check(
+            'without a Fabricator, guns, ammo and upgrades are refused even with the materials',
+            me(a).gun === '' && me(a).ammo === 0 && me(a).armorLevel === 0 && me(a).materials === rich
+        );
+        a.send('purchase', { itemId: 'fabricator' });
+        await sleep(300);
+        check(
+            'structures can be bought without one (the Fabricator included)',
+            me(a).materials === rich - shared.SHOP_ITEMS.fabricator.cost &&
+                Array.from(me(a).structureInventory).includes('fabricator')
+        );
+        // The Farmer's own farm and the Fabricator, each on a footprint beside the spawn.
+        const spot = { col: hexUnder(a).col - 2, row: hexUnder(a).row };
+        await goTo(a, hexCenter(spot.col, spot.row));
+        for (const n of hexNeighbors(spot.col, spot.row)) await goTo(a, hexCenter(n.col, n.row));
+        a.send('placeStructure', {
+            tileX: spot.col,
+            tileY: spot.row,
+            structureType: 'fabricator',
+            seq: ++seq,
+        });
+        await waitFor(() => me(a).hasFabricator, 2000);
+        check('placing a Fabricator opens the Fabricator', me(a).hasFabricator);
+        const afterFab = me(a).materials;
         a.send('purchase', { itemId: 'ammo' });
         await sleep(300);
         check(
-            'buying ammo over the wire costs its price and adds the pack',
+            'then buying ammo over the wire costs its price and adds the pack',
             me(a).ammo === shared.AMMO_PACK_SIZE &&
-                me(a).materials === rich - shared.SHOP_ITEMS.ammo.cost
+                me(a).materials === afterFab - shared.SHOP_ITEMS.ammo.cost
+        );
+        check(
+            'the player starts at the base tile limit (500)',
+            me(a).tileCap === shared.BASE_TILE_CAP && me(a).tileCap === 500
         );
 
         const late = await join(new Client(URL));
@@ -757,17 +820,16 @@ async function backpacks() {
             b.send('selectCharacter', { characterId: 'robot' }); // Booster 1, equipped
             await sleep(300);
             await startMatch(a, b);
-            a.send('devMaterials'); // the shooter fabricates a Basic gun and ammo
-            await waitFor(() => me(a).materials >= C.DEV_MATERIALS, 2000);
+            await buildFabricator(a); // the shooter fabricates a Basic gun and ammo
             a.send('purchase', { itemId: 'basicGun' });
             a.send('purchase', { itemId: 'ammo' });
             await waitFor(() => me(b).boosterLevel === 1 && me(a).gun === 'basic' && me(a).ammo > 0, 2000);
 
-            // The robot walks a few hexes west of its spawn, then the shooter fires twice at it.
+            // The robot walks a few hexes west of its spawn, then the shooter fires four times at it (25 damage each).
             const spawn = { x: me(b).x, y: me(b).y };
             await goTo(b, { x: spawn.x - 150, y: spawn.y });
             const fallen = pixelToHex(me(b).x, me(b).y);
-            for (let i = 0; i < 2 && me(b).respawnAt === 0; i++) {
+            for (let i = 0; i < 4 && me(b).respawnAt === 0; i++) {
                 const angle = Math.atan2(me(b).y - me(a).y, me(b).x - me(a).x);
                 a.send('shoot', { angle, seq: ++seq });
                 await waitFor(() => me(b).health < 100 || me(b).respawnAt > 0, 3000);
@@ -776,7 +838,7 @@ async function backpacks() {
             await waitFor(() => b.state.backpacks.size === 1, 2000);
             const pack = Array.from(b.state.backpacks.values())[0];
             check(
-                'two basic-gun hits: the robot is down (respawnAt set) and its Booster is gone',
+                'four basic-gun hits: the robot is down (respawnAt set) and its Booster is gone',
                 me(b).respawnAt > Date.now() && me(b).boosterLevel === 0 && me(a).kills === 1,
                 `respawnAt in ${me(b).respawnAt - Date.now()} ms`
             );
@@ -813,6 +875,66 @@ async function backpacks() {
                     collected[0][0] === 'b' &&
                     collected[0][1].contents === 'Booster 1',
                 JSON.stringify(collected)
+            );
+        },
+        { TERRAIN_COVERAGE: '0', PICKUPS: '0' }
+    );
+}
+
+async function towers() {
+    // Plain ground, so the walk to the tower isn't stopped by a mountain.
+    section('Guard Towers (over the wire)');
+    await withServer(
+        0.2,
+        async () => {
+            const a = await join(new Client(URL), { name: 'Builder' });
+            const b = await join(new Client(URL), { name: 'Intruder' });
+            a.send('selectCharacter', { characterId: 'builder' }); // starts with a Guard Tower
+            await sleep(300);
+            await startMatch(a, b);
+            check(
+                'the Builder starts with a Guard Tower and no gun',
+                Array.from(me(a).structureInventory).join() === 'guardTower' && me(a).gun === ''
+            );
+
+            // A tower needs just 3 touching hexes: the anchor and two neighbors.
+            const start = hexUnder(a);
+            const spot = { col: start.col - 2, row: start.row };
+            const clump = compactFootprint(spot.col, spot.row, 0);
+            for (const h of clump) await goTo(a, hexCenter(h.col, h.row));
+            a.send('placeStructure', {
+                tileX: spot.col,
+                tileY: spot.row,
+                structureType: 'guardTower',
+                rotation: 0,
+                seq: ++seq,
+            });
+            await waitFor(() => a.state.structures.size === 1, 2000);
+            const tower = Array.from(a.state.structures.values())[0];
+            await waitFor(
+                () => me(a).score === me(a).tilesOwned + shared.STRUCTURE_SPECS.guardTower.points,
+                2000
+            );
+            check(
+                'a Guard Tower goes down on 3 owned hexes, with 500 health, and scores 50',
+                !!tower &&
+                    tower.type === 'guardTower' &&
+                    tower.health === 500 &&
+                    tower.maxHealth === 500 &&
+                    tower.rotation === 0 &&
+                    me(a).structureInventory.length === 0 &&
+                    me(a).score === me(a).tilesOwned + shared.STRUCTURE_SPECS.guardTower.points,
+                tower ? `score ${me(a).score}, tiles ${me(a).tilesOwned}` : 'not placed'
+            );
+
+            // An enemy walks into range and the tower, with no gun or ammo of its owner's, shoots.
+            const at = hexCenter(spot.col, spot.row);
+            await goTo(b, { x: at.x + 150, y: at.y }, 8000);
+            await waitFor(() => me(b).health < me(b).maxHealth || me(b).respawnAt > 0, 6000);
+            check(
+                'the tower shoots an enemy in range (the owner is unarmed)',
+                (me(b).health < me(b).maxHealth || me(b).respawnAt > 0) && me(a).gun === '',
+                `health ${me(b).health}`
             );
         },
         { TERRAIN_COVERAGE: '0', PICKUPS: '0' }
@@ -875,6 +997,7 @@ async function edges() {
         await games();
         await bots();
         await backpacks();
+        await towers();
         await edges();
     } catch (error) {
         check('the e2e run completed without an error', false, error.message);

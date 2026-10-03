@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BASE_CLAIM_RADIUS, EXPANDER_CLAIM_RADII } from '../constants';
+import { TILE_LIMIT_NOTICE_INTERVAL_MS } from '../constants';
 import { EXPANDER_HEXES } from '../types/shared';
 import {
     STRUCTURE_CORNER_OFFSETS,
@@ -154,7 +155,7 @@ describe('CollisionSystem — claiming', () => {
 
 describe('CollisionSystem — shots against structures', () => {
     it('hits anywhere inside the hexagon and nowhere outside it', () => {
-        const structure = { tileX: 30, tileY: 30 };
+        const structure = { type: 'farm', tileX: 30, tileY: 30, rotation: 0 };
         const c = hexCenter(30, 30);
         for (const o of STRUCTURE_CORNER_OFFSETS) {
             const inside = { x: c.x + o.x * 0.95, y: c.y + o.y * 0.95 };
@@ -164,5 +165,100 @@ describe('CollisionSystem — shots against structures', () => {
                 false
             );
         }
+    });
+});
+
+describe('CollisionSystem — the tile limit', () => {
+    it('at the limit, walking over unclaimed ground claims nothing and says so', () => {
+        const state = world();
+        const p = addPlayerAt(state, 'a', 20, 20);
+        p.tilesOwned = p.tileCap;
+        const claimed: TilesClaimedEvent['tiles'] = [];
+        expect(CollisionSystem.claimTiles(state, p, claimed)).toBe(true);
+        expect(claimed).toEqual([]);
+        expect(tileAt(state, 20, 20).ownerId).toBe('');
+        expect(p.tilesOwned).toBe(p.tileCap);
+        expect(p.materials).toBe(0);
+    });
+
+    it('one under the limit claims one more, then stops', () => {
+        const state = world();
+        const p = addPlayerAt(state, 'a', 20, 20);
+        p.tilesOwned = p.tileCap - 1;
+        expect(claimOnce(state, p)).toHaveLength(1);
+        expect(p.tilesOwned).toBe(p.tileCap);
+        const next = hexCenter(21, 20);
+        p.x = next.x;
+        p.y = next.y;
+        expect(claimOnce(state, p)).toHaveLength(0);
+        expect(tileAt(state, 21, 20).ownerId).toBe('');
+    });
+
+    it('is not blocked by the limit when nothing was left to claim', () => {
+        const state = world();
+        const p = addPlayerAt(state, 'a', 20, 20);
+        tileAt(state, 20, 20).ownerId = 'a';
+        p.tilesOwned = p.tileCap;
+        expect(CollisionSystem.claimTiles(state, p, [])).toBe(false);
+    });
+
+    it('the Expander takes only as many as fit, the hex under you first', () => {
+        const state = world();
+        const p = addPlayerAt(state, 'a', 20, 20);
+        p.claimRadius = EXPANDER_CLAIM_RADII[0];
+        p.tilesOwned = p.tileCap - 3;
+        const claimed = claimOnce(state, p);
+        expect(claimed).toHaveLength(3);
+        expect(claimed[0]).toEqual({ x: 20, y: 20, ownerId: 'a' });
+        expect(p.tilesOwned).toBe(p.tileCap);
+    });
+
+    it("also stops you stealing an enemy's hexes, so the enemy keeps them", () => {
+        const state = world();
+        const victim = addPlayer(state, 'v', 0, 0);
+        tileAt(state, 20, 20).ownerId = 'v';
+        victim.tilesOwned = 1;
+        const p = addPlayerAt(state, 'a', 20, 20);
+        p.tilesOwned = p.tileCap;
+        claimOnce(state, p);
+        expect(tileAt(state, 20, 20).ownerId).toBe('v');
+        expect(victim.tilesOwned).toBe(1);
+    });
+
+    it('a farm raises the limit, so claiming carries on', () => {
+        const state = world();
+        const p = addPlayerAt(state, 'a', 20, 20);
+        p.tilesOwned = p.tileCap;
+        expect(claimOnce(state, p)).toHaveLength(0);
+        p.tileCap += 500;
+        expect(claimOnce(state, p)).toHaveLength(1);
+    });
+
+    it('tells the player once, then again only after the interval', () => {
+        const state = world();
+        const p = addPlayerAt(state, 'a', 20, 20);
+        p.tilesOwned = p.tileCap;
+        const told: unknown[][] = [];
+        const notify = (id: string, type: string, payload: unknown) =>
+            told.push([id, type, payload]);
+        const noop = () => {};
+        CollisionSystem.update(state, noop, notify, 100_000);
+        CollisionSystem.update(state, noop, notify, 100_050);
+        expect(told).toEqual([['a', 'tileLimitReached', { limit: p.tileCap }]]);
+        CollisionSystem.update(state, noop, notify, 100_000 + TILE_LIMIT_NOTICE_INTERVAL_MS);
+        expect(told).toHaveLength(2);
+    });
+
+    it('does not tell a player who is under the limit', () => {
+        const state = world();
+        addPlayerAt(state, 'a', 20, 20);
+        const told: unknown[] = [];
+        CollisionSystem.update(
+            state,
+            () => {},
+            (...args) => told.push(args),
+            100_000
+        );
+        expect(told).toEqual([]);
     });
 });

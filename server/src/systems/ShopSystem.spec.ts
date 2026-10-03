@@ -18,7 +18,7 @@ describe('ShopSystem — prices', () => {
             'wings',
             'farm',
             'fabricator',
-            'fort',
+            'guardTower',
             'power',
         ] as const) {
             expect(SHOP_ITEMS[id].cost, id).toBe(100);
@@ -48,6 +48,37 @@ describe('ShopSystem — prices', () => {
             expect(ShopSystem.purchase(p, id)).toBe(false);
         }
         expect(p.materials).toBe(1000);
+    });
+});
+
+describe('ShopSystem — the Fabricator gate', () => {
+    it('without a Fabricator, guns, ammo and upgrades are refused and cost nothing', () => {
+        const p = buyer();
+        for (const id of ['basicGun', 'bigGun', 'ammo', 'armor', 'booster', 'expander', 'wings']) {
+            expect(ShopSystem.purchase(p, id, false), id).toBe(false);
+        }
+        expect(p.materials).toBe(1000);
+        expect(p.gun).toBe('');
+    });
+
+    it('structures can still be bought without one (so the first Fabricator can be)', () => {
+        const p = buyer();
+        for (const id of ['fabricator', 'farm', 'guardTower', 'power']) {
+            expect(ShopSystem.purchase(p, id, false), id).toBe(true);
+        }
+        expect(p.materials).toBe(600);
+        expect(Array.from(p.structureInventory)).toEqual([
+            'fabricator',
+            'farm',
+            'guardTower',
+            'power',
+        ]);
+    });
+
+    it('with one, everything is open', () => {
+        const p = buyer();
+        expect(ShopSystem.purchase(p, 'basicGun', true)).toBe(true);
+        expect(ShopSystem.purchase(p, 'armor', true)).toBe(true);
     });
 });
 
@@ -149,14 +180,14 @@ describe('ShopSystem — upgrades', () => {
 describe('ShopSystem — structures', () => {
     it('adds to the inventory, as many as you can pay for', () => {
         const p = buyer();
-        for (const id of ['farm', 'farm', 'fabricator', 'fort', 'power'] as const) {
+        for (const id of ['farm', 'farm', 'fabricator', 'guardTower', 'power'] as const) {
             expect(ShopSystem.purchase(p, id)).toBe(true);
         }
         expect(Array.from(p.structureInventory)).toEqual([
             'farm',
             'farm',
             'fabricator',
-            'fort',
+            'guardTower',
             'power',
         ]);
         expect(p.materials).toBe(500);

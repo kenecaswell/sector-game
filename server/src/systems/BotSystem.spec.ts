@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOT_PROFILES, RESPAWN_DELAY_MS, SPAWN_SLOTS } from '../constants';
 import { hexCenter, hexNeighbors } from '../hex';
 import { GameState, type Player } from '../state/GameState';
-import { DT, addPlayerAt, ownFootprint, setTerrain, world } from '../test/world';
+import { DT, addPlayerAt, addStructure, ownFootprint, setTerrain, world } from '../test/world';
 import { seededRandom } from '../terrain';
 import { SHOP_ITEMS, TERRAIN, type BotDifficulty } from '../types/shared';
 import { BotSystem } from './BotSystem';
@@ -164,10 +164,10 @@ describe('BotSystem — playing', () => {
         const bot = botInMatch(state, 'easy', 20, 20);
         ownFootprint(state, bot.id, 20, 20);
         bot.structureInventory.clear();
-        bot.structureInventory.push('fort');
+        bot.structureInventory.push('guardTower');
         play(state, 1);
         expect(Array.from(state.structures.values()).map((s) => [s.ownerId, s.type])).toEqual([
-            [bot.id, 'fort'],
+            [bot.id, 'guardTower'],
         ]);
         expect(bot.structureInventory.length).toBe(0);
     });
@@ -179,13 +179,47 @@ describe('BotSystem — playing', () => {
         expect(Array.from(state.structures.values()).some((s) => s.ownerId === bot.id)).toBe(true);
     });
 
-    it('fabricates from its list: a Medium bot makes a gun first', () => {
+    it('fabricates from its list: a Medium bot with a Fabricator makes a gun first', () => {
         const state = world();
         const cost = SHOP_ITEMS.basicGun.cost;
         const bot = botInMatch(state, 'medium', 20, 20, { materials: cost });
+        addStructure(state, bot.id, 40, 40, 'fabricator');
         play(state, 0.1);
         expect(bot.gun).toBe('basic');
         expect(bot.materials).toBeLessThan(cost);
+    });
+
+    it('with no Fabricator, it buys one before any gear', () => {
+        const state = world();
+        const bot = botInMatch(state, 'medium', 20, 20, {
+            materials: SHOP_ITEMS.basicGun.cost + SHOP_ITEMS.fabricator.cost,
+        });
+        play(state, 0.1);
+        expect(bot.gun).toBe('');
+        expect(Array.from(bot.structureInventory)).toContain('fabricator');
+    });
+
+    it('builds a Fabricator it holds before the structure it started with', () => {
+        const state = world();
+        const bot = botInMatch(state, 'hard', 20, 20); // the Farmer: starts with a farm
+        bot.structureInventory.push('fabricator');
+        ownFootprint(state, bot.id, 20, 20);
+        play(state, 1);
+        const built = Array.from(state.structures.values()).map((s) => s.type);
+        expect(built[0]).toBe('fabricator');
+    });
+
+    it('buys a farm when it nears its tile limit', () => {
+        const state = world();
+        const bot = botInMatch(state, 'hard', 20, 20, { materials: 100 });
+        bot.structureInventory.clear();
+        addStructure(state, bot.id, 40, 40, 'fabricator');
+        bot.tilesOwned = bot.tileCap - 10;
+        play(state, 1.1);
+        expect(
+            Array.from(bot.structureInventory).includes('farm') ||
+                Array.from(state.structures.values()).some((s) => s.type === 'farm')
+        ).toBe(true);
     });
 
     describe('shooting', () => {

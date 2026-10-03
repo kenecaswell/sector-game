@@ -1,18 +1,12 @@
 import { Backpack, type GameState, type Player } from '../state/GameState';
 import { RESPAWN_DELAY_MS } from '../constants';
-import {
-    hexIndex,
-    hexNeighbors,
-    inStructureFootprint,
-    isValidHex,
-    pixelToHex,
-    type HexCoord,
-} from '../hex';
+import { hexIndex, hexNeighbors, isValidHex, pixelToHex, type HexCoord } from '../hex';
 import { blocksWalkingAt, spawnPoint } from '../terrain';
 import { areAllies } from '../teams';
 import {
     GUN_NAMES,
     UPGRADE_IDS,
+    inStructure,
     isGunId,
     upgradeLabel,
     upgradeLevel,
@@ -63,7 +57,7 @@ function dropHex(state: GameState, player: Player): HexCoord {
     );
     const usable = (h: HexCoord) =>
         !blocksWalkingAt(state, h.col, h.row) &&
-        !enemyStructures.some((s) => inStructureFootprint(h.col, h.row, s.tileX, s.tileY));
+        !enemyStructures.some((s) => inStructure(h.col, h.row, s));
     const seen = new Set([hexIndex(start.col, start.row, cols)]);
     const queue = [start];
     for (let q = 0; q < queue.length; q++) {

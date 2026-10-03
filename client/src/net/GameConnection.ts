@@ -13,6 +13,7 @@ import { SERVER_HTTP_URL, SERVER_URL } from './config';
 import type {
     AddBotMessage,
     BackpackCollectedEvent,
+    TileLimitReachedEvent,
     RemoveBotMessage,
     UpdateBotMessage,
     GameListing,
@@ -58,6 +59,7 @@ export interface GameEventHandlers {
     onGameOver?: (event: GameOverEvent) => void;
     onPickupCollected?: (event: PickupCollectedEvent) => void;
     onBackpackCollected?: (event: BackpackCollectedEvent) => void;
+    onTileLimitReached?: (event: TileLimitReachedEvent) => void;
 }
 
 // A single Client per tab is all colyseus.js needs — it just holds the HTTP
@@ -89,6 +91,9 @@ function bindMessageHandlers(room: GameRoom, handlers: GameEventHandlers): void 
     // Sent to you only: you took back one of your backpacks.
     if (handlers.onBackpackCollected)
         room.onMessage<BackpackCollectedEvent>('backpackCollected', handlers.onBackpackCollected);
+    // Sent to you only: you're at your tile limit, so ground you walked over wasn't claimed.
+    if (handlers.onTileLimitReached)
+        room.onMessage<TileLimitReachedEvent>('tileLimitReached', handlers.onTileLimitReached);
 }
 
 function saveReconnectionToken(room: GameRoom): void {
@@ -191,9 +196,16 @@ export function sendPlaceStructure(
     tileX: number,
     tileY: number,
     structureType: PlaceStructureMessage['structureType'],
+    rotation: number,
     seq: number
 ): void {
-    room.send<PlaceStructureMessage>('placeStructure', { tileX, tileY, structureType, seq });
+    room.send<PlaceStructureMessage>('placeStructure', {
+        tileX,
+        tileY,
+        structureType,
+        rotation,
+        seq,
+    });
 }
 
 export function sendPurchase(room: GameRoom, itemId: PurchaseMessage['itemId']): void {

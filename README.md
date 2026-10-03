@@ -111,10 +111,11 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
 | Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
-| Build a structure (place one you have) | Click its icon in the **inventory bar** (right side, under Structures; the number is how many you have), or `B` for the one you picked last; while placing, `Tab` switches to your next structure type (`Shift+Tab` the previous). Then click where to put it — the outline is yellow where it fits, red where it doesn't. `Esc`, `B`, or its icon again cancels | Tap its icon, then tap where to put it (a refused tap flashes red); tap the icon again to cancel |
+| Place a structure you have | Click its icon in the **inventory bar** (right side, under Structures; the number is how many you have), or press **Place** next to it in the Build menu, or `P` for the one you picked last; while placing, `Tab` switches to your next structure type (`Shift+Tab` the previous). Then click where to put it — the outline is yellow where it fits, red where it doesn't. A **Guard Tower** (3 hexes) turns to the clump nearest the pointer, so aim at the corner where you want it. `Esc`, `P`, or its icon again cancels | Tap its icon, then tap where to put it (a refused tap flashes red; a Guard Tower turns toward the corner you tap); tap the icon again to cancel |
+| Buy a structure | **Build** button (below Fabricator) or `B`; `Esc` closes. Never locked | **Build** button |
 | Switch upgrade | Click its icon in the inventory bar (under Upgrades; the number is its level). The one in use is outlined; Armor is always on | Tap its icon |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
-| Fabricator (make items from materials) | **Fabricator** button (below Leaderboard) or `F`; `Esc` closes | **Fabricator** button |
+| Fabricator (make guns, ammo and upgrades from materials) | **Fabricator** button (below Leaderboard) or `F`; `Esc` closes. Grayed out until you have built a Fabricator | **Fabricator** button |
 | Hide / show the inventory bar | `I` | — |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 | **Dev only (temporary):** +500 materials | `M` during the match, in a dev build (`npm run dev`); a server started with `NODE_ENV=production` refuses it | — |
@@ -131,37 +132,48 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      | Character | Gun | Ammo | Materials | Structures | Upgrades |
      |---|---|---|---|---|---|
      | Farmer | — | 0 | 50 | Farm | — |
-     | Miner | — | 0 | 50 | Fabricator | — |
-     | Builder | — | 0 | 50 | Fort | — |
+     | Engineer | — | 0 | 50 | Fabricator | — |
+     | Builder | — | 0 | 50 | Guard Tower | — |
      | Robot | — | 0 | 50 | — | Booster 1, equipped (+33% top speed) |
      | Scientist | — | 0 | 50 | Power plant | — |
      | Explorer | — | 0 | 15 | — | Armor 1 (200 health) |
 
-     The four structure types all work the same for now.
+     Each structure type has a job (see below); the power plant's is still to come. Only the Engineer starts with a Fabricator.
    - **Ready** — press it when you're set (press again to cancel). Team and character are locked while you're ready.
 
    - **Bots** — under the player list, pick **Easy**, **Medium** or **Hard** and press **+ Add bot** for a computer-controlled player. Anyone in the lobby can change a bot's color (or team), character and difficulty, or remove it (✕). Bots count toward the 10 players and are always ready. They leave you alone near your own spawn. What each difficulty does is in [GAME_DESIGN → Bots](docs/GAME_DESIGN.md#bots-single-player).
 
    When everyone connected is ready, a **3-second countdown** starts. It's cancelled if anyone un-readies or someone new joins. Bots alone never start a match.
-2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — nobody starts with one: fabricate it or find it in a drop pod), place the structures your character started with on hexes you own, and gather materials. The Fabricator stays available from the **Fabricator** button — the game keeps running while it's open.
+2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — nobody starts with one: fabricate it or find it in a drop pod), build: buy structures in the **Build** menu and place them on hexes you own (**farms** raise your tile limit; a **Fabricator** opens the Fabricator menu; **Guard Towers** shoot), and gather materials. The Fabricator and Build menus open from their buttons — the game keeps running while they're open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
-**Fabricator** (during the match; the **Fabricator** button or `F`). Items aren't bought, they're fabricated from materials:
+**Fabricator** (during the match; the **Fabricator** button or `F`; grayed out until you have built a **Fabricator** structure, and locked again if your last one is destroyed). Guns, ammo and upgrades aren't bought, they're fabricated from materials:
 
 | | Item | Cost | What it does |
 |---|---|---|---|
-| Weapons | Basic gun | 200 | Lets you shoot, 50 damage per hit |
+| Weapons | Basic gun | 200 | Lets you shoot, 25 damage per hit, 1 shot a second |
 | | Big gun | 400 | 100 damage per hit; replaces the basic gun |
 | | Ammo pack | 60 | 30 shots |
 | Upgrades | Booster 1–3 | 100 a level | 133 / 166 / 199% speed |
 | | Expander 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you); 90 / 80 / 70% speed |
 | | Armor 1–3 | 100 a level | 200 / 300 / 400 health; always on |
 | | Wings | 100 | Walk over mountains and deep water |
-| Structures | Farm, Fabricator, Fort, Power plant | 100 each | One more structure to place |
+
 
 The Fabricator offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Expander and Wings, only the equipped one works (Armor always does); the first one you fabricate equips itself, and you switch in the **Inventory**, instantly and as often as you like. Hexes with an enemy's structure on them can't be claimed.
 
-**Score** (always shown at the top center): 1 point per hex you own, 50 per kill, and 25 per structure you own (placeholder value). Materials aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 50 and a big-gun hit 100. **Structures** take up 7 hexes: the one you place it on and the 6 around it. All 7 must be yours, on the map (not at the edge), and not under another structure. The structure is a flat-topped hexagon that sits inside those 7 hexes; its top color shows its type (farm: pale green, fabricator: brown, fort: sandstone, power plant: pale blue) and whose edge shows the owner's team. Enemies can't claim any of its 7 hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
+**Structures** are bought for 100 materials in the **Build** menu (the **Build** button or `B`, which never needs a Fabricator) and then placed on hexes you own (`P`, or click their icon in the inventory bar). Each has its own health, points and job:
+
+| Structure | Hexes | Health | Points | What it does |
+|---|---|---|---|---|
+| Farm | 7 | 1000 | 100 (Farmer: 150) | Raises your **tile limit** by 500 |
+| Fabricator | 7 | 1000 | 100 | Opens the Fabricator (any more only add points) |
+| Guard Tower | 3 touching | 500 | 50 | Shoots enemy players nearby with the Basic gun, never runs out of ammo |
+| Power plant | 7 | 1000 | 100 | Essential — its job is still to come |
+
+**Tile limit:** you can hold at most **500 hexes**, plus 500 for every farm you own. At the limit, walking over ground claims nothing (the HUD shows **Tiles: x / 500** and warns you), so build more farms. A 7-hex structure covers a hex and its 6 neighbors and a Guard Tower three hexes that touch; every one must be yours, on the map (not at the edge), and not under another structure. The structure is a slab inside its hexes; its top color shows its type (farm: pale green, fabricator: brown, Guard Tower: sandstone, power plant: pale blue) and its edge shows the owner's team. Enemies can't claim its hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
+
+**Score** (always shown at the top center): 1 point per hex you own and the points of each structure you own (table above); kills don't score. Materials aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 25 and a big-gun hit 100.
 
 The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Drop pods** are scattered on the map, all looking the same: walk onto one to open it and find out what's inside (materials, ammo, a gun, an upgrade or a structure). The further behind you are on score, the better your odds. About 2:50 into the match, empty spots get new pods over the following 15 seconds. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 

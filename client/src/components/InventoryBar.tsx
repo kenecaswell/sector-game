@@ -96,7 +96,7 @@ export function InventoryBar({
             aria-orientation="vertical"
             style={{
                 position: 'absolute',
-                top: 106, // under the Leaderboard and Fabricator buttons
+                top: 150, // under the Leaderboard, Fabricator and Build buttons
                 right: 12,
                 display: 'flex',
                 flexDirection: 'column',

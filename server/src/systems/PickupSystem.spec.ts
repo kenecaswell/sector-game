@@ -79,7 +79,7 @@ describe('PickupSystem', () => {
         expect(leader.gun).toBe('big');
         const lastGot = events.find((e) => e.playerId === 'last');
         expect(lastGot?.kind).toBe('item');
-        expect(['farm', 'fabricator', 'fort', 'power']).toContain(lastGot?.itemId);
+        expect(['farm', 'fabricator', 'guardTower', 'power']).toContain(lastGot?.itemId);
         expect(last.structureInventory).toHaveLength(1);
     });
 

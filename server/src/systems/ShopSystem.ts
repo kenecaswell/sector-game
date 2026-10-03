@@ -12,13 +12,16 @@ import { UpgradeSystem } from './UpgradeSystem';
  *               empty is equipped at once. Armor also adds the extra health right away, so a hurt
  *               player keeps their damage but gains the headroom.
  *  - structure: one more of that type in `structureInventory`; buy as many as you like.
+ * Structures can always be bought; everything else (guns, ammo, upgrades) needs a Fabricator, which
+ * the caller says whether the player has (`hasFabricator`: they own one that still stands).
  * Returns whether the purchase happened. Phase and connection checks belong to the caller
  * (GameRoom.handlePurchase).
  */
-function purchase(player: Player, itemId: unknown): boolean {
+function purchase(player: Player, itemId: unknown, hasFabricator = true): boolean {
     if (!isShopItemId(itemId)) return false;
 
     const item = SHOP_ITEMS[itemId];
+    if (!item.structure && !hasFabricator) return false;
     if (player.materials < item.cost || ownsShopItem(player, itemId)) return false;
 
     player.materials -= item.cost;

@@ -3,20 +3,26 @@
 
 import type { GameState, Player } from '../state/GameState';
 import {
+    COMPACT_ROTATIONS,
     hexCenter,
     hexDistance,
     hexIndex,
     hexNeighbors,
-    inStructureFootprint,
     isValidHex,
     pixelToHex,
-    structureFootprint,
     type HexCoord,
 } from '../hex';
 import { blocksWalkingAt } from '../terrain';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { areAllies } from '../teams';
-import { TERRAIN } from '../types/shared';
+import {
+    STRUCTURE_SPECS,
+    TERRAIN,
+    footprintFor,
+    inStructure,
+    structureHexes,
+    type StructureType,
+} from '../types/shared';
 
 // What each kind of hex is worth to a bot looking for somewhere to claim.
 const VALUE_FRESH = 3; // never claimed this match: pays materials as well as a point
@@ -58,7 +64,7 @@ function enemyFootprints(state: GameState, playerId: string): Set<number> {
     const blocked = new Set<number>();
     state.structures.forEach((structure) => {
         if (areAllies(state, structure.ownerId, playerId)) return;
-        for (const hex of structureFootprint(structure.tileX, structure.tileY)) {
+        for (const hex of structureHexes(structure)) {
             if (isValidHex(hex.col, hex.row, state.mapWidth, state.mapHeight)) {
                 blocked.add(hexIndex(hex.col, hex.row, state.mapWidth));
             }
@@ -220,19 +226,28 @@ export function planRouteToward(
 }
 
 export interface BuildSite {
-    center: HexCoord;
+    center: HexCoord; // the structure's center hex (7 hexes) or anchor hex (3)
+    rotation: number; // how a 3-hex structure is turned (0 for the others)
     missing: HexCoord[]; // footprint hexes it still has to claim before it can place there
 }
 
 /**
- * The best spot within `radius` steps of the bot for a structure: all 7 footprint hexes on the map,
- * ground, clear of every structure's footprint, and either the bot's already or claimable by it
+ * The best spot within `radius` steps of the bot for a `type` structure: every footprint hex on the
+ * map, ground, clear of every structure's footprint, and either the bot's already or claimable by it
  * (unclaimed or an enemy's; a teammate's is neither). Fewest hexes still to claim wins, then the
- * nearest. Null if there's no such spot.
+ * nearest. Null if there's no such spot. `maxMissing` caps how many hexes it may still have to
+ * claim (0 when it can't claim any, at its tile limit).
  */
-export function findBuildSite(state: GameState, player: Player, radius: number): BuildSite | null {
+export function findBuildSite(
+    state: GameState,
+    player: Player,
+    radius: number,
+    type: StructureType,
+    maxMissing = Infinity
+): BuildSite | null {
     const cols = state.mapWidth;
     const here = hexOf(state, player.x, player.y);
+    const rotations = STRUCTURE_SPECS[type].hexes === 3 ? COMPACT_ROTATIONS : 1;
     let best: BuildSite | null = null;
     let bestCost = Infinity;
     for (let row = here.row - radius - 1; row <= here.row + radius + 1; row++) {
@@ -241,33 +256,35 @@ export function findBuildSite(state: GameState, player: Player, radius: number):
             if (!isValidHex(col, row, cols, state.mapHeight)) continue;
             const distance = hexDistance(here, center);
             if (distance > radius) continue;
-            const missing: HexCoord[] = [];
-            let ok = true;
-            for (const hex of structureFootprint(col, row)) {
-                if (!isValidHex(hex.col, hex.row, cols, state.mapHeight)) {
-                    ok = false;
-                    break;
+            for (let rotation = 0; rotation < rotations; rotation++) {
+                const missing: HexCoord[] = [];
+                let ok = true;
+                for (const hex of footprintFor(type, col, row, rotation)) {
+                    if (!isValidHex(hex.col, hex.row, cols, state.mapHeight)) {
+                        ok = false;
+                        break;
+                    }
+                    const tile = state.tiles[hexIndex(hex.col, hex.row, cols)];
+                    if (
+                        tile.terrain !== TERRAIN.ground ||
+                        (tile.ownerId !== player.id &&
+                            tile.ownerId !== '' &&
+                            areAllies(state, tile.ownerId, player.id)) ||
+                        Array.from(state.structures.values()).some((s) =>
+                            inStructure(hex.col, hex.row, s)
+                        )
+                    ) {
+                        ok = false;
+                        break;
+                    }
+                    if (tile.ownerId !== player.id) missing.push(hex);
                 }
-                const tile = state.tiles[hexIndex(hex.col, hex.row, cols)];
-                if (
-                    tile.terrain !== TERRAIN.ground ||
-                    (tile.ownerId !== player.id &&
-                        tile.ownerId !== '' &&
-                        areAllies(state, tile.ownerId, player.id)) ||
-                    Array.from(state.structures.values()).some((s) =>
-                        inStructureFootprint(hex.col, hex.row, s.tileX, s.tileY)
-                    )
-                ) {
-                    ok = false;
-                    break;
+                if (!ok || missing.length > maxMissing) continue;
+                const cost = missing.length * 3 + distance;
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    best = { center, rotation, missing };
                 }
-                if (tile.ownerId !== player.id) missing.push(hex);
-            }
-            if (!ok) continue;
-            const cost = missing.length * 3 + distance;
-            if (cost < bestCost) {
-                bestCost = cost;
-                best = { center, missing };
             }
         }
     }

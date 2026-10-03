@@ -4,6 +4,7 @@ import { GameState, MountainPiece, Player, Tile } from '../state/GameState';
 import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CollisionSystem } from '../systems/CollisionSystem';
 import { CombatSystem } from '../systems/CombatSystem';
+import { TowerSystem } from '../systems/TowerSystem';
 import { PhaseSystem } from '../systems/PhaseSystem';
 import { EconomySystem } from '../systems/EconomySystem';
 import { ScoreSystem } from '../systems/ScoreSystem';
@@ -292,9 +293,10 @@ export class GameRoom extends Room<GameState> {
         LobbySystem.update(this.state, this.broadcastEvent);
         BotSystem.update(this.state, this.playerInputs); // sets bots' inputs before anyone moves
         MovementSystem.update(this.state, this.playerInputs, dt);
-        CollisionSystem.update(this.state, this.broadcastEvent);
+        CollisionSystem.update(this.state, this.broadcastEvent, this.notifyPlayer);
         PickupSystem.update(this.state, this.broadcastEvent);
         RespawnSystem.update(this.state, this.notifyPlayer); // respawns, and backpacks taken back
+        TowerSystem.update(this.state); // towers shoot before this tick's shots move
         CombatSystem.update(this.state, dt, this.broadcastEvent);
         PhaseSystem.update(this.state, this.broadcastEvent);
         this.closeFinishedMatch();
@@ -345,11 +347,18 @@ export class GameRoom extends Room<GameState> {
         if (player) CombatSystem.fire(this.state, player, msg?.angle);
     }
 
-    /** From the player's structure inventory; the whole 7-hex footprint must be theirs and free. */
+    /** From the player's structure inventory; the whole footprint must be theirs and free. */
     private handlePlaceStructure(client: Client, msg: PlaceStructureMessage): void {
         const player = this.state.players.get(client.sessionId);
         if (player) {
-            StructureSystem.place(this.state, player, msg?.structureType, msg?.tileX, msg?.tileY);
+            StructureSystem.place(
+                this.state,
+                player,
+                msg?.structureType,
+                msg?.tileX,
+                msg?.tileY,
+                msg?.rotation
+            );
         }
     }
 
@@ -358,6 +367,10 @@ export class GameRoom extends Room<GameState> {
         const player = this.state.players.get(client.sessionId);
         if (!player || !player.connected || this.state.phase.phase !== 'playing') return;
 
-        ShopSystem.purchase(player, msg?.itemId);
+        ShopSystem.purchase(
+            player,
+            msg?.itemId,
+            StructureSystem.hasFabricator(this.state, player.id)
+        );
     }
 }

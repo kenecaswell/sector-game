@@ -43,9 +43,9 @@ export const TARGET_STUCK_MS = 1200; // give up if there's no progress this long
 export const TARGET_MARKER_COLOR = 0xffffff;
 
 // --- Shooting ---
-// Minimum time between shots for held Space / the mobile fire button and rapid clicking.
-// Client-side only for now: the server has no fire-rate limit (see blueprint Known Issues).
-export const FIRE_INTERVAL_MS = 200;
+// The minimum time between shots (held Space, the mobile fire button, rapid clicking) is the gun's
+// own, GUN_FIRE_INTERVAL_MS in shared/types.ts. Client-side only for now: the server has no
+// fire-rate limit for people (see blueprint Known Issues).
 
 // --- Smoothness ---
 // Rendered positions chase the server's latest state with frame-rate-independent
@@ -91,7 +91,7 @@ export const CLAIM_BORDER_WIDTH = 2;
 export const STRUCTURE_COLORS: Record<string, number> = {
     farm: 0xc5d86d, // pale lime: a field
     fabricator: 0x6d4c41, // dark brown (the color it had as the mine)
-    fort: 0xb0a18a, // sandstone
+    guardTower: 0xb0a18a, // sandstone
     power: 0x80deea, // pale cyan: electric
 };
 export const STRUCTURE_DEFAULT_COLOR = 0xdddddd; // an unknown type

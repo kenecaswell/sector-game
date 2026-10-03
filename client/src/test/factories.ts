@@ -15,6 +15,8 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         maxHealth: 100,
         ammo: 0,
         tilesOwned: 0,
+        tileCap: 500,
+        hasFabricator: false,
         kills: 0,
         score: 0,
         materials: 0,
@@ -50,6 +52,7 @@ export function makeScore(overrides: Partial<FinalScore> = {}): FinalScore {
         tilesOwned: 0,
         kills: 0,
         structures: 0,
+        structurePoints: 0,
         ...overrides,
     };
 }

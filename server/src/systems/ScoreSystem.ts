@@ -1,10 +1,10 @@
 import type { GameState } from '../state/GameState';
-import { KILL_POINTS, STRUCTURE_POINTS, TILE_POINTS } from '../constants';
-import type { FinalScore } from '../types/shared';
+import { KILL_POINTS, TILE_POINTS } from '../constants';
+import { isStructureType, structurePoints, type FinalScore } from '../types/shared';
 
 /**
  * Recomputes every player's score from current state:
- *   tiles owned x TILE_POINTS + kills x KILL_POINTS + structures owned x STRUCTURE_POINTS.
+ *   tiles owned x TILE_POINTS + kills x KILL_POINTS (0) + the points of each structure owned.
  *
  * Score is derived, not accumulated, so it goes down when tiles or structures
  * are lost — same as it goes up when they're gained. Materials are deliberately
@@ -13,14 +13,26 @@ import type { FinalScore } from '../types/shared';
  * the wire.
  */
 function update(state: GameState): void {
-    const structuresByOwner = countStructuresByOwner(state);
+    const structurePointsByOwner = sumStructurePoints(state);
 
     state.players.forEach((player) => {
         player.score =
             player.tilesOwned * TILE_POINTS +
             player.kills * KILL_POINTS +
-            (structuresByOwner.get(player.id) ?? 0) * STRUCTURE_POINTS;
+            (structurePointsByOwner.get(player.id) ?? 0);
     });
+}
+
+/** Each owner's structure points: every structure counts for its type's value (and the Farmer's farms for more). */
+function sumStructurePoints(state: GameState): Map<string, number> {
+    const totals = new Map<string, number>();
+    state.structures.forEach((structure) => {
+        if (!isStructureType(structure.type)) return;
+        const character = state.players.get(structure.ownerId)?.character ?? '';
+        const points = structurePoints(structure.type, character);
+        totals.set(structure.ownerId, (totals.get(structure.ownerId) ?? 0) + points);
+    });
+    return totals;
 }
 
 function countStructuresByOwner(state: GameState): Map<string, number> {
@@ -38,6 +50,7 @@ function countStructuresByOwner(state: GameState): Map<string, number> {
  */
 function finalScores(state: GameState): FinalScore[] {
     const structuresByOwner = countStructuresByOwner(state);
+    const pointsByOwner = sumStructurePoints(state);
 
     return Array.from(state.players.values())
         .map((player) => ({
@@ -49,6 +62,7 @@ function finalScores(state: GameState): FinalScore[] {
             tilesOwned: player.tilesOwned,
             kills: player.kills,
             structures: structuresByOwner.get(player.id) ?? 0,
+            structurePoints: pointsByOwner.get(player.id) ?? 0,
         }))
         .sort((a, b) => b.score - a.score || b.kills - a.kills || b.tilesOwned - a.tilesOwned);
 }

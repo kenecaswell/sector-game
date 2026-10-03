@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { hexIndex, inStructureFootprint } from '../hex';
+import { compactFootprint, hexIndex, inStructureFootprint } from '../hex';
 import { Pickup } from '../state/GameState';
-import { addPlayerAt, addStructure, setTerrain, tileAt, world } from '../test/world';
+import { addPlayerAt, addStructure, ownFootprint, setTerrain, tileAt, world } from '../test/world';
 import { TERRAIN } from '../types/shared';
 import { claimValue, findBuildSite, planClaimRoute, planRouteToward } from './navigation';
 
@@ -124,7 +124,7 @@ describe('findBuildSite', () => {
         for (let row = 17; row <= 23; row++) {
             for (let col = 17; col <= 23; col++) tileAt(state, col, row).ownerId = 'bot';
         }
-        const site = findBuildSite(state, bot, 3);
+        const site = findBuildSite(state, bot, 3, 'farm');
         expect(site?.missing).toEqual([]);
     });
 
@@ -132,16 +132,43 @@ describe('findBuildSite', () => {
         const state = world();
         const bot = addPlayerAt(state, 'bot', 20, 20);
         tileAt(state, 20, 20).ownerId = 'bot';
-        const site = findBuildSite(state, bot, 2)!;
+        const site = findBuildSite(state, bot, 2, 'farm')!;
         expect(site.center).toEqual({ col: 20, row: 20 });
         expect(site.missing).toHaveLength(6);
 
         setTerrain(state, TERRAIN.water, [[20, 21]]);
         addStructure(state, 'bot', 22, 18);
-        const moved = findBuildSite(state, bot, 2)!;
+        const moved = findBuildSite(state, bot, 2, 'farm')!;
         for (const hex of [moved.center, ...moved.missing]) {
             expect(tileAt(state, hex.col, hex.row).terrain).toBe(TERRAIN.ground);
             expect(inStructureFootprint(hex.col, hex.row, 22, 18)).toBe(false);
         }
+    });
+});
+
+describe('findBuildSite with maxMissing (a bot at its tile limit)', () => {
+    it('finds only spots it already owns when it can claim nothing more', () => {
+        const state = world();
+        const bot = addPlayerAt(state, 'bot', 20, 20);
+        tileAt(state, 20, 20).ownerId = 'bot';
+        expect(findBuildSite(state, bot, 2, 'farm', 0)).toBeNull();
+        ownFootprint(state, 'bot', 21, 20);
+        const site = findBuildSite(state, bot, 2, 'farm', 0);
+        expect(site?.missing).toEqual([]);
+    });
+});
+
+describe('findBuildSite for a Guard Tower', () => {
+    it('wants just 3 touching hexes, and says which way to turn it', () => {
+        const state = world();
+        const bot = addPlayerAt(state, 'bot', 20, 20);
+        for (const hex of compactFootprint(20, 20, 4))
+            tileAt(state, hex.col, hex.row).ownerId = 'bot';
+        const site = findBuildSite(state, bot, 1, 'guardTower', 0);
+        expect(site).not.toBeNull();
+        expect(site!.missing).toEqual([]);
+        expect(site!.rotation).toBeGreaterThanOrEqual(0);
+        // 7 owned hexes would be needed for a farm; 3 are not enough.
+        expect(findBuildSite(state, bot, 1, 'farm', 0)).toBeNull();
     });
 });

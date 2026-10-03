@@ -30,6 +30,7 @@ import {
 } from '../net/GameConnection';
 import type {
     BackpackCollectedEvent,
+    TileLimitReachedEvent,
     BotDifficulty,
     CharacterId,
     GameOverEvent,
@@ -82,7 +83,13 @@ interface GameContextValue {
     leave: () => void;
     input: (dir: { x: number; y: number }, angle?: number) => void;
     shoot: (angle: number) => void;
-    placeStructure: (tileX: number, tileY: number, structureType: StructureType) => void;
+    // `rotation` (0-5) turns a 3-hex structure (the Guard Tower); the others ignore it.
+    placeStructure: (
+        tileX: number,
+        tileY: number,
+        structureType: StructureType,
+        rotation?: number
+    ) => void;
     selectTeam: (teamId: TeamId) => void;
     selectCharacter: (characterId: CharacterId) => void;
     setReady: (ready: boolean) => void;
@@ -183,6 +190,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
                     onBackpackCollected: (event: BackpackCollectedEvent) => {
                         pushNotice('success', `Got your backpack back: ${event.contents}`);
                     },
+                    onTileLimitReached: (event: TileLimitReachedEvent) => {
+                        pushNotice(
+                            'warning',
+                            `Tile limit reached (${event.limit}). Build more farms to claim more.`
+                        );
+                    },
                     onPlayerReconnected: (event: PlayerReconnectedEvent) => {
                         if (event.playerId === roomRef.current?.sessionId) return; // that's us
                         pushNotice('success', `${event.name} reconnected`);
@@ -226,7 +239,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         const signature = roster
                             .map(
                                 (p) =>
-                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}|${p.botDifficulty}|${p.respawnAt}`
+                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.tileCap}|${p.hasFabricator}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}|${p.botDifficulty}|${p.respawnAt}`
                             )
                             .join(';');
                         if (signature === lastSignature) return;
@@ -371,9 +384,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     );
 
     const placeStructure = useCallback(
-        (tileX: number, tileY: number, structureType: StructureType) => {
+        (tileX: number, tileY: number, structureType: StructureType, rotation = 0) => {
             if (!room) return;
-            sendPlaceStructure(room, tileX, tileY, structureType, ++seqRef.current);
+            sendPlaceStructure(room, tileX, tileY, structureType, rotation, ++seqRef.current);
         },
         [room]
     );

@@ -26,6 +26,7 @@ const { CollisionSystem } = dist('systems/CollisionSystem.js');
 const { PickupSystem } = dist('systems/PickupSystem.js');
 const { RespawnSystem } = dist('systems/RespawnSystem.js');
 const { CombatSystem } = dist('systems/CombatSystem.js');
+const { TowerSystem } = dist('systems/TowerSystem.js');
 const { PhaseSystem } = dist('systems/PhaseSystem.js');
 const { ScoreSystem } = dist('systems/ScoreSystem.js');
 const { generateTerrain, seededRandom } = dist('terrain.js');
@@ -78,6 +79,7 @@ while (state.phase.phase === 'playing') {
     CollisionSystem.update(state, quiet);
     PickupSystem.update(state, quiet, random, clock);
     RespawnSystem.update(state, quiet, clock);
+    TowerSystem.update(state, clock);
     CombatSystem.update(state, dt, quiet);
     PhaseSystem.update(state, quiet);
     ScoreSystem.update(state);

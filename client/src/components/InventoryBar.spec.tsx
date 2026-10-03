@@ -41,13 +41,13 @@ describe('InventoryBar', () => {
     });
 
     it('shows one icon per structure type with its count; clicking one builds it', async () => {
-        const { onBuild } = show({ structureInventory: ['fort', 'farm', 'farm'] });
+        const { onBuild } = show({ structureInventory: ['guardTower', 'farm', 'farm'] });
         const farm = screen.getByRole('button', { name: 'Build Farm' });
         expect(farm).toHaveTextContent('2');
-        expect(screen.getByRole('button', { name: 'Build Fort' })).toHaveTextContent('1');
+        expect(screen.getByRole('button', { name: 'Build Guard Tower' })).toHaveTextContent('1');
         // In the catalog's order, whatever order they were picked up in.
         const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
-        expect(names).toEqual(['Build Farm', 'Build Fort']);
+        expect(names).toEqual(['Build Farm', 'Build Guard Tower']);
         await userEvent.click(farm);
         expect(onBuild).toHaveBeenCalledWith('farm');
     });

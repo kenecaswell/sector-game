@@ -179,14 +179,24 @@ describe('MovementSystem — structures', () => {
                     runMovement(state, input, 1);
                     closest = Math.min(
                         closest,
-                        structureContact(player.x, player.y, 10, 10).distance
+                        structureContact(player.x, player.y, {
+                            type: 'farm',
+                            tileX: 10,
+                            tileY: 10,
+                            rotation: 0,
+                        }).distance
                     );
                     if (Math.hypot(player.x - previous.x, player.y - previous.y) > 0.5)
                         lastMoved = tick;
                     previous = { x: player.x, y: player.y };
                 }
                 approaches++;
-                const contact = structureContact(player.x, player.y, 10, 10);
+                const contact = structureContact(player.x, player.y, {
+                    type: 'farm',
+                    tileX: 10,
+                    tileY: 10,
+                    rotation: 0,
+                });
                 if (contact.distance < PLAYER_RADIUS - 0.5) overlaps++;
                 const mid = player.x > 50 && player.x < 3000 && player.y > 50 && player.y < 3500;
                 if (lastMoved < 150 && mid) {

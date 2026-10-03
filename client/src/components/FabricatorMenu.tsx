@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PlayerState } from '../types/gameState';
+import { MENU_BUTTON_CSS } from './menuStyles';
 import type { GunId, ShopCategory, ShopItemId } from '../types/shared';
 import {
     GUN_NAMES,
@@ -11,41 +12,6 @@ import {
     shopItemTitle,
 } from '../types/shared';
 
-// Button looks live in real CSS because inline styles can't express :hover / :active. The class
-// names are prefixed so they can't collide with anything else on the page.
-const BUTTON_CSS = `
-.fab-make {
-    flex-shrink: 0;
-    min-width: 64px;
-    padding: 6px 10px;
-    border: none;
-    border-radius: 6px;
-    background: #f1c40f;
-    color: #000;
-    font-weight: bold;
-    cursor: pointer;
-    transition: transform 90ms ease, background-color 120ms ease, box-shadow 120ms ease;
-}
-.fab-make:not(:disabled):hover { background: #ffd84a; }
-.fab-make:not(:disabled):active {
-    background: #c9a20d;
-    transform: scale(0.92);
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.4);
-}
-.fab-make:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.fab-make:disabled {
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.5);
-    cursor: default;
-}
-.fab-make--made,
-.fab-make--made:disabled {
-    background: #2ecc71;
-    color: #fff;
-    transform: scale(1.08);
-}
-`;
-
 const MADE_FLASH_MS = 700;
 
 interface FabricatorMenuProps {
@@ -54,11 +20,15 @@ interface FabricatorMenuProps {
     onClose: () => void;
 }
 
+// The Fabricator makes guns, ammo and upgrades. Structures are bought in the Build menu instead
+// (BuildMenu), which needs no Fabricator, so the first Fabricator can be bought.
+const FABRICATOR_CATEGORIES: ShopCategory[] = ['weapons', 'upgrades'];
+
 /**
  * The Fabricator popup over the game canvas (the Shop until 2026-09-27; the catalog and the
  * `purchase` message keep their shop names in code): make items from materials. GameScreen shows it
- * from the Fabricator button during the match (no hotkey). Items are grouped by category, straight from the shared SHOP_ITEMS catalog, and cost
- * materials. Clicking the dimmed backdrop, the close button, or pressing Esc closes it. The server
+ * from the Fabricator button or `F` during the match, once you own a Fabricator structure. Items
+ * are grouped by category, straight from the shared SHOP_ITEMS catalog, and cost materials. Clicking the dimmed backdrop, the close button, or pressing Esc closes it. The server
  * validates every request; the buttons just avoid offering ones that would be rejected (not enough
  * materials, or `ownsShopItem`: an upgrade you already have or a gun that isn't better than yours).
  */
@@ -120,7 +90,7 @@ export function FabricatorMenu({ player, onFabricate, onClose }: FabricatorMenuP
                 boxSizing: 'border-box',
             }}
         >
-            <style>{BUTTON_CSS}</style>
+            <style>{MENU_BUTTON_CSS}</style>
             <div
                 role="dialog"
                 aria-label="Fabricator"
@@ -182,7 +152,7 @@ export function FabricatorMenu({ player, onFabricate, onClose }: FabricatorMenuP
                     Fabricating is on your own time — the game keeps running.
                 </div>
 
-                {(Object.keys(SHOP_CATEGORY_NAMES) as ShopCategory[]).map((category) => (
+                {FABRICATOR_CATEGORIES.map((category) => (
                     <section key={category} aria-label={SHOP_CATEGORY_NAMES[category]}>
                         <div
                             style={{

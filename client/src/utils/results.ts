@@ -18,7 +18,8 @@ export function rankScores(scores: FinalScore[]): RankedScore[] {
 /**
  * Fallback if the server's final `gameOver` snapshot never arrived: build standings from the live
  * roster (same ordering as the server: score, then kills, then tiles). Structure counts aren't
- * available client-side here, so they show as 0.
+ * available client-side here, so they show as 0; their points are what's left of the score after
+ * the tiles (kills don't score).
  */
 export function scoresFromPlayers(players: PlayerState[]): FinalScore[] {
     return players
@@ -31,6 +32,7 @@ export function scoresFromPlayers(players: PlayerState[]): FinalScore[] {
             tilesOwned: player.tilesOwned,
             kills: player.kills,
             structures: 0,
+            structurePoints: Math.max(0, player.score - player.tilesOwned),
         }))
         .sort((a, b) => b.score - a.score || b.kills - a.kills || b.tilesOwned - a.tilesOwned);
 }

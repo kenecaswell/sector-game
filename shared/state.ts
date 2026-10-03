@@ -21,8 +21,10 @@ export interface PlayerState {
     maxHealth: number; // 200 with the Armor upgrade
     ammo: number;
     tilesOwned: number;
+    tileCap: number; // the most hexes they may hold (500 + 500 per farm); see tileCapFor
+    hasFabricator: boolean; // owns a Fabricator, so the Fabricator menu (guns, ammo, upgrades) is open
     kills: number;
-    score: number; // computed server-side: tiles + kills x 50 + structures (materials excluded)
+    score: number; // computed server-side: tiles + structure points (kills are worth 0) (materials excluded)
     materials: number;
     claimRadius: number; // world px; above the base radius means the Expander is owned
     connected: boolean;
@@ -66,6 +68,7 @@ export interface StructureState {
     tileX: number;
     tileY: number;
     type: string; // a StructureType
+    rotation: number; // 0-5; turns a 3-hex structure (the Guard Tower), unused by the others
     health: number;
     maxHealth: number;
 }

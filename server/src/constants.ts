@@ -5,7 +5,12 @@
 // in shared/constants.ts and are re-exported here.
 
 import { PLAYER_RADIUS } from '../../shared/constants';
-import { MAX_PLAYERS, type BotDifficulty, type ShopItemId } from '../../shared/types';
+import {
+    GUN_FIRE_INTERVAL_MS,
+    MAX_PLAYERS,
+    type BotDifficulty,
+    type ShopItemId,
+} from '../../shared/types';
 
 export * from '../../shared/constants';
 
@@ -51,13 +56,22 @@ export const RESULTS_DURATION_MS = 60_000 * PHASE_TIME_SCALE;
 // player's `claimRadius` whenever it's above the base.
 export const EXPANDER_CLAIM_RADII = [PLAYER_RADIUS * 4, 125, 180];
 
-// Score = tiles owned x TILE_POINTS + kills x KILL_POINTS + structures owned x STRUCTURE_POINTS.
-// Materials are NOT part of the score (they're for buying things). STRUCTURE_POINTS is a
-// placeholder for the one generic structure; planned types (city hall/school/house/fort)
-// will each get their own value.
+// Score = tiles owned x TILE_POINTS + kills x KILL_POINTS (0: kills don't score, since 2026-10-03)
+// + the points of each structure owned
+// (STRUCTURE_SPECS / structurePoints in shared/types.ts: a farm or fabricator is 100, a power plant
+// 100, a Guard Tower 50, a Farmer's farm 150). Materials are NOT part of the score.
 export const TILE_POINTS = 1;
-export const KILL_POINTS = 50;
-export const STRUCTURE_POINTS = 25;
+export const KILL_POINTS = 0;
+
+// How often a player who hits their tile limit is told so (ms), while they keep walking over
+// hexes they can't claim.
+export const TILE_LIMIT_NOTICE_INTERVAL_MS = 8_000;
+
+// Guard Tower: it fires the Basic gun (damage and shot speed as for a player) at the nearest enemy
+// player within range, as often as the interval allows, and never runs out of ammo.
+// The Basic gun was nerfed 2026-10-03 (50 -> 25 damage, 5 -> 1 shot a second); towers inherit it.
+export const TOWER_RANGE = 550; // world px, center of the tower to the target
+export const TOWER_FIRE_INTERVAL_MS = GUN_FIRE_INTERVAL_MS.basic; // the Basic gun's rate
 
 // Materials from claiming: this many for a hex nobody has claimed before this match. Re-taking a hex
 // (from an enemy, or one released when its owner left) pays nothing. Pickups are the other source.
@@ -134,13 +148,13 @@ export const PICKUP_JITTER = 2;
 export type PickupOutcome = 'materials' | 'ammo' | 'upgrade' | 'basicGun' | 'bigGun' | 'structure';
 export const PICKUP_TIER_CHANCES: Record<PickupOutcome, number>[] = [
     // tier 1: the leader(s)
-    { materials: 50, ammo: 35, upgrade: 5, basicGun: 5, bigGun: 3, structure: 2 },
+    { materials: 60, ammo: 25, upgrade: 5, basicGun: 5, bigGun: 3, structure: 2 },
     // tier 2
-    { materials: 42, ammo: 30, upgrade: 10, basicGun: 8, bigGun: 5, structure: 5 },
+    { materials: 52, ammo: 20, upgrade: 10, basicGun: 8, bigGun: 5, structure: 5 },
     // tier 3
-    { materials: 32, ammo: 25, upgrade: 15, basicGun: 10, bigGun: 8, structure: 10 },
+    { materials: 42, ammo: 15, upgrade: 15, basicGun: 10, bigGun: 8, structure: 10 },
     // tier 4: at the back
-    { materials: 22, ammo: 20, upgrade: 20, basicGun: 10, bigGun: 10, structure: 18 },
+    { materials: 32, ammo: 10, upgrade: 20, basicGun: 10, bigGun: 10, structure: 18 },
 ];
 export const PICKUP_MATERIALS = { min: 10, max: 50 };
 export const PICKUP_AMMO = { min: 10, max: 30 };
@@ -172,8 +186,8 @@ export interface BotProfile {
     // to anything further down it can afford.
     shopPlan: ShopItemId[];
     saveUp: boolean;
-    keepBuilding: boolean; // once the list is done, it fabricates a fort whenever it has none to place
-    buildSites: boolean; // holding a structure, it claims the hexes a spot needs (else it only places where it happens to own 7)
+    keepBuilding: boolean; // once the list is done, it fabricates a Guard Tower whenever it has none to place
+    buildSites: boolean; // holding a structure, it claims the hexes a spot needs (else it only places where it happens to own the footprint)
     // Which upgrade it keeps in its slot: 'never' switches (keeps whatever equipped itself first),
     // 'expander' equips the Expander once it has one, 'smart' also switches to the Booster to chase.
     equip: 'never' | 'expander' | 'smart';
@@ -199,7 +213,7 @@ export const BOT_PROFILES: Record<BotDifficulty, BotProfile> = {
         retreatHealth: 0,
         shopMs: 8000,
         ammoLow: 5,
-        shopPlan: ['basicGun', 'farm', 'armor', 'booster'],
+        shopPlan: ['basicGun', 'armor', 'booster'],
         saveUp: false,
         keepBuilding: false,
         buildSites: false,
@@ -224,7 +238,16 @@ export const BOT_PROFILES: Record<BotDifficulty, BotProfile> = {
         retreatHealth: 0.3,
         shopMs: 3000,
         ammoLow: 10,
-        shopPlan: ['basicGun', 'armor', 'expander', 'fort', 'booster', 'bigGun', 'armor', 'fort'],
+        shopPlan: [
+            'basicGun',
+            'armor',
+            'expander',
+            'guardTower',
+            'booster',
+            'bigGun',
+            'armor',
+            'guardTower',
+        ],
         saveUp: true,
         keepBuilding: true,
         buildSites: true,
@@ -253,17 +276,17 @@ export const BOT_PROFILES: Record<BotDifficulty, BotProfile> = {
             'expander',
             'basicGun',
             'armor',
-            'fort',
+            'guardTower',
             'expander',
             'bigGun',
             'armor',
-            'fort',
+            'guardTower',
             'booster',
             'expander',
             'armor',
-            'fort',
-            'fort',
-            'fort',
+            'guardTower',
+            'guardTower',
+            'guardTower',
         ],
         saveUp: true,
         keepBuilding: true,

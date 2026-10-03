@@ -17,13 +17,14 @@ function renderMenu(player: PlayerState | undefined, onFabricate = vi.fn(), onCl
 }
 
 describe('FabricatorMenu', () => {
-    it('groups items under Weapons, Upgrades and Structures', () => {
+    it('groups items under Weapons and Upgrades; structures are in the Build menu instead', () => {
         renderMenu(makePlayer({ materials: 0 }));
-        for (const name of ['Weapons', 'Upgrades', 'Structures']) {
+        for (const name of ['Weapons', 'Upgrades']) {
             expect(screen.getByRole('region', { name })).toBeInTheDocument();
         }
-        const structures = screen.getByRole('region', { name: 'Structures' });
-        expect(within(structures).getByText('Power plant')).toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'Structures' })).not.toBeInTheDocument();
+        expect(screen.queryByText('Power plant')).not.toBeInTheDocument();
+        expect(screen.queryByRole('group', { name: 'Farm' })).not.toBeInTheDocument();
     });
 
     it('lists Wings under Upgrades, and shows it as Owned once you have it', () => {
@@ -65,7 +66,6 @@ describe('FabricatorMenu', () => {
         expect(buttonFor('Armor')).toHaveTextContent('Max');
         expect(buttonFor('Armor')).toBeDisabled();
         expect(buttonFor('Booster')).toHaveTextContent(`${SHOP_ITEMS.booster.cost} mat`);
-        expect(buttonFor('Farm')).toBeEnabled(); // structures are never "owned"
     });
 
     it('lists each upgrade once, offering your next level', () => {
@@ -82,9 +82,9 @@ describe('FabricatorMenu', () => {
 
     it('fabricates on click and flashes a check mark', async () => {
         const { onFabricate } = renderMenu(makePlayer({ materials: 1000 }));
-        await userEvent.click(buttonFor('Farm'));
-        expect(onFabricate).toHaveBeenCalledWith('farm');
-        expect(buttonFor('Farm')).toHaveTextContent('✓');
+        await userEvent.click(buttonFor('Booster'));
+        expect(onFabricate).toHaveBeenCalledWith('booster');
+        expect(buttonFor('Booster')).toHaveTextContent('✓');
     });
 
     it('closes from the × button and from the backdrop, but not from inside the panel', async () => {

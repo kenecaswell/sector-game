@@ -18,7 +18,7 @@ export function structureToBuild(
 
 /**
  * Tab in build mode: the structure type after `current` among the ones held, in catalog order
- * (Farm, Fabricator, Fort, Power plant), wrapping around; `step` -1 goes backwards (Shift+Tab).
+ * (Farm, Fabricator, Guard Tower, Power plant), wrapping around; `step` -1 goes backwards (Shift+Tab).
  * Undefined when nothing is held.
  */
 export function cycleStructure(

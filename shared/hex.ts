@@ -144,3 +144,57 @@ export function inStructureFootprint(
 ): boolean {
     return structureFootprint(centerCol, centerRow).some((h) => h.col === col && h.row === row);
 }
+
+// --- Compact structures (the Guard Tower) ------------------------------------------------------
+// A compact structure is a clump of 3 hexes that all touch each other: its anchor hex and two
+// neighbors that are next to each other around it. There are six ways to turn it (`rotation`, 0-5):
+// rotation k uses the anchor's neighbors k and k + 1 (in `hexNeighbors` order, clockwise).
+export const COMPACT_ROTATIONS = 6;
+
+/** The 3 hexes of a compact structure anchored on (col, row), anchor first. */
+export function compactFootprint(col: number, row: number, rotation: number): HexCoord[] {
+    const k = ((Math.trunc(rotation) % COMPACT_ROTATIONS) + COMPACT_ROTATIONS) % COMPACT_ROTATIONS;
+    const around = hexNeighbors(col, row);
+    return [{ col, row }, around[k], around[(k + 1) % COMPACT_ROTATIONS]];
+}
+
+/** What a structure's footprint depends on: its size (7 or 3 hexes), anchor hex and rotation. */
+export interface FootprintSpec {
+    hexes: 3 | 7;
+    tileX: number; // the center hex (7) or the anchor hex (3): col
+    tileY: number; // row
+    rotation: number; // 3-hex structures only (see `compactFootprint`)
+}
+
+/** The hexes a structure occupies, whatever its size. */
+export function footprintHexes(spec: FootprintSpec): HexCoord[] {
+    return spec.hexes === 3
+        ? compactFootprint(spec.tileX, spec.tileY, spec.rotation)
+        : structureFootprint(spec.tileX, spec.tileY);
+}
+
+/** True if hex (col, row) is one of the hexes `spec` occupies. */
+export function inFootprint(col: number, row: number, spec: FootprintSpec): boolean {
+    return footprintHexes(spec).some((h) => h.col === col && h.row === row);
+}
+
+/**
+ * Which way to turn a compact (3-hex) structure anchored on (col, row) so it sits nearest the world
+ * point (x, y): the rotation whose three hexes are centered closest to the point. This is how a
+ * click near a corner of a hex picks one of the six clumps without a rotate key.
+ */
+export function nearestCompactRotation(col: number, row: number, x: number, y: number): number {
+    let best = 0;
+    let bestDistance = Infinity;
+    for (let rotation = 0; rotation < COMPACT_ROTATIONS; rotation++) {
+        const centers = compactFootprint(col, row, rotation).map((h) => hexCenter(h.col, h.row));
+        const cx = centers.reduce((sum, c) => sum + c.x, 0) / centers.length;
+        const cy = centers.reduce((sum, c) => sum + c.y, 0) / centers.length;
+        const distance = Math.hypot(cx - x, cy - y);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = rotation;
+        }
+    }
+    return best;
+}

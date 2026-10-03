@@ -9,12 +9,29 @@ import {
     type ShopItemId,
 } from '../types/shared';
 
+/** What a bot's situation calls for before its shopping list does (see `nextPurchase`). */
+export interface BotNeeds {
+    hasFabricator: boolean; // it owns one, so the Fabricator menu is open to it
+    nearTileCap: boolean; // it's within FARM_MARGIN hexes of its tile limit: time to buy a farm
+    approachingTileCap: boolean; // within RESERVE_MARGIN: keep a farm's price in hand
+}
+
+// At its tile limit a bot can't claim, so it earns no materials, and a bot that has spent
+// everything by then can never afford the farm that would lift the limit. So it keeps the price of
+// a farm back once it is RESERVE_MARGIN hexes from the limit, and buys the farm at FARM_MARGIN, in
+// time to place it while there are still hexes to claim for its footprint.
+export const FARM_MARGIN = 150;
+export const RESERVE_MARGIN = 250;
+
 /**
- * The item a bot should fabricate now, or null to wait. Low on ammo with a gun, ammo comes first.
- * Otherwise it's the first entry of `shopPlan` not done yet (an upgrade listed k times is done at
- * level k, a gun once owned, the k-th structure entry once it has fabricated k structures): if it
- * can afford that, that's it; if not, it waits (`saveUp`) or tries the entries after it. With the
- * list done and `keepBuilding`, it's a fort whenever it has no structure waiting to be placed.
+ * The item a bot should buy now, or null to wait. Two things come before the shopping list:
+ * a Fabricator when it has none (nothing else but structures can be bought without one), and a farm
+ * when it's close to its tile limit (and, as it nears the limit, a farm's price is held back from
+ * everything else). Then, low on ammo with a gun, ammo comes first. Otherwise it's
+ * the first entry of `shopPlan` not done yet (an upgrade listed k times is done at level k, a gun
+ * once owned, the k-th structure entry once it has bought k plan structures): if it can afford
+ * that, that's it; if not, it waits (`saveUp`) or tries the entries after it. With the list done
+ * and `keepBuilding`, it's a Guard Tower whenever it has no structure waiting to be placed.
  * Whether the purchase goes through is still up to ShopSystem.
  */
 export function nextPurchase(
@@ -24,10 +41,28 @@ export function nextPurchase(
         structureInventory: readonly string[];
     },
     profile: Pick<BotProfile, 'ammoLow' | 'shopPlan' | 'saveUp' | 'keepBuilding'>,
-    structuresBought: number
+    structuresBought: number,
+    needs: BotNeeds = { hasFabricator: true, nearTileCap: false, approachingTileCap: false }
 ): ShopItemId | null {
-    const affordable = (id: ShopItemId) => player.materials >= SHOP_ITEMS[id].cost;
-    if (player.gun !== '' && player.ammo < profile.ammoLow) {
+    const holding = (id: ShopItemId) => player.structureInventory.includes(id);
+    // The farm's price stays untouched for everything but the Fabricator and the farm itself.
+    const reserve = needs.approachingTileCap && !holding('farm') ? SHOP_ITEMS.farm.cost : 0;
+    const affordable = (id: ShopItemId) =>
+        player.materials - (id === 'farm' || id === 'fabricator' ? 0 : reserve) >=
+        SHOP_ITEMS[id].cost;
+
+    if (!needs.hasFabricator && !holding('fabricator')) {
+        if (affordable('fabricator')) return 'fabricator';
+        if (profile.saveUp) return null;
+    }
+    if (needs.nearTileCap && !holding('farm')) {
+        if (affordable('farm')) return 'farm';
+        if (profile.saveUp) return null;
+    }
+
+    // Without a Fabricator only structures can be bought, so skip gear.
+    const gearLocked = !needs.hasFabricator;
+    if (!gearLocked && player.gun !== '' && player.ammo < profile.ammoLow) {
         if (affordable('ammo')) return 'ammo';
         if (profile.saveUp) return null;
     }
@@ -47,11 +82,19 @@ export function nextPurchase(
             done = ownsShopItem(player, id);
         }
         if (done) continue;
+        if (gearLocked && !item.structure) {
+            if (profile.saveUp) return null;
+            continue;
+        }
         if (affordable(id)) return id;
         if (profile.saveUp) return null;
     }
-    if (profile.keepBuilding && player.structureInventory.length === 0 && affordable('fort')) {
-        return 'fort';
+    if (
+        profile.keepBuilding &&
+        player.structureInventory.length === 0 &&
+        affordable('guardTower')
+    ) {
+        return 'guardTower';
     }
     return null;
 }

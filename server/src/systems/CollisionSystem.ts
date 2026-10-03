@@ -1,15 +1,21 @@
 import type { GameState } from '../state/GameState';
-import { MATERIALS_PER_CLAIM, HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS } from '../constants';
 import {
-    hexCenter,
-    hexIndex,
-    inStructureFootprint,
-    isValidHex,
-    pixelToHex,
-    structureContact,
-} from '../hex';
+    MATERIALS_PER_CLAIM,
+    HEX_SIZE,
+    PLAYER_RADIUS,
+    PROJECTILE_RADIUS,
+    TILE_LIMIT_NOTICE_INTERVAL_MS,
+} from '../constants';
+import { hexCenter, hexIndex, isValidHex, pixelToHex, structureContact } from '../hex';
 import type { Broadcast } from './Broadcast';
-import { TERRAIN, type TilesClaimedEvent } from '../types/shared';
+import {
+    TERRAIN,
+    inStructure,
+    type PlacedStructure,
+    type TileLimitReachedEvent,
+    type TilesClaimedEvent,
+} from '../types/shared';
+import type { Notify } from './RespawnSystem';
 import { areAllies } from '../teams';
 
 /**
@@ -42,16 +48,18 @@ function checkProjectilePlayerCollision(
 // move at most ~50px a tick and the hexagon is ~150px across, so testing the end point is enough.
 function checkProjectileStructureCollision(
     proj: { x: number; y: number },
-    structure: { tileX: number; tileY: number }
+    structure: PlacedStructure
 ): boolean {
-    return structureContact(proj.x, proj.y, structure.tileX, structure.tileY).distance <= 0;
+    return structureContact(proj.x, proj.y, structure).distance <= 0;
 }
 
 /**
  * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
  * their `claimRadius` (the Expander upgrade doubles it). A hex in an enemy structure's footprint
  * can't be claimed — the structure protects its tile — and a teammate's hex is left alone. Each
- * hex claimed for the first time this match pays MATERIALS_PER_CLAIM.
+ * hex claimed for the first time this match pays MATERIALS_PER_CLAIM. A player holds at most
+ * `tileCap` hexes (500 plus 500 per farm): at the limit nothing more is claimed, the nearest hexes
+ * first when there's room for only some. Returns whether the limit stopped a claim.
  */
 function claimTiles(
     state: GameState,
@@ -60,56 +68,68 @@ function claimTiles(
         x: number;
         y: number;
         tilesOwned: number;
+        tileCap: number;
         claimRadius: number;
         materials: number;
     },
     claimed: TilesClaimedEvent['tiles']
-): void {
+): boolean {
     const { col: centerCol, row: centerRow } = pixelToHex(player.x, player.y);
     // Search a window a bit wider than the radius (hexes are at least ~48px apart).
     const reach = Math.ceil(player.claimRadius / HEX_SIZE) + 1;
 
+    // Everything in reach that could change hands, nearest first: when the tile limit leaves room
+    // for only some of it, the hexes under and nearest the player are the ones that count.
+    const candidates: Array<{ col: number; row: number; distance: number }> = [];
     for (let row = centerRow - reach; row <= centerRow + reach; row++) {
         for (let col = centerCol - reach; col <= centerCol + reach; col++) {
             // Map corners/edges aren't fully covered by hexes, so this also skips positions
             // where the player is standing over no tile at all.
             if (!isValidHex(col, row, state.mapWidth, state.mapHeight)) continue;
 
+            const center = hexCenter(col, row);
+            const distance = Math.hypot(center.x - player.x, center.y - player.y);
             const isStandingOn = col === centerCol && row === centerRow;
-            if (!isStandingOn) {
-                const center = hexCenter(col, row);
-                if (Math.hypot(center.x - player.x, center.y - player.y) > player.claimRadius) {
-                    continue;
-                }
-            }
+            if (!isStandingOn && distance > player.claimRadius) continue;
 
             const tile = state.tiles[hexIndex(col, row, state.mapWidth)];
             if (!tile || tile.ownerId === player.id) continue;
             if (tile.terrain !== TERRAIN.ground) continue; // mountains and water can't be claimed
             if (tile.ownerId !== '' && areAllies(state, tile.ownerId, player.id)) continue;
             if (isProtectedFrom(state, col, row, player.id)) continue;
-
-            if (tile.ownerId !== '') {
-                const prevOwner = state.players.get(tile.ownerId);
-                if (prevOwner) prevOwner.tilesOwned--;
-            }
-            tile.ownerId = player.id;
-            player.tilesOwned++;
-            // Only the first claim of a hex this match pays; re-taking it doesn't.
-            if (!tile.claimedBefore) {
-                tile.claimedBefore = true;
-                player.materials += MATERIALS_PER_CLAIM;
-            }
-            claimed.push({ x: col, y: row, ownerId: player.id });
+            candidates.push({ col, row, distance: isStandingOn ? -1 : distance });
         }
     }
+    candidates.sort((a, b) => a.distance - b.distance);
+
+    let atLimit = false;
+    for (const { col, row } of candidates) {
+        // At the tile limit nothing more is claimed, from the unclaimed or from enemies alike.
+        if (player.tilesOwned >= player.tileCap) {
+            atLimit = true;
+            break;
+        }
+        const tile = state.tiles[hexIndex(col, row, state.mapWidth)];
+        if (tile.ownerId !== '') {
+            const prevOwner = state.players.get(tile.ownerId);
+            if (prevOwner) prevOwner.tilesOwned--;
+        }
+        tile.ownerId = player.id;
+        player.tilesOwned++;
+        // Only the first claim of a hex this match pays; re-taking it doesn't.
+        if (!tile.claimedBefore) {
+            tile.claimedBefore = true;
+            player.materials += MATERIALS_PER_CLAIM;
+        }
+        claimed.push({ x: col, y: row, ownerId: player.id });
+    }
+    return atLimit;
 }
 
 /** True if this hex is part of the footprint of a structure owned by an enemy of `playerId`. */
 function isProtectedFrom(state: GameState, col: number, row: number, playerId: string): boolean {
     for (const structure of state.structures.values()) {
-        if (inStructureFootprint(col, row, structure.tileX, structure.tileY))
-            return !areAllies(state, structure.ownerId, playerId);
+        if (inStructure(col, row, structure)) return !areAllies(state, structure.ownerId, playerId);
     }
     return false;
 }
@@ -120,13 +140,20 @@ function isProtectedFrom(state: GameState, col: number, row: number, playerId: s
  * broadcast per tile). Projectile/structure hit detection lives in
  * CombatSystem, which already iterates projectiles each tick.
  */
-function update(state: GameState, broadcast: Broadcast): void {
+function update(state: GameState, broadcast: Broadcast, notify?: Notify, now = Date.now()): void {
     if (state.phase.phase !== 'playing') return;
 
     const claimed: TilesClaimedEvent['tiles'] = [];
     state.players.forEach((player) => {
         if (!player.connected || player.respawnAt > 0) return;
-        claimTiles(state, player, claimed);
+        const atLimit = claimTiles(state, player, claimed);
+        // Tell them they've hit their limit, but not on every tick they keep walking.
+        if (atLimit && now - player.tileLimitNoticeAt >= TILE_LIMIT_NOTICE_INTERVAL_MS) {
+            player.tileLimitNoticeAt = now;
+            notify?.(player.id, 'tileLimitReached', {
+                limit: player.tileCap,
+            } satisfies TileLimitReachedEvent);
+        }
     });
 
     if (claimed.length > 0) {
