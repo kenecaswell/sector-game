@@ -131,8 +131,8 @@ export const BACKPACK_RING_COLOR = 0xffd166;
 
 // Upgrade colors for the inventory bar's icons (components/ItemIcon.tsx).
 export const UPGRADE_ICON_COLORS: Record<string, number> = {
-    booster: 0xff8c1a, // orange: speed
+    booster: 0xf2efe6, // off-white engine casing (its flame is blue)
     expander: 0x1abc9c, // teal: reach
     armor: 0x9aa7b0, // steel
-    wings: 0xbfe3ff, // sky
+    wings: 0x5f6b77, // matte slate gray (the Jetpack)
 };

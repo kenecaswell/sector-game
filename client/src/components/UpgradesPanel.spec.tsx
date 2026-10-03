@@ -4,20 +4,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { makePlayer } from '../test/factories';
 import type { PlayerState } from '../types/gameState';
 import { SHOP_ITEMS } from '../types/shared';
-import { FabricatorMenu } from './FabricatorMenu';
+import { UpgradesPanel } from './UpgradesPanel';
 
 /** The fabricate button in the row for an item (rows are groups named after their item). */
 function buttonFor(itemName: string) {
     return within(screen.getByRole('group', { name: itemName })).getByRole('button');
 }
 
-function renderMenu(player: PlayerState | undefined, onFabricate = vi.fn(), onClose = vi.fn()) {
-    render(<FabricatorMenu player={player} onFabricate={onFabricate} onClose={onClose} />);
-    return { onFabricate, onClose };
+function renderMenu(player: PlayerState | undefined, onFabricate = vi.fn()) {
+    render(<UpgradesPanel player={player} onFabricate={onFabricate} />);
+    return { onFabricate };
 }
 
-describe('FabricatorMenu', () => {
-    it('groups items under Weapons and Upgrades; structures are in the Build menu instead', () => {
+describe("UpgradesPanel (the Build menu's Upgrades tab)", () => {
+    it('groups items under Weapons and Upgrades; structures are on the other tab', () => {
         renderMenu(makePlayer({ materials: 0 }));
         for (const name of ['Weapons', 'Upgrades']) {
             expect(screen.getByRole('region', { name })).toBeInTheDocument();
@@ -29,11 +29,7 @@ describe('FabricatorMenu', () => {
 
     it('lists the Jetpack under Upgrades, and shows it as Owned once you have it', () => {
         const { unmount } = render(
-            <FabricatorMenu
-                player={makePlayer({ materials: 500 })}
-                onFabricate={vi.fn()}
-                onClose={vi.fn()}
-            />
+            <UpgradesPanel player={makePlayer({ materials: 500 })} onFabricate={vi.fn()} />
         );
         const upgrades = screen.getByRole('region', { name: 'Upgrades' });
         expect(within(upgrades).getByRole('group', { name: 'Jetpack' })).toBeInTheDocument();
@@ -43,9 +39,8 @@ describe('FabricatorMenu', () => {
         expect(buttonFor('Jetpack')).toHaveTextContent('Max');
     });
 
-    it('shows materials, ammo and your gun at the top', () => {
+    it('shows your ammo and gun at the top (materials are in the menu header)', () => {
         renderMenu(makePlayer({ materials: 77, ammo: 9, gun: 'basic' }));
-        expect(screen.getByText('Materials: 77')).toBeInTheDocument();
         expect(screen.getByText('Ammo: 9')).toBeInTheDocument();
         expect(screen.getByText('Blaster', { selector: 'span' })).toBeInTheDocument();
     });
@@ -85,16 +80,6 @@ describe('FabricatorMenu', () => {
         await userEvent.click(buttonFor('Booster'));
         expect(onFabricate).toHaveBeenCalledWith('booster');
         expect(buttonFor('Booster')).toHaveTextContent('✓');
-    });
-
-    it('closes from the × button and from the backdrop, but not from inside the panel', async () => {
-        const { onClose } = renderMenu(makePlayer());
-        await userEvent.click(screen.getByRole('dialog', { name: 'Fabricator' }));
-        expect(onClose).not.toHaveBeenCalled();
-        await userEvent.click(screen.getByRole('button', { name: 'Close fabricator' }));
-        expect(onClose).toHaveBeenCalledTimes(1);
-        await userEvent.click(screen.getByRole('presentation'));
-        expect(onClose).toHaveBeenCalledTimes(2);
     });
 
     it('disables everything before the player has arrived', () => {

@@ -48,7 +48,8 @@ function spawnShot(
     y: number,
     angle: number,
     damage: number,
-    lifetimeMs = PROJECTILE_LIFETIME_MS
+    lifetimeMs = PROJECTILE_LIFETIME_MS,
+    fromTower = false
 ): void {
     const projectile = new Projectile();
     projectile.id = `${ownerId}-${state.shotsFired++}`;
@@ -59,6 +60,7 @@ function spawnShot(
     projectile.spawnedAt = Date.now();
     projectile.damage = damage;
     projectile.lifetimeMs = lifetimeMs;
+    projectile.fromTower = fromTower;
     state.projectiles.set(projectile.id, projectile);
 }
 
@@ -101,6 +103,8 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
             // Defeated players are out of play until they respawn: shots pass where they fell.
             if (toRemove.has(id) || !player.connected || !RespawnSystem.isAlive(player)) return;
             if (areAllies(state, proj.ownerId, player.id)) return;
+            // A tower's shot passes through players in their spawn's safe area.
+            if (proj.fromTower && RespawnSystem.inSpawnSafeArea(player)) return;
             if (!CollisionSystem.checkProjectilePlayerCollision(proj, player, prev)) return;
 
             toRemove.add(id);

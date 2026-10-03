@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { TOWER_FIRE_INTERVAL_MS, TOWER_RANGE } from '../constants';
-import { hexCenter } from '../hex';
-import { DT, addPlayer, addStructure, setTerrain, world } from '../test/world';
+import { SPAWN_SAFE_RADIUS, TOWER_FIRE_INTERVAL_MS, TOWER_RANGE } from '../constants';
+import { hexCenter, pixelToHex } from '../hex';
+import { DT, addPlayer, addShot, addStructure, setTerrain, world } from '../test/world';
 import { GUN_DAMAGE, TERRAIN } from '../types/shared';
 import { CombatSystem } from './CombatSystem';
 import { TowerSystem } from './TowerSystem';
@@ -131,5 +131,51 @@ describe('TowerSystem', () => {
         addPlayer(state, 'foe', c.x + 100, c.y);
         TowerSystem.update(state, NOW);
         expect(state.projectiles.size).toBe(0);
+    });
+});
+
+describe('TowerSystem — the spawn safe area', () => {
+    it("doesn't shoot a player standing in the safe area of their own spawn", () => {
+        const { state, from } = towerWorld();
+        const foe = enemyAt(state, from, 200);
+        const spot = pixelToHex(foe.x, foe.y);
+        foe.spawnTileX = spot.col + SPAWN_SAFE_RADIUS;
+        foe.spawnTileY = spot.row;
+        TowerSystem.update(state, NOW);
+        expect(state.projectiles.size).toBe(0);
+        // One hex further from their spawn than the safe area reaches: fair game.
+        foe.spawnTileX = spot.col + SPAWN_SAFE_RADIUS + 1;
+        TowerSystem.update(state, NOW);
+        expect(state.projectiles.size).toBe(1);
+    });
+
+    it('still shoots others, and lets a different player outside the area be the target', () => {
+        const { state, from } = towerWorld();
+        const safe = enemyAt(state, from, 100);
+        const spot = pixelToHex(safe.x, safe.y);
+        safe.spawnTileX = spot.col;
+        safe.spawnTileY = spot.row;
+        const other = addPlayer(state, 'other', from.x, from.y - 250);
+        other.spawnTileX = 2;
+        other.spawnTileY = 2;
+        TowerSystem.update(state, NOW);
+        const shot = Array.from(state.projectiles.values())[0];
+        expect(shot.angle).toBeLessThan(0); // up the screen, toward 'other'
+    });
+
+    it("a tower's shot flies through a player in the safe area, but a player's shot does not", () => {
+        const { state } = towerWorld();
+        const victim = addPlayer(state, 'v', 1500, 1500);
+        const spot = pixelToHex(victim.x, victim.y);
+        victim.spawnTileX = spot.col;
+        victim.spawnTileY = spot.row;
+        const towerShot = addShot(state, 'a', victim.x - 1, victim.y, 0, GUN_DAMAGE.basic);
+        towerShot.fromTower = true;
+        CombatSystem.update(state, DT, () => {});
+        expect(victim.health).toBe(victim.maxHealth);
+        expect(state.projectiles.has(towerShot.id)).toBe(true); // it went on
+        addShot(state, 'a', victim.x - 1, victim.y, 0, GUN_DAMAGE.basic);
+        CombatSystem.update(state, DT, () => {});
+        expect(victim.health).toBe(victim.maxHealth - GUN_DAMAGE.basic);
     });
 });

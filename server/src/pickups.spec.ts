@@ -9,7 +9,13 @@ import {
     type PickupOutcome,
 } from './constants';
 import { hexDistance, hexIndex } from './hex';
-import { generatePickups, rollPickup, scoreTier, type PickupCollector } from './pickups';
+import {
+    STRUCTURE_ITEMS,
+    generatePickups,
+    rollPickup,
+    scoreTier,
+    type PickupCollector,
+} from './pickups';
 import { generateTerrain, seededRandom, spawnHexes } from './terrain';
 import { SHOP_ITEMS, TERRAIN, UPGRADE_IDS, type Terrain } from './types/shared';
 
@@ -100,6 +106,27 @@ describe('rollPickup', () => {
             const contents = rollPickup(3, collector, random);
             expect(contents.itemId).not.toBe('basicGun');
             expect(contents.itemId).not.toBe('booster');
+        }
+    });
+});
+
+describe('structures from a pod', () => {
+    it('are any of the four by default, and never a type left out of the list given', () => {
+        const random = seededRandom(5);
+        const seen = new Set<string>();
+        for (let i = 0; i < 6000; i++) {
+            const c = rollPickup(3, fresh(), random);
+            if (
+                c.kind === 'item' &&
+                ['farm', 'fabricator', 'guardTower', 'power'].includes(c.itemId)
+            )
+                seen.add(c.itemId);
+        }
+        expect(seen.size).toBe(4);
+
+        const noTowers = STRUCTURE_ITEMS.filter((type) => type !== 'guardTower');
+        for (let i = 0; i < 6000; i++) {
+            expect(rollPickup(3, fresh(), random, noTowers).itemId).not.toBe('guardTower');
         }
     });
 });

@@ -296,6 +296,7 @@ describe('BotSystem — playing', () => {
 
     it('sits out its respawn delay, then goes back for its backpack and gets its gear back', () => {
         const state = world();
+        state.dropBackpacks = true; // backpacks are off by default
         const bot = botInMatch(state, 'medium', 30, 20, { gun: 'big', ammo: 20 });
         bot.structureInventory.clear();
         RespawnSystem.defeat(state, bot);

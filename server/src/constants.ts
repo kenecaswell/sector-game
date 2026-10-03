@@ -60,7 +60,7 @@ export const EXPANDER_CLAIM_RADII = [PLAYER_RADIUS * 4, 125, 180];
 // Score = tiles owned x TILE_POINTS + kills x KILL_POINTS (0: kills don't score, since 2026-10-03)
 // + the points of each structure owned
 // (STRUCTURE_SPECS / structurePoints in shared/types.ts: a farm or fabricator is 100, a power plant
-// 100, a Guard Tower 50, a Farmer's farm 150). Materials are NOT part of the score.
+// 100, a Guard Tower 50, a Farmer's farm, Engineer's fabricator or Scientist's power plant 150). Materials are NOT part of the score.
 export const TILE_POINTS = 1;
 export const KILL_POINTS = 0;
 
@@ -71,7 +71,7 @@ export const TILE_LIMIT_NOTICE_INTERVAL_MS = 8_000;
 // Guard Tower: it fires the Blaster (damage and shot speed as for a player) at the nearest enemy
 // player within range, as often as the interval allows, and never runs out of ammo.
 // The Blaster was nerfed 2026-10-03 (50 -> 25 damage, 5 -> 1 shot a second); towers inherit it.
-export const TOWER_RANGE = 550; // world px, center of the tower to the target
+export const TOWER_RANGE = 450; // world px, center of the tower to the target
 export const TOWER_FIRE_INTERVAL_MS = GUN_FIRE_INTERVAL_MS.basic; // the Blaster's rate
 
 // Materials from claiming: this many for a hex nobody has claimed before this match. Re-taking a hex
@@ -110,6 +110,10 @@ export const RIVER_POCKET_FILL = 4;
 export const FEATURE_GAP = 3;
 // Hexes within this many steps of any spawn hex are always ground.
 export const SPAWN_CLEAR_RADIUS = 3;
+// The safe area around each player's own spawn spot, in hexes (2026-10-03: it was 3, for bots only):
+// Guard Towers don't shoot a player inside it, and bots leave them alone, so nobody is shot as they
+// respawn. Wider than SPAWN_CLEAR_RADIUS (the ground kept open for building).
+export const SPAWN_SAFE_RADIUS = 6;
 
 // Spawn line (see terrain.ts → spawnHex): one spawn hex per slot, in a column this many hexes in from
 // the right-hand (east) edge. Slot 0 is the middle row; later slots alternate above and below it,
@@ -117,6 +121,26 @@ export const SPAWN_CLEAR_RADIUS = 3;
 export const SPAWN_SLOTS = MAX_PLAYERS;
 export const SPAWN_EDGE_INSET = 3;
 export const SPAWN_ROW_SPACING = 6;
+
+// Backpacks: when a defeated player's gun, ammo and upgrades drop where they fell, for them to pick
+// up again (RespawnSystem). FEATURE FLAG: BACKPACKS_ENABLED, OFF by default (2026-10-03): by default
+// a defeated player keeps everything. The BACKPACKS environment variable overrides it (BACKPACKS=1
+// on, BACKPACKS=0 off), like PICKUPS. GameRoom copies it into GameState.dropBackpacks.
+const BACKPACKS_DEFAULT = false;
+export const BACKPACKS_ENABLED =
+    process.env.BACKPACKS === undefined
+        ? BACKPACKS_DEFAULT
+        : !['0', 'false', 'off'].includes(process.env.BACKPACKS);
+
+// Respawning: where a defeated player comes back. FEATURE FLAG: RESPAWN_WHERE_DIED_ENABLED, ON for
+// now (2026-10-03): they respawn where they fell (moved to the nearest walkable hex if that spot is
+// no good) instead of at their spawn spot. The RESPAWN_WHERE_DIED environment variable overrides it
+// (=0 off, =1 on). GameRoom copies it into GameState.respawnWhereDied.
+const RESPAWN_WHERE_DIED_DEFAULT = true;
+export const RESPAWN_WHERE_DIED_ENABLED =
+    process.env.RESPAWN_WHERE_DIED === undefined
+        ? RESPAWN_WHERE_DIED_DEFAULT
+        : !['0', 'false', 'off'].includes(process.env.RESPAWN_WHERE_DIED);
 
 // Pickups: items scattered on the map when the room is created (see pickups.ts, PickupSystem.ts).
 // FEATURE FLAG: PICKUPS_ENABLED turns them on or off. The PICKUPS environment variable overrides it
@@ -298,7 +322,7 @@ export const BOT_PROFILES: Record<BotDifficulty, BotProfile> = {
 
 // Bots leave an enemy alone (don't chase or shoot them) while they're within this many hexes of
 // their own spawn hex, so a bot can't camp a spawn point. People get no such protection from people.
-export const BOT_SPAWN_MERCY_RADIUS = SPAWN_CLEAR_RADIUS;
+export const BOT_SPAWN_MERCY_RADIUS = SPAWN_SAFE_RADIUS;
 
 // Bots wait this long after the match starts before they do anything, so they don't get a head
 // start on people whose game screen is still appearing.

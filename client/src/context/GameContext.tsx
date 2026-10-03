@@ -239,7 +239,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                         const signature = roster
                             .map(
                                 (p) =>
-                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.tileCap}|${p.hasFabricator}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}|${p.botDifficulty}|${p.respawnAt}`
+                                    `${p.id}|${p.name}|${p.color}|${p.teamId}|${p.character}|${p.ready}|${p.gun}|${p.structureInventory.join(',')}|${p.boosterLevel}${p.expanderLevel}${p.armorLevel}${p.wingsLevel}|${p.equippedUpgrade}|${p.health}|${p.maxHealth}|${p.ammo}|${p.tilesOwned}|${p.tileCap}|${p.towersBuilt}|${p.hasFabricator}|${p.kills}|${p.score}|${p.materials}|${p.claimRadius}|${p.connected}|${p.botDifficulty}|${p.respawnAt}`
                             )
                             .join(';');
                         if (signature === lastSignature) return;

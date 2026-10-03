@@ -23,7 +23,9 @@ import {
     TICK_RATE,
     RECONNECT_WINDOW_SECONDS,
     SCREEN_Y_SCALE,
+    BACKPACKS_ENABLED,
     PICKUPS_ENABLED,
+    RESPAWN_WHERE_DIED_ENABLED,
     SPAWN_SLOTS,
 } from '../constants';
 import type {
@@ -83,6 +85,8 @@ export class GameRoom extends Room<GameState> {
         const state = new GameState();
         Object.assign(state.settings, settings);
         state.settings.pods = settings.pods && PICKUPS_ENABLED; // the server flag can veto pods
+        state.dropBackpacks = BACKPACKS_ENABLED;
+        state.respawnWhereDied = RESPAWN_WHERE_DIED_ENABLED;
         state.mapWidth = MAP_SIZES[settings.mapSize].cols;
         state.mapHeight = MAP_SIZES[settings.mapSize].rows;
         // A fresh random layout for every match (the seed only matters for reproducing one).
@@ -370,7 +374,8 @@ export class GameRoom extends Room<GameState> {
         ShopSystem.purchase(
             player,
             msg?.itemId,
-            StructureSystem.hasFabricator(this.state, player.id)
+            StructureSystem.hasFabricator(this.state, player.id),
+            (type) => StructureSystem.canHold(this.state, player, type)
         );
     }
 }

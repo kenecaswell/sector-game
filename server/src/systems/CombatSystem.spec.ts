@@ -88,8 +88,9 @@ describe('CombatSystem — hits and kills', () => {
         expect(shooter.kills).toBe(1);
     });
 
-    it('a defeated player drops their Armor with the rest, so comes back with 100 health', () => {
+    it('a defeated player drops their Armor with the rest, so comes back with 100 health (backpacks on)', () => {
         const state = world();
+        state.dropBackpacks = true;
         addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 't');
         target.armorLevel = 3;

@@ -506,9 +506,16 @@ function fabricate(
         hasFabricator,
         nearTileCap: bot.tilesOwned >= bot.tileCap - FARM_MARGIN,
         approachingTileCap: bot.tilesOwned >= bot.tileCap - RESERVE_MARGIN,
+        towersFull: !StructureSystem.canHold(state, bot, 'guardTower'),
     });
     // A Fabricator or farm bought because it had to is not one of the list's structures.
-    if (item && ShopSystem.purchase(bot, item, hasFabricator) && item === 'guardTower') {
+    if (
+        item &&
+        ShopSystem.purchase(bot, item, hasFabricator, (type) =>
+            StructureSystem.canHold(state, bot, type)
+        ) &&
+        item === 'guardTower'
+    ) {
         brain.structuresBought++;
     }
 }

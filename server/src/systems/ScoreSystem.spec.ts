@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { KILL_POINTS, TILE_POINTS } from '../constants';
-import { FARMER_FARM_POINTS, STRUCTURE_SPECS } from '../types/shared';
+import { SPECIALIST_STRUCTURE_POINTS, STRUCTURE_SPECS } from '../types/shared';
 import { addPlayer, addStructure, world } from '../test/world';
 import { ScoreSystem } from './ScoreSystem';
 
@@ -45,9 +45,29 @@ describe('ScoreSystem', () => {
         addStructure(state, 'farmer', 5, 5, 'fabricator');
         addStructure(state, 'engineer', 9, 9, 'farm');
         ScoreSystem.update(state);
-        expect(FARMER_FARM_POINTS).toBe(150);
+        expect(SPECIALIST_STRUCTURE_POINTS).toBe(150);
         expect(farmer.score).toBe(150 + 100);
         expect(engineer.score).toBe(100);
+    });
+
+    it('the Engineer scores 150 for a fabricator and the Scientist 150 for a power plant, but only for those', () => {
+        const state = world();
+        const engineer = addPlayer(state, 'e', 0, 0);
+        engineer.character = 'engineer';
+        const scientist = addPlayer(state, 's', 0, 0);
+        scientist.character = 'scientist';
+        const robot = addPlayer(state, 'b', 0, 0);
+        robot.character = 'robot';
+        addStructure(state, 'e', 1, 1, 'fabricator');
+        addStructure(state, 'e', 5, 5, 'power');
+        addStructure(state, 's', 9, 9, 'power');
+        addStructure(state, 's', 13, 13, 'fabricator');
+        addStructure(state, 'b', 17, 17, 'fabricator');
+        addStructure(state, 'b', 21, 21, 'power');
+        ScoreSystem.update(state);
+        expect(engineer.score).toBe(150 + 100);
+        expect(scientist.score).toBe(150 + 100);
+        expect(robot.score).toBe(100 + 100);
     });
 
     it('kills are counted but score nothing', () => {

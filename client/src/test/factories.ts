@@ -16,6 +16,7 @@ export function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
         ammo: 0,
         tilesOwned: 0,
         tileCap: 500,
+        towersBuilt: 0,
         hasFabricator: false,
         kills: 0,
         score: 0,

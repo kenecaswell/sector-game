@@ -31,7 +31,7 @@ const { PhaseSystem } = dist('systems/PhaseSystem.js');
 const { ScoreSystem } = dist('systems/ScoreSystem.js');
 const { generateTerrain, seededRandom } = dist('terrain.js');
 const { generatePickups } = dist('pickups.js');
-const { TICK_RATE } = dist('constants.js');
+const { TICK_RATE, BACKPACKS_ENABLED, RESPAWN_WHERE_DIED_ENABLED } = dist('constants.js');
 const { MAP_SIZES } = dist('types/shared.js');
 
 const difficulties = (process.argv[2] || 'easy,medium,hard').split(',');
@@ -46,6 +46,9 @@ Math.random = seededRandom(seed + 1); // anything that doesn't take `random` (po
 const state = new GameState();
 state.settings.matchMinutes = minutes;
 state.settings.teams = teams;
+// The same server flags GameRoom copies into the state.
+state.dropBackpacks = BACKPACKS_ENABLED;
+state.respawnWhereDied = RESPAWN_WHERE_DIED_ENABLED;
 state.mapWidth = size.cols;
 state.mapHeight = size.rows;
 const { terrain } = generateTerrain(size.cols, size.rows, random);

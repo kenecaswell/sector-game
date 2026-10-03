@@ -84,6 +84,22 @@ describe('ShopSystem — the Fabricator gate', () => {
     });
 });
 
+describe('ShopSystem — the structure limit', () => {
+    it("refuses a structure the player isn't allowed to hold, charging nothing", () => {
+        const p = buyer();
+        const noTowers = (type: string) => type !== 'guardTower';
+        expect(ShopSystem.purchase(p, 'guardTower', true, noTowers)).toBe(false);
+        expect(p.materials).toBe(1000);
+        expect(p.structureInventory.length).toBe(0);
+        expect(ShopSystem.purchase(p, 'farm', true, noTowers)).toBe(true);
+    });
+
+    it('never stops guns or upgrades', () => {
+        const p = buyer();
+        expect(ShopSystem.purchase(p, 'basicGun', true, () => false)).toBe(true);
+    });
+});
+
 describe('ShopSystem — weapons', () => {
     it('ammo adds a pack (even without a gun) and can be bought again', () => {
         const p = buyer();

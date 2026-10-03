@@ -22,6 +22,7 @@ export interface PlayerState {
     ammo: number;
     tilesOwned: number;
     tileCap: number; // the most hexes they may hold (500 + 500 per farm); see tileCapFor
+    towersBuilt: number; // Guard Towers they have standing (the limit counts these plus the ones they hold)
     hasFabricator: boolean; // owns a Fabricator, so the Fabricator menu (guns, ammo, upgrades) is open
     kills: number;
     score: number; // computed server-side: tiles + structure points (kills are worth 0) (materials excluded)

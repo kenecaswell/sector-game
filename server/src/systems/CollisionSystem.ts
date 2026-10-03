@@ -16,6 +16,7 @@ import {
     type TilesClaimedEvent,
 } from '../types/shared';
 import type { Notify } from './RespawnSystem';
+import { isSpawnZoneOfOther } from '../spawnZones';
 import { areAllies } from '../teams';
 
 /**
@@ -56,7 +57,8 @@ function checkProjectileStructureCollision(
 /**
  * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
  * their `claimRadius` (the Harvester upgrade doubles it). A hex in an enemy structure's footprint
- * can't be claimed — the structure protects its tile — and a teammate's hex is left alone. Each
+ * can't be claimed — the structure protects its tile — and neither can the 7 hexes of anyone else's
+ * spawn zone (spawn spot and its six neighbors; teammates may), and a teammate's hex is left alone. Each
  * hex claimed for the first time this match pays MATERIALS_PER_CLAIM. A player holds at most
  * `tileCap` hexes (500 plus 500 per farm): at the limit nothing more is claimed, the nearest hexes
  * first when there's room for only some. Returns whether the limit stopped a claim.
@@ -97,6 +99,7 @@ function claimTiles(
             if (tile.terrain !== TERRAIN.ground) continue; // mountains and water can't be claimed
             if (tile.ownerId !== '' && areAllies(state, tile.ownerId, player.id)) continue;
             if (isProtectedFrom(state, col, row, player.id)) continue;
+            if (isSpawnZoneOfOther(state, col, row, player.id)) continue; // someone else's spawn zone
             candidates.push({ col, row, distance: isStandingOn ? -1 : distance });
         }
     }

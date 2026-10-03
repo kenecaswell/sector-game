@@ -1,5 +1,11 @@
 import type { Player } from '../state/GameState';
-import { SHOP_ITEMS, isShopItemId, ownsShopItem, type ShopItemId } from '../types/shared';
+import {
+    SHOP_ITEMS,
+    isShopItemId,
+    ownsShopItem,
+    type ShopItemId,
+    type StructureType,
+} from '../types/shared';
 import { UpgradeSystem } from './UpgradeSystem';
 
 /**
@@ -14,14 +20,21 @@ import { UpgradeSystem } from './UpgradeSystem';
  *  - structure: one more of that type in `structureInventory`; buy as many as you like.
  * Structures can always be bought; everything else (guns, ammo, upgrades) needs a Fabricator, which
  * the caller says whether the player has (`hasFabricator`: they own one that still stands).
- * Returns whether the purchase happened. Phase and connection checks belong to the caller
+ * `canHold` says whether the player may take on one more of a structure (StructureSystem.canHold:
+ * the Guard Tower limit). Returns whether the purchase happened. Phase and connection checks belong to the caller
  * (GameRoom.handlePurchase).
  */
-function purchase(player: Player, itemId: unknown, hasFabricator = true): boolean {
+function purchase(
+    player: Player,
+    itemId: unknown,
+    hasFabricator = true,
+    canHold: (type: StructureType) => boolean = () => true
+): boolean {
     if (!isShopItemId(itemId)) return false;
 
     const item = SHOP_ITEMS[itemId];
     if (!item.structure && !hasFabricator) return false;
+    if (item.structure && !canHold(item.structure)) return false; // e.g. the Guard Tower limit
     if (player.materials < item.cost || ownsShopItem(player, itemId)) return false;
 
     player.materials -= item.cost;

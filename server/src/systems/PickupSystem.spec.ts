@@ -83,6 +83,33 @@ describe('PickupSystem', () => {
         expect(last.structureInventory).toHaveLength(1);
     });
 
+    it('never hands out a Guard Tower to a player who is at the limit', () => {
+        // The roll 0.95 picks "structure" in tier 4's row, then 0.6 picks the third of the four types.
+        const rolls = () => {
+            const values = [0.95, 0.6];
+            return () => values.shift() ?? 0.6;
+        };
+        // Three others ahead on score put the collector in the last tier.
+        const inLastTier = (state: GameState) => {
+            for (let i = 0; i < 3; i++) addPlayerAt(state, `ahead${i}`, 40 + i * 4, 40).score = 50;
+        };
+        const roomFor = match();
+        inLastTier(roomFor);
+        const free = addPlayerAt(roomFor, 'free', 10, 10);
+        addPod(roomFor, 10, 10);
+        run(roomFor, rolls());
+        expect(Array.from(free.structureInventory)).toEqual(['guardTower']);
+
+        const full = match();
+        inLastTier(full);
+        const maxed = addPlayerAt(full, 'maxed', 10, 10);
+        for (let i = 0; i < 10; i++) maxed.structureInventory.push('guardTower');
+        addPod(full, 10, 10);
+        run(full, rolls());
+        expect(maxed.structureInventory.length).toBe(11);
+        expect(maxed.structureInventory[10]).not.toBe('guardTower');
+    });
+
     it('respawn wave: at PICKUP_RESPAWN_MS, empty cells get new pods after a 0-15 s delay', () => {
         const state = match(true);
         const kept = addPod(state, 8, 10, 0); // cell 0 still has its pod

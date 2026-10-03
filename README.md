@@ -111,11 +111,10 @@ Then open `http://<your-lan-ip>:5173` on the phone.
 | Aim | Mouse | Follows your movement direction |
 | Move | `W` `A` `S` `D` or arrow keys — up, left, down, right on screen. **Right-click** the map to walk to that spot; any movement key cancels it | Virtual joystick (bottom left) |
 | Shoot (needs a gun) | `Space` (hold to keep firing) or click, toward the mouse | **FIRE** button (bottom right, shown once you have a gun; hold to keep firing), or tap the map to fire at that spot |
-| Place a structure you have | Click its icon in the **inventory bar** (right side, under Structures; the number is how many you have), or press **Place** next to it in the Build menu, or `P` for the one you picked last; while placing, `Tab` switches to your next structure type (`Shift+Tab` the previous). Then click where to put it — the outline is yellow where it fits, red where it doesn't. A **Guard Tower** (3 hexes) turns to the clump nearest the pointer, so aim at the corner where you want it. `Esc`, `P`, or its icon again cancels | Tap its icon, then tap where to put it (a refused tap flashes red; a Guard Tower turns toward the corner you tap); tap the icon again to cancel |
-| Buy a structure | **Build** button (below Fabricator) or `B`; `Esc` closes. Never locked | **Build** button |
+| Place a structure you have | Click its icon in the **inventory bar** (right side, under Structures; the number is how many you have), or press **Place** next to it in the Build menu, or `E` or `P` for the one you picked last; while placing, `Tab` switches to your next structure type (`Shift+Tab` the previous). Then click where to put it — the outline is yellow where it fits, red where it doesn't. A **Guard Tower** (3 hexes) turns to the clump nearest the pointer, so aim at the corner where you want it. `Esc`, `E`, `P`, or its icon again cancels | Tap its icon, then tap where to put it (a refused tap flashes red; a Guard Tower turns toward the corner you tap); tap the icon again to cancel |
+| Build menu (buy structures; make guns, ammo and upgrades) | **Build** button (below Leaderboard): `B` opens it on the **Structures** tab (never locked), `F` or `U` on the **Upgrades** tab (grayed out until you have built a Fabricator); `Esc` closes | **Build** button |
 | Switch upgrade | Click its icon in the inventory bar (under Upgrades; the number is its level). The one in use is outlined; Armor is always on | Tap its icon |
 | Leaderboard | **Leaderboard** button (top right) or `L`; `Esc` closes | **Leaderboard** button |
-| Fabricator (make guns, ammo and upgrades from materials) | **Fabricator** button (below Leaderboard) or `F`; `Esc` closes. Grayed out until you have built a Fabricator | **Fabricator** button |
 | Hide / show the inventory bar | `I` | — |
 | Performance readout | `` ` `` (backtick) toggles fps, ms per frame, renderer and canvas size — useful when reporting slowness | — |
 | **Dev only (temporary):** +500 materials | `M` during the match, in a dev build (`npm run dev`); a server started with `NODE_ENV=production` refuses it | — |
@@ -133,7 +132,6 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      |---|---|---|---|---|---|
      | Farmer | — | 0 | 50 | Farm | — |
      | Engineer | — | 0 | 50 | Fabricator | — |
-     | Builder | — | 0 | 50 | Guard Tower | — |
      | Robot | — | 0 | 50 | — | Booster 1, equipped (+33% top speed) |
      | Scientist | — | 0 | 50 | Power plant | — |
      | Explorer | — | 0 | 15 | — | Armor 1 (200 health) |
@@ -147,7 +145,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 2. **Playing (5 minutes)** — everything happens at once: claim hexes by walking over them (you claim the hex you're on and any hex whose center is within your claim radius), shoot enemies (you need a gun — nobody starts with one: fabricate it or find it in a drop pod), build: buy structures in the **Build** menu and place them on hexes you own (**farms** raise your tile limit; a **Fabricator** opens the Fabricator menu; **Guard Towers** shoot), and gather materials. The Fabricator and Build menus open from their buttons — the game keeps running while they're open.
 3. **Results (60s)** — the match ends and a results screen shows the winner and final standings. The room is locked and closes after a minute (or as soon as everyone has left), but the results stay on screen until you choose **Play again** (a fresh lobby) or **Main menu**.
 
-**Fabricator** (during the match; the **Fabricator** button or `F`; grayed out until you have built a **Fabricator** structure, and locked again if your last one is destroyed). Guns, ammo and upgrades aren't bought, they're fabricated from materials:
+**Upgrades tab** of the Build menu (during the match; `F` or `U`; grayed out until you have built a **Fabricator** structure, and locked again if your last one is destroyed). Guns, ammo and upgrades aren't bought, they're fabricated from materials:
 
 | | Item | Cost | What it does |
 |---|---|---|---|
@@ -162,14 +160,14 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 The Fabricator offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Harvester and Jetpack, only the equipped one works (Armor always does); the first one you fabricate equips itself, and you switch in the **Inventory**, instantly and as often as you like. Hexes with an enemy's structure on them can't be claimed.
 
-**Structures** are bought for 100 materials in the **Build** menu (the **Build** button or `B`, which never needs a Fabricator) and then placed on hexes you own (`P`, or click their icon in the inventory bar). Each has its own health, points and job:
+**Structures** are bought for 100 materials on the **Structures** tab of the **Build** menu (the **Build** button or `B`; this tab never needs a Fabricator) and then placed on hexes you own (`E` or `P`, or click their icon in the inventory bar). Each has its own health, points and job:
 
 | Structure | Hexes | Health | Points | What it does |
 |---|---|---|---|---|
 | Farm | 7 | 1000 | 100 (Farmer: 150) | Raises your **tile limit** by 500 |
-| Fabricator | 7 | 1000 | 100 | Opens the Fabricator (any more only add points) |
+| Fabricator | 7 | 1000 | 100 (Engineer: 150) | Opens the Fabricator (any more only add points) |
 | Guard Tower | 3 touching | 500 | 50 | Shoots enemy players nearby with the Blaster, never runs out of ammo |
-| Power plant | 7 | 1000 | 100 | Essential — its job is still to come |
+| Power plant | 7 | 1000 | 100 (Scientist: 150) | Essential — its job is still to come |
 
 **Tile limit:** you can hold at most **500 hexes**, plus 500 for every farm you own. At the limit, walking over ground claims nothing (the HUD shows **Tiles: x / 500** and warns you), so build more farms. A 7-hex structure covers a hex and its 6 neighbors and a Guard Tower three hexes that touch; every one must be yours, on the map (not at the edge), and not under another structure. The structure is a slab inside its hexes; its top color shows its type (farm: pale green, fabricator: brown, Guard Tower: sandstone, power plant: pale blue) and its edge shows the owner's team. Enemies can't claim its hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
@@ -177,7 +175,7 @@ The Fabricator offers your next level of each upgrade. Levels last the whole mat
 
 The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Drop pods** are scattered on the map, all looking the same: walk onto one to open it and find out what's inside (materials, ammo, a gun, an upgrade or a structure). The further behind you are on score, the better your odds. About 2:50 into the match, empty spots get new pods over the following 15 seconds. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
-Players start on a line near the right-hand edge of the map, each on a round metal spawn platform: the first to join in the middle, later ones further toward the top and bottom. Defeated players are out for **5 seconds**, then respawn at their own starting spot with full health, keeping their tiles, structures, materials and kills. Their gun, ammo and upgrades are dropped in a **backpack** where they fell, which only they can see and pick up: walk onto it to get them back.
+Players start on a line near the right-hand edge of the map, each on a round metal spawn platform: the first to join in the middle, later ones further toward the top and bottom. Defeated players are out for **5 seconds**, then respawn at their own starting spot with full health, keeping their tiles, structures, materials and kills. They keep their gun, ammo and upgrades too (the dropped-**backpack** feature is behind the `BACKPACKS=1` server flag and off by default). Within 6 hexes of your own spawn spot Guard Towers won't shoot you.
 
 ## Project layout
 

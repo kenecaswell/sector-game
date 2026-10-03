@@ -4,8 +4,7 @@ import { useGameConnection } from '../context/GameContext';
 import { createPhaserGame, destroyPhaserGame } from '../game/PhaserGame';
 import { sendDevMaterials } from '../net/GameConnection';
 import type { GameScene } from '../game/scenes/GameScene';
-import { BuildMenu } from '../components/BuildMenu';
-import { FabricatorMenu } from '../components/FabricatorMenu';
+import { BuildMenu, type BuildMenuTab } from '../components/BuildMenu';
 import { InventoryBar } from '../components/InventoryBar';
 import { hexIndex, isValidHex, pixelToHex } from '../game/hex';
 import { blocksWalking } from '../game/terrain';
@@ -17,7 +16,12 @@ import { DebugStats } from '../components/DebugStats';
 import { FireButton } from '../components/FireButton';
 import { ScoreBadge } from '../components/ScoreBadge';
 import { RespawnOverlay } from '../components/RespawnOverlay';
-import { STRUCTURE_NAMES, STRUCTURE_SPECS, type StructureType } from '../types/shared';
+import {
+    STRUCTURE_NAMES,
+    STRUCTURE_SPECS,
+    maxGuardTowers,
+    type StructureType,
+} from '../types/shared';
 import { cycleStructure, structureToBuild } from '../utils/build';
 import { isTouchDevice } from '../utils/device';
 import { scoreFor } from '../utils/score';
@@ -35,6 +39,7 @@ export function GameScreen() {
         placeStructure,
         purchase,
         equipUpgrade,
+        settings,
     } = useGameConnection();
     const containerRef = useRef<HTMLDivElement>(null);
     const gameRef = useRef<Phaser.Game | null>(null);
@@ -47,7 +52,9 @@ export function GameScreen() {
         selectedStructureRef.current = selectedStructure;
     }, [selectedStructure]);
     // Only one popup is open at a time.
-    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'fabricator' | 'build'>('none');
+    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'build'>('none');
+    // The Build menu's tab: B opens Structures, F and U open Upgrades (which needs a Fabricator).
+    const [menuTab, setMenuTab] = useState<BuildMenuTab>('structures');
     // The inventory bar on the right; I hides and shows it.
     const [showInventoryBar, setShowInventoryBar] = useState(true);
     const [showStats, setShowStats] = useState(false);
@@ -120,9 +127,15 @@ export function GameScreen() {
         scene?.setBuildMode(buildArmed, nextStructure);
     }, [buildArmed, nextStructure]);
 
-    // The Fabricator menu is open to you only while you own a Fabricator (build one in the Build
-    // menu), so it also disappears if yours is destroyed while it's open.
-    const hasFabricator = me?.hasFabricator ?? false;
+    // Opens the Build menu on `tab`, or closes it if it's already open on that tab. (Without a
+    // Fabricator the Upgrades tab can't be shown: the menu falls back to Structures.)
+    const toggleMenu = useCallback(
+        (tab: BuildMenuTab) => {
+            setPanel((open) => (open === 'build' && menuTab === tab ? 'none' : 'build'));
+            setMenuTab(tab);
+        },
+        [menuTab]
+    );
 
     // Build mode stays on until you build, press B again, or press Esc (no timeout).
     const toggleBuildMode = useCallback(() => {
@@ -139,10 +152,10 @@ export function GameScreen() {
         setBuildModeArmed(true);
     };
 
-    // B toggles the Build menu (buy structures), P build mode (place the structure picked last, or
-    // the first you hold); in build mode Tab picks the next structure type you hold (Shift+Tab the
-    // previous). F toggles the Fabricator (once you own one), L the leaderboard, I shows/hides the
-    // inventory bar; Esc leaves build mode and
+    // B opens the Build menu on its Structures tab, F and U on its Upgrades tab (the Fabricator
+    // popup until 2026-10-03). E and P toggle placement mode (place the structure picked last, or
+    // the first you hold); in it Tab picks the next structure type you hold (Shift+Tab the
+    // previous). L toggles the leaderboard, I shows/hides the inventory bar; Esc leaves build mode and
     // closes any popup; ` toggles the FPS readout. E is unbound (it opened the Shop until
     // 2026-09-27; kept free for later). Phaser only captures the keys it registers (WASD, arrows,
     // Space), so these don't conflict. DEV ONLY (temporary): M adds 500 materials, in dev builds
@@ -161,15 +174,15 @@ export function GameScreen() {
             const key = event.key.toLowerCase();
             if (key === 'l') {
                 setPanel((open) => (open === 'leaderboard' ? 'none' : 'leaderboard'));
-            } else if (key === 'f' && shopAvailable && hasFabricator) {
-                setPanel((open) => (open === 'fabricator' ? 'none' : 'fabricator'));
+            } else if ((key === 'f' || key === 'u') && shopAvailable) {
+                toggleMenu('upgrades');
             } else if (key === 'i') {
                 setShowInventoryBar((show) => !show);
             } else if (key === 'm' && phase === 'playing' && import.meta.env.DEV && room) {
                 sendDevMaterials(room);
             } else if (key === 'b' && shopAvailable) {
-                setPanel((open) => (open === 'build' ? 'none' : 'build'));
-            } else if (key === 'p' && phase === 'playing') {
+                toggleMenu('structures');
+            } else if ((key === 'e' || key === 'p') && phase === 'playing') {
                 toggleBuildMode();
             } else if (key === 'escape') {
                 setPanel('none');
@@ -186,7 +199,7 @@ export function GameScreen() {
         buildArmed,
         inventory,
         nextStructure,
-        hasFabricator,
+        toggleMenu,
     ]);
 
     return (
@@ -215,22 +228,10 @@ export function GameScreen() {
             />
             {shopAvailable && (
                 <TopButton
-                    label="Fabricator"
-                    top={56}
-                    active={panel === 'fabricator'}
-                    disabled={!hasFabricator}
-                    title={hasFabricator ? undefined : 'Build a Fabricator to unlock this'}
-                    onClick={() =>
-                        setPanel((open) => (open === 'fabricator' ? 'none' : 'fabricator'))
-                    }
-                />
-            )}
-            {shopAvailable && (
-                <TopButton
                     label="Build"
-                    top={100}
+                    top={56}
                     active={panel === 'build'}
-                    onClick={() => setPanel((open) => (open === 'build' ? 'none' : 'build'))}
+                    onClick={() => toggleMenu('structures')}
                 />
             )}
             {panel === 'leaderboard' && (
@@ -243,19 +244,16 @@ export function GameScreen() {
             {panel === 'build' && shopAvailable && (
                 <BuildMenu
                     player={me}
+                    tab={menuTab}
+                    onTabChange={setMenuTab}
+                    onFabricate={purchase}
                     onBuy={purchase}
                     onPlace={(type) => {
                         setPanel('none');
                         buildFromBar(type);
                     }}
                     onClose={() => setPanel('none')}
-                />
-            )}
-            {panel === 'fabricator' && shopAvailable && hasFabricator && (
-                <FabricatorMenu
-                    player={me}
-                    onFabricate={purchase}
-                    onClose={() => setPanel('none')}
+                    towerLimit={maxGuardTowers(settings?.mapSize ?? 'small')}
                 />
             )}
             {phase === 'playing' && showInventoryBar && (
