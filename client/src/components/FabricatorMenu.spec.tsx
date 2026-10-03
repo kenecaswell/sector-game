@@ -17,16 +17,17 @@ function renderMenu(player: PlayerState | undefined, onFabricate = vi.fn(), onCl
 }
 
 describe('FabricatorMenu', () => {
-    it('groups items under Weapons, Upgrades and Structures', () => {
+    it('groups items under Weapons and Upgrades; structures are in the Build menu instead', () => {
         renderMenu(makePlayer({ materials: 0 }));
-        for (const name of ['Weapons', 'Upgrades', 'Structures']) {
+        for (const name of ['Weapons', 'Upgrades']) {
             expect(screen.getByRole('region', { name })).toBeInTheDocument();
         }
-        const structures = screen.getByRole('region', { name: 'Structures' });
-        expect(within(structures).getByText('Power plant')).toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'Structures' })).not.toBeInTheDocument();
+        expect(screen.queryByText('Power plant')).not.toBeInTheDocument();
+        expect(screen.queryByRole('group', { name: 'Farm' })).not.toBeInTheDocument();
     });
 
-    it('lists Wings under Upgrades, and shows it as Owned once you have it', () => {
+    it('lists the Jetpack under Upgrades, and shows it as Owned once you have it', () => {
         const { unmount } = render(
             <FabricatorMenu
                 player={makePlayer({ materials: 500 })}
@@ -35,37 +36,36 @@ describe('FabricatorMenu', () => {
             />
         );
         const upgrades = screen.getByRole('region', { name: 'Upgrades' });
-        expect(within(upgrades).getByRole('group', { name: 'Wings' })).toBeInTheDocument();
-        expect(buttonFor('Wings')).toHaveTextContent('100 mat');
+        expect(within(upgrades).getByRole('group', { name: 'Jetpack' })).toBeInTheDocument();
+        expect(buttonFor('Jetpack')).toHaveTextContent('200 mat');
         unmount();
         renderMenu(makePlayer({ materials: 500, wingsLevel: 1 }));
-        expect(buttonFor('Wings')).toHaveTextContent('Max');
+        expect(buttonFor('Jetpack')).toHaveTextContent('Max');
     });
 
     it('shows materials, ammo and your gun at the top', () => {
         renderMenu(makePlayer({ materials: 77, ammo: 9, gun: 'basic' }));
         expect(screen.getByText('Materials: 77')).toBeInTheDocument();
         expect(screen.getByText('Ammo: 9')).toBeInTheDocument();
-        expect(screen.getByText('Basic gun', { selector: 'span' })).toBeInTheDocument();
+        expect(screen.getByText('Blaster', { selector: 'span' })).toBeInTheDocument();
     });
 
     it('only enables what you can afford', () => {
         renderMenu(makePlayer({ materials: 100 }));
         expect(buttonFor('Ammo pack')).toBeEnabled(); // 60
         expect(buttonFor('Booster')).toBeEnabled(); // 100
-        expect(buttonFor('Basic gun')).toBeDisabled(); // 200
-        expect(buttonFor('Big gun')).toBeDisabled(); // 400
-        expect(buttonFor('Basic gun')).toHaveAttribute('title', 'Not enough materials');
+        expect(buttonFor('Blaster')).toBeDisabled(); // 200
+        expect(buttonFor('Ion Cannon')).toBeDisabled(); // 400
+        expect(buttonFor('Blaster')).toHaveAttribute('title', 'Not enough materials');
     });
 
     it('shows "Owned" for guns no better than yours, and "Max" for maxed upgrades', () => {
         renderMenu(makePlayer({ materials: 1000, gun: 'big', armorLevel: 3 }));
-        expect(buttonFor('Basic gun')).toHaveTextContent('Owned');
-        expect(buttonFor('Big gun')).toHaveTextContent('Owned');
+        expect(buttonFor('Blaster')).toHaveTextContent('Owned');
+        expect(buttonFor('Ion Cannon')).toHaveTextContent('Owned');
         expect(buttonFor('Armor')).toHaveTextContent('Max');
         expect(buttonFor('Armor')).toBeDisabled();
         expect(buttonFor('Booster')).toHaveTextContent(`${SHOP_ITEMS.booster.cost} mat`);
-        expect(buttonFor('Farm')).toBeEnabled(); // structures are never "owned"
     });
 
     it('lists each upgrade once, offering your next level', () => {
@@ -73,8 +73,8 @@ describe('FabricatorMenu', () => {
         const booster = screen.getByRole('group', { name: 'Booster' });
         expect(within(booster).getByText('Booster 2')).toBeInTheDocument();
         expect(within(booster).getByText('166% of normal speed.')).toBeInTheDocument();
-        const expander = screen.getByRole('group', { name: 'Expander' });
-        expect(within(expander).getByText('Expander 3')).toBeInTheDocument();
+        const expander = screen.getByRole('group', { name: 'Harvester' });
+        expect(within(expander).getByText('Harvester 3')).toBeInTheDocument();
         expect(within(expander).getByText(/Claim 37 hexes/)).toBeInTheDocument();
         expect(screen.getByRole('group', { name: 'Armor' })).toHaveTextContent('Armor 1');
         expect(screen.queryByText('Booster 1')).not.toBeInTheDocument();
@@ -82,9 +82,9 @@ describe('FabricatorMenu', () => {
 
     it('fabricates on click and flashes a check mark', async () => {
         const { onFabricate } = renderMenu(makePlayer({ materials: 1000 }));
-        await userEvent.click(buttonFor('Farm'));
-        expect(onFabricate).toHaveBeenCalledWith('farm');
-        expect(buttonFor('Farm')).toHaveTextContent('✓');
+        await userEvent.click(buttonFor('Booster'));
+        expect(onFabricate).toHaveBeenCalledWith('booster');
+        expect(buttonFor('Booster')).toHaveTextContent('✓');
     });
 
     it('closes from the × button and from the backdrop, but not from inside the panel', async () => {

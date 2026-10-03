@@ -210,7 +210,7 @@ describe('generateTerrain', () => {
         }
     });
 
-    it('leaves every ground hex reachable on foot from the spawn (no Wings needed)', () => {
+    it('leaves every ground hex reachable on foot from the spawn (no Jetpack needed)', () => {
         for (const map of maps) {
             const isWater = (c: number, r: number) =>
                 onMap({ col: c, row: r }) && map.terrain[at({ col: c, row: r })] === TERRAIN.water;

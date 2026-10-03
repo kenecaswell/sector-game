@@ -2,6 +2,12 @@
 // import from this file as usual). Below is the server-only part: structure collisions.
 
 import { hexCenter, STRUCTURE_RADIUS, STRUCTURE_ROTATION } from '../../shared/hex';
+import {
+    STRUCTURE_SPECS,
+    isStructureType,
+    structureHexes,
+    type PlacedStructure,
+} from '../../shared/types';
 import { HEX_SIZE } from '../../shared/constants';
 
 export * from '../../shared/hex';
@@ -77,15 +83,26 @@ function shapeContact(
         : inside;
 }
 
-/** `shapeContact` against the hexagon of a structure centered on hex (col, row). */
+/**
+ * `shapeContact` against a placed structure: the hexagon of a 7-hex structure, or for a 3-hex one
+ * (the Guard Tower) whichever of its three hexes is nearest.
+ */
 export function structureContact(
     x: number,
     y: number,
-    col: number,
-    row: number
+    structure: PlacedStructure
 ): { distance: number; nx: number; ny: number } {
-    const center = hexCenter(col, row);
-    return shapeContact(x - center.x, y - center.y, STRUCTURE_SHAPE);
+    const small = isStructureType(structure.type) && STRUCTURE_SPECS[structure.type].hexes === 3;
+    if (!small) {
+        const center = hexCenter(structure.tileX, structure.tileY);
+        return shapeContact(x - center.x, y - center.y, STRUCTURE_SHAPE);
+    }
+    let best = { distance: Infinity, nx: 0, ny: 0 };
+    for (const hex of structureHexes(structure)) {
+        const contact = hexContact(x, y, hex.col, hex.row);
+        if (contact.distance < best.distance) best = contact;
+    }
+    return best;
 }
 
 /** `shapeContact` against the single hex (col, row) — for solid terrain. */

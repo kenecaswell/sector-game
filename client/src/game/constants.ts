@@ -1,12 +1,12 @@
 // Client tunables. Sizes the server must agree on (HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS,
 // BASE_CLAIM_RADIUS, SCREEN_Y_SCALE) live in shared/constants.ts and are re-exported here, so
 // rendering always lines up with the server's collision math. A claim radius above
-// BASE_CLAIM_RADIUS means the player owns the Expander.
+// BASE_CLAIM_RADIUS means the player owns the Harvester.
 import { HEX_SIZE, SCREEN_Y_SCALE } from '../../../shared/constants';
 
 export * from '../../../shared/constants';
 
-// The tinted ground circle showing an Expander owner's claim radius (in the player's color).
+// The tinted ground circle showing a Harvester owner's claim radius (in the player's color).
 // A player whose connection dropped stays on the map, frozen (the server holds their seat and tiles
 // for the reconnect window). They're drawn dimmed by this much so they read as "not here right now"
 // rather than disappearing.
@@ -43,9 +43,9 @@ export const TARGET_STUCK_MS = 1200; // give up if there's no progress this long
 export const TARGET_MARKER_COLOR = 0xffffff;
 
 // --- Shooting ---
-// Minimum time between shots for held Space / the mobile fire button and rapid clicking.
-// Client-side only for now: the server has no fire-rate limit (see blueprint Known Issues).
-export const FIRE_INTERVAL_MS = 200;
+// The minimum time between shots (held Space, the mobile fire button, rapid clicking) is the gun's
+// own, GUN_FIRE_INTERVAL_MS in shared/types.ts. Client-side only for now: the server has no
+// fire-rate limit for people (see blueprint Known Issues).
 
 // --- Smoothness ---
 // Rendered positions chase the server's latest state with frame-rate-independent
@@ -91,7 +91,7 @@ export const CLAIM_BORDER_WIDTH = 2;
 export const STRUCTURE_COLORS: Record<string, number> = {
     farm: 0xc5d86d, // pale lime: a field
     fabricator: 0x6d4c41, // dark brown (the color it had as the mine)
-    fort: 0xb0a18a, // sandstone
+    guardTower: 0xb0a18a, // sandstone
     power: 0x80deea, // pale cyan: electric
 };
 export const STRUCTURE_DEFAULT_COLOR = 0xdddddd; // an unknown type

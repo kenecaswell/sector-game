@@ -19,7 +19,7 @@ describe('CharacterSystem.apply', () => {
         player.ammo = 999;
         player.gun = 'big';
         player.health = 1;
-        player.structureInventory.push('fort', 'fort');
+        player.structureInventory.push('guardTower', 'guardTower');
         player.expanderLevel = 3;
         player.armorLevel = 2;
         player.equippedUpgrade = 'expander';
@@ -38,7 +38,7 @@ describe('CharacterSystem.apply', () => {
         expect(player.maxHealth).toBe(
             BASE_MAX_HEALTH + ARMOR_HEALTH_PER_LEVEL * (kit.upgrades.armor ?? 0)
         );
-        expect(player.claimRadius).toBe(BASE_CLAIM_RADIUS); // and so is the old Expander
+        expect(player.claimRadius).toBe(BASE_CLAIM_RADIUS); // and so is the old Harvester
     });
 
     it('the Explorer starts unarmed, with Armor 1: 200 health', () => {

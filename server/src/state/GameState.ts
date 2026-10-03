@@ -1,8 +1,15 @@
 import { Schema, MapSchema, ArraySchema, type, view } from '@colyseus/schema';
-import { BASE_CLAIM_RADIUS, BASE_MAX_HEALTH, PROJECTILE_SPEED } from '../constants';
 import {
+    BASE_CLAIM_RADIUS,
+    BASE_MAX_HEALTH,
+    PROJECTILE_LIFETIME_MS,
+    PROJECTILE_SPEED,
+} from '../constants';
+import {
+    BASE_TILE_CAP,
     DEFAULT_CHARACTER,
     GUN_DAMAGE,
+    STRUCTURE_HEALTH,
     TERRAIN,
     type GamePhase,
     type Terrain,
@@ -38,10 +45,12 @@ export class Player extends Schema implements PlayerState {
     // starting kit when the match starts (CharacterSystem); these defaults only matter in the lobby.
     @type('number') ammo: number = 0;
     @type('number') tilesOwned: number = 0;
+    @type('number') tileCap: number = BASE_TILE_CAP; // StructureSystem keeps it at 500 + 500 per farm
+    @type('boolean') hasFabricator: boolean = false; // owns a Fabricator: the Fabricator menu is open
     @type('number') kills: number = 0;
-    @type('number') score: number = 0; // computed by ScoreSystem: tiles + kills x 50 + structures
+    @type('number') score: number = 0; // computed by ScoreSystem: tiles + structure points (kills are worth 0)
     @type('number') materials: number = 0;
-    @type('number') claimRadius: number = BASE_CLAIM_RADIUS; // world px; larger with the Expander equipped
+    @type('number') claimRadius: number = BASE_CLAIM_RADIUS; // world px; larger with the Harvester equipped
     @type('boolean') connected: boolean = true;
     @type('string') color: string = ''; // always the team's color (TEAMS in types/shared.ts)
     @type('string') teamId: string = ''; // a TeamId; players on the same team are allies
@@ -63,6 +72,8 @@ export class Player extends Schema implements PlayerState {
     @type('string') botDifficulty: string = ''; // a BotDifficulty, or '' for a person
     // Defeated: waiting to respawn until this server time (ms); 0 = alive. See RespawnSystem.
     @type('number') respawnAt: number = 0;
+    // Server only (not synced): when the player was last told they're at their tile limit (ms).
+    tileLimitNoticeAt: number = 0;
     // Server only (not synced): which spawn-line slot this player starts and respawns at.
     spawnSlot: number = 0;
 }
@@ -83,6 +94,8 @@ export class Projectile extends Schema implements ProjectileState {
     @type('number') speed: number = PROJECTILE_SPEED; // on-screen pixels/sec (see SCREEN_Y_SCALE)
     @type('number') spawnedAt: number = 0; // server timestamp ms, for lifetime expiry
     @type('number') damage: number = GUN_DAMAGE.basic; // set from the shooter's gun when fired
+    // Server only (not synced): how long it flies before it vanishes (the gun's GUN_SHOT_LIFETIME_MS).
+    lifetimeMs: number = PROJECTILE_LIFETIME_MS;
 }
 
 export class Structure extends Schema implements StructureState {
@@ -90,9 +103,12 @@ export class Structure extends Schema implements StructureState {
     @type('string') ownerId: string = '';
     @type('number') tileX: number = 0;
     @type('number') tileY: number = 0;
-    @type('string') type: string = 'fort'; // a StructureType; all types behave the same for now
-    @type('number') health: number = 100;
-    @type('number') maxHealth: number = 100;
+    @type('string') type: string = 'farm'; // a StructureType
+    @type('uint8') rotation: number = 0; // 0-5, for the 3-hex Guard Tower only
+    @type('number') health: number = STRUCTURE_HEALTH;
+    @type('number') maxHealth: number = STRUCTURE_HEALTH;
+    // Server only (not synced): a Guard Tower's next shot is allowed at this server time (ms).
+    nextShotAt: number = 0;
 }
 
 export class Pickup extends Schema implements PickupState {
@@ -172,6 +188,8 @@ export class GameState
         >
 {
     @type({ map: Player }) players = new MapSchema<Player>();
+    // Server only (not synced): when the `playing` phase began (ms), so bots can wait a moment (BOT_START_DELAY_MS).
+    playingStartedAt = 0;
     @type({ map: Structure }) structures = new MapSchema<Structure>();
     @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();
     @type({ map: Pickup }) pickups = new MapSchema<Pickup>(); // see pickups.ts; empty if the flag is off

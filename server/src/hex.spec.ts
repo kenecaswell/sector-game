@@ -4,6 +4,7 @@ import { HEX_SIZE } from './constants';
 import {
     STRUCTURE_CORNER_OFFSETS,
     STRUCTURE_RADIUS,
+    compactFootprint,
     hexCenter,
     hexDistance,
     hexIndex,
@@ -11,6 +12,7 @@ import {
     inStructureFootprint,
     isValidHex,
     mapPixelSize,
+    nearestCompactRotation,
     pixelToHex,
     structureContact,
     structureFootprint,
@@ -18,6 +20,7 @@ import {
 
 const R = HEX_SIZE;
 const key = (h: { col: number; row: number }) => `${h.col},${h.row}`;
+const farm = (tileX: number, tileY: number) => ({ type: 'farm', tileX, tileY, rotation: 0 });
 
 describe('hex grid', () => {
     it('hexCenter -> pixelToHex round-trips for all 4,096 tiles, from 6 points inside each', () => {
@@ -133,7 +136,7 @@ describe('structure footprint and hexagon', () => {
             for (let v = -1; v <= 1; v += 0.02) {
                 const x = center.x + u * 2 * R * 0.999;
                 const y = center.y + v * Math.sqrt(3) * R * 0.999;
-                if (structureContact(x, y, 20, 20).distance > -0.01) continue; // not inside
+                if (structureContact(x, y, farm(20, 20)).distance > -0.01) continue; // not inside
                 if (!footprint.has(key(pixelToHex(x, y)))) outside++;
             }
         }
@@ -192,22 +195,98 @@ describe('structureContact', () => {
     const inradius = STRUCTURE_RADIUS * Math.cos(Math.PI / 6);
 
     it('is negative inside (by exactly how far) and positive outside', () => {
-        expect(structureContact(center.x, center.y, 10, 10).distance).toBeCloseTo(-inradius, 9);
-        const below = structureContact(center.x, center.y + inradius + 5, 10, 10);
+        expect(structureContact(center.x, center.y, farm(10, 10)).distance).toBeCloseTo(
+            -inradius,
+            9
+        );
+        const below = structureContact(center.x, center.y + inradius + 5, farm(10, 10));
         expect(below.distance).toBeCloseTo(5, 9);
     });
 
     it('pushes out along the edge normal on a flat side', () => {
-        const below = structureContact(center.x, center.y + inradius + 5, 10, 10);
+        const below = structureContact(center.x, center.y + inradius + 5, farm(10, 10));
         expect(below.nx).toBeCloseTo(0, 9);
         expect(below.ny).toBeCloseTo(1, 9); // straight down, away from the bottom edge
     });
 
     it('pushes away from the corner near a vertex, measuring true distance', () => {
         const corner = STRUCTURE_CORNER_OFFSETS[0]; // the right-hand point
-        const contact = structureContact(center.x + corner.x + 6, center.y + corner.y, 10, 10);
+        const contact = structureContact(
+            center.x + corner.x + 6,
+            center.y + corner.y,
+            farm(10, 10)
+        );
         expect(contact.distance).toBeCloseTo(6, 9);
         expect(contact.nx).toBeCloseTo(1, 9);
         expect(contact.ny).toBeCloseTo(0, 9);
+    });
+});
+
+describe('compactFootprint (the 3-hex Guard Tower)', () => {
+    it('is the anchor plus two neighbors that touch each other, in all six turns', () => {
+        for (let rotation = 0; rotation < 6; rotation++) {
+            const hexes = compactFootprint(20, 20, rotation);
+            expect(hexes).toHaveLength(3);
+            expect(hexes[0]).toEqual({ col: 20, row: 20 });
+            for (const a of hexes) {
+                for (const b of hexes) {
+                    if (a !== b) expect(hexDistance(a, b)).toBe(1);
+                }
+            }
+        }
+    });
+
+    it('gives six different clumps around an anchor, and wraps the rotation', () => {
+        const clumps = new Set(
+            Array.from({ length: 6 }, (_, k) =>
+                compactFootprint(21, 20, k).map(key).sort().join('|')
+            )
+        );
+        expect(clumps.size).toBe(6);
+        expect(compactFootprint(21, 20, 7).map(key)).toEqual(compactFootprint(21, 20, 1).map(key));
+        expect(compactFootprint(21, 20, -1).map(key)).toEqual(compactFootprint(21, 20, 5).map(key));
+    });
+});
+
+describe('structureContact for a Guard Tower', () => {
+    const tower = { type: 'guardTower', tileX: 20, tileY: 20, rotation: 2 };
+
+    it('is inside each of its three hexes and outside the rest', () => {
+        for (const hex of compactFootprint(20, 20, 2)) {
+            const c = hexCenter(hex.col, hex.row);
+            expect(structureContact(c.x, c.y, tower).distance).toBeLessThan(0);
+        }
+        const away = hexCenter(26, 20);
+        expect(structureContact(away.x, away.y, tower).distance).toBeGreaterThan(0);
+    });
+
+    it('does not cover the 7-hex area a farm would', () => {
+        const unused = hexNeighbors(20, 20).filter(
+            (h) => !compactFootprint(20, 20, 2).some((t) => key(t) === key(h))
+        )[0];
+        const c = hexCenter(unused.col, unused.row);
+        expect(structureContact(c.x, c.y, tower).distance).toBeGreaterThan(0);
+        expect(structureContact(c.x, c.y, farm(20, 20)).distance).toBeLessThan(0);
+    });
+});
+
+describe('nearestCompactRotation', () => {
+    it('picks the clump centered nearest the point, so every rotation can be chosen', () => {
+        const picked = new Set<number>();
+        for (let rotation = 0; rotation < 6; rotation++) {
+            const centers = compactFootprint(20, 20, rotation).map((h) => hexCenter(h.col, h.row));
+            const x = centers.reduce((sum, c) => sum + c.x, 0) / 3;
+            const y = centers.reduce((sum, c) => sum + c.y, 0) / 3;
+            expect(nearestCompactRotation(20, 20, x, y)).toBe(rotation);
+            picked.add(nearestCompactRotation(20, 20, x, y));
+        }
+        expect(picked.size).toBe(6);
+    });
+
+    it('works on odd columns too', () => {
+        const c = hexCenter(21, 20);
+        const rotation = nearestCompactRotation(21, 20, c.x + 30, c.y - 25);
+        expect(rotation).toBeGreaterThanOrEqual(0);
+        expect(rotation).toBeLessThan(6);
     });
 });

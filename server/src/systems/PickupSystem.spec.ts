@@ -64,7 +64,7 @@ describe('PickupSystem', () => {
     });
 
     it("rolls on the collector's score tier: the same roll gives the leader less than the last", () => {
-        // A roll of 0.95 lands on the big gun in tier 1's row but a structure in tier 4's.
+        // A roll of 0.95 lands on the Ion Cannon in tier 1's row but a structure in tier 4's.
         const state = match();
         const leader = addPlayerAt(state, 'lead', 10, 10);
         const last = addPlayerAt(state, 'last', 20, 20);
@@ -79,7 +79,7 @@ describe('PickupSystem', () => {
         expect(leader.gun).toBe('big');
         const lastGot = events.find((e) => e.playerId === 'last');
         expect(lastGot?.kind).toBe('item');
-        expect(['farm', 'fabricator', 'fort', 'power']).toContain(lastGot?.itemId);
+        expect(['farm', 'fabricator', 'guardTower', 'power']).toContain(lastGot?.itemId);
         expect(last.structureInventory).toHaveLength(1);
     });
 

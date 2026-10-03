@@ -20,9 +20,9 @@ describe('HUD', () => {
             />
         );
         expect(screen.getByText('Health: 140 / 200')).toBeInTheDocument();
-        expect(screen.getByText('Gun: Big gun')).toBeInTheDocument();
+        expect(screen.getByText('Gun: Ion Cannon')).toBeInTheDocument();
         expect(screen.getByText('Ammo: 12')).toBeInTheDocument();
-        expect(screen.getByText('Tiles: 7')).toBeInTheDocument();
+        expect(screen.getByText('Tiles: 7 / 500')).toBeInTheDocument();
         expect(screen.getByText('Materials: 55')).toBeInTheDocument();
     });
 
@@ -36,6 +36,26 @@ describe('HUD', () => {
         );
         expect(screen.getByText('Gun: none')).toBeInTheDocument();
         expect(screen.queryByText(/Structures|Upgrade|Farm|Booster/)).not.toBeInTheDocument();
+    });
+
+    it('shows the tile limit your farms give you, and warns at it', () => {
+        const { rerender } = render(
+            <HUD
+                me={makePlayer({ tilesOwned: 120, tileCap: 1000 })}
+                phase="playing"
+                phaseEndsAt={0}
+            />
+        );
+        const tiles = screen.getByText('Tiles: 120 / 1000');
+        expect(tiles).not.toHaveStyle({ color: '#ff7675' });
+        rerender(
+            <HUD
+                me={makePlayer({ tilesOwned: 1000, tileCap: 1000 })}
+                phase="playing"
+                phaseEndsAt={0}
+            />
+        );
+        expect(screen.getByText('Tiles: 1000 / 1000')).toHaveStyle({ color: '#ff7675' });
     });
 
     it('never shows negative health', () => {

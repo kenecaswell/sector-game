@@ -1,18 +1,12 @@
 import { Backpack, type GameState, type Player } from '../state/GameState';
 import { RESPAWN_DELAY_MS } from '../constants';
-import {
-    hexIndex,
-    hexNeighbors,
-    inStructureFootprint,
-    isValidHex,
-    pixelToHex,
-    type HexCoord,
-} from '../hex';
+import { hexIndex, hexNeighbors, isValidHex, pixelToHex, type HexCoord } from '../hex';
 import { blocksWalkingAt, spawnPoint } from '../terrain';
 import { areAllies } from '../teams';
 import {
     GUN_NAMES,
     UPGRADE_IDS,
+    inStructure,
     isGunId,
     upgradeLabel,
     upgradeLevel,
@@ -48,7 +42,7 @@ function carriesGear(player: Player): boolean {
 
 /**
  * Where a backpack dropped at (x, y) goes: that hex if the owner can walk to it, else the nearest
- * one they can (they may have fallen flying over a mountain or deep water, and their Wings are in
+ * one they can (they may have fallen flying over a mountain or deep water, and their Jetpack is in
  * the backpack). Never inside an enemy's structure.
  */
 function dropHex(state: GameState, player: Player): HexCoord {
@@ -63,7 +57,7 @@ function dropHex(state: GameState, player: Player): HexCoord {
     );
     const usable = (h: HexCoord) =>
         !blocksWalkingAt(state, h.col, h.row) &&
-        !enemyStructures.some((s) => inStructureFootprint(h.col, h.row, s.tileX, s.tileY));
+        !enemyStructures.some((s) => inStructure(h.col, h.row, s));
     const seen = new Set([hexIndex(start.col, start.row, cols)]);
     const queue = [start];
     for (let q = 0; q < queue.length; q++) {
@@ -143,7 +137,7 @@ function restore(player: Player, pack: Backpack): void {
     player.health += player.maxHealth - before;
 }
 
-/** "Big gun, 12 ammo, Booster 2" */
+/** "Ion Cannon, 12 ammo, Booster 2" */
 function contentsLabel(pack: Backpack): string {
     const parts: string[] = [];
     if (isGunId(pack.gun)) parts.push(GUN_NAMES[pack.gun]);

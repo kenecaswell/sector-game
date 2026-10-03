@@ -123,7 +123,7 @@ describe('terrain and movement', () => {
     });
 });
 
-describe('Wings', () => {
+describe('Jetpack', () => {
     const lake: Array<[number, number]> = [
         [30, 30],
         ...hexNeighbors(30, 30).map((h) => [h.col, h.row] as [number, number]),
@@ -146,7 +146,7 @@ describe('Wings', () => {
 });
 
 describe('terrain and claiming', () => {
-    it('nobody claims mountain or water, even with the Expander over them', () => {
+    it('nobody claims mountain or water, even with the Harvester over them', () => {
         const state = world();
         const terrainHexes = hexNeighbors(20, 20).map((h) => [h.col, h.row] as [number, number]);
         setTerrain(state, mountain, terrainHexes.slice(0, 3));

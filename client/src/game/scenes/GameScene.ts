@@ -26,7 +26,18 @@ import {
     skyReflection,
 } from '../terrainArt';
 import { paletteFor, type TerrainPalette } from '../terrainPalettes';
-import { GUN_DAMAGE, TERRAIN } from '../../types/shared';
+import {
+    GUN_DAMAGE,
+    GUN_FIRE_INTERVAL_MS,
+    STRUCTURE_SPECS,
+    TERRAIN,
+    footprintFor,
+    inStructure,
+    isGunId,
+    isStructureType,
+    structureHexes,
+    type StructureType,
+} from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
 import { isShallowWater } from '../terrain';
 import {
@@ -41,7 +52,6 @@ import {
     DISCONNECTED_ALPHA,
     CLAIM_RING_STROKE_ALPHA,
     EXTRAPOLATION_S,
-    FIRE_INTERVAL_MS,
     HEX_DEPTH,
     HEX_SIZE,
     INPUT_KEEPALIVE_MS,
@@ -83,11 +93,10 @@ import {
     hexCorners,
     hexIndex,
     hexNeighbors,
-    inStructureFootprint,
     isValidHex,
     mapPixelSize,
+    nearestCompactRotation,
     structureCorners,
-    structureFootprint,
     pixelToHex,
     project,
     unproject,
@@ -97,7 +106,7 @@ import {
 export interface GameSceneCallbacks {
     onInput: (dir: { x: number; y: number }, angle: number) => void;
     onShoot: (angle: number) => void;
-    onPlaceStructure: (tileX: number, tileY: number) => void;
+    onPlaceStructure: (tileX: number, tileY: number, rotation: number) => void;
 }
 
 export interface GameSceneInitData {
@@ -113,7 +122,7 @@ interface PlayerView {
     nose: Phaser.GameObjects.Arc;
     color: number;
     // Tinted circle on the ground showing the claim radius; exists only while the player owns the
-    // Expander. A separate scene object (not part of `container`) so it sits under every entity.
+    // Harvester. A separate scene object (not part of `container`) so it sits under every entity.
     ring: Phaser.GameObjects.Ellipse | null;
     ringRadius: number;
     // Their spawn platform, on the ground at the hex they start and respawn on.
@@ -181,7 +190,12 @@ export class GameScene extends Phaser.Scene {
     private pickupViews = new Map<string, Phaser.GameObjects.Container>();
     private backpackViews = new Map<string, Phaser.GameObjects.Container>(); // only ever your own
     // Touch has no hover, so a refused build tap shows its red outline here for a moment.
-    private tapPreview: { col: number; row: number; until: number } | null = null;
+    private tapPreview: {
+        col: number;
+        row: number;
+        rotation: number;
+        until: number;
+    } | null = null;
 
     private cursorKeys!: Phaser.Types.Input.Keyboard.CursorKeys;
     private wasdKeys!: {
@@ -191,6 +205,7 @@ export class GameScene extends Phaser.Scene {
         D: Phaser.Input.Keyboard.Key;
     };
     private buildMode = false;
+    private buildType: StructureType = 'farm'; // what build mode is placing (sets the outline)
 
     private spaceKey?: Phaser.Input.Keyboard.Key;
     private fireHeld = false; // set by the mobile fire button
@@ -356,12 +371,26 @@ export class GameScene extends Phaser.Scene {
         this.drawHover();
     }
 
-    /** Toggled by the React "Build" button so the next tap places a structure instead of shooting. */
-    setBuildMode(active: boolean): void {
+    /**
+     * Set by React: while on, the next tap places a structure of `type` instead of shooting (the
+     * outline under the pointer is that type's footprint).
+     */
+    setBuildMode(active: boolean, type: StructureType = this.buildType): void {
         this.buildMode = active;
+        this.buildType = type;
     }
 
-    /** Called by the mobile fire button: while held, shoots along the current aim at FIRE_INTERVAL_MS. */
+    /**
+     * How to turn the structure being placed: a 3-hex structure (the Guard Tower) takes the clump
+     * around the hex nearest the pointer's corner; a 7-hex one has only one way to sit.
+     */
+    private buildRotation(col: number, row: number, at: Point): number {
+        return STRUCTURE_SPECS[this.buildType].hexes === 3
+            ? nearestCompactRotation(col, row, at.x, at.y)
+            : 0;
+    }
+
+    /** Called by the mobile fire button: while held, shoots along the current aim at the gun's fire interval. */
     setFireHeld(held: boolean): void {
         this.fireHeld = held;
     }
@@ -496,12 +525,18 @@ export class GameScene extends Phaser.Scene {
 
         if (this.buildMode) {
             const { col, row } = pixelToHex(target.x, target.y);
-            if (this.canPlaceStructure(col, row)) {
-                this.callbacks.onPlaceStructure(col, row);
+            const rotation = this.buildRotation(col, row, target);
+            if (this.canPlaceStructure(col, row, rotation)) {
+                this.callbacks.onPlaceStructure(col, row, rotation);
                 this.buildMode = false;
             } else if (pointer.wasTouch) {
                 // Stay in build mode and show why: the outline turns red for a moment.
-                this.tapPreview = { col, row, until: performance.now() + BUILD_PREVIEW_TAP_MS };
+                this.tapPreview = {
+                    col,
+                    row,
+                    rotation,
+                    until: performance.now() + BUILD_PREVIEW_TAP_MS,
+                };
             }
             return;
         }
@@ -576,10 +611,11 @@ export class GameScene extends Phaser.Scene {
     /** Sends a shot unless it's on cooldown, outside the match, unarmed or out of ammo (the server enforces the last three too). */
     private tryShoot(angle: number): void {
         const now = performance.now();
-        if (now - this.lastShotAt < FIRE_INTERVAL_MS) return;
         if (this.room.state.phase.phase !== 'playing') return;
         const me = this.room.state.players.get(this.sessionId);
         if (!me || me.gun === '' || me.ammo <= 0) return;
+        if (now - this.lastShotAt < GUN_FIRE_INTERVAL_MS[isGunId(me.gun) ? me.gun : 'basic'])
+            return;
 
         this.lastShotAt = now;
         this.callbacks.onShoot(angle);
@@ -1067,7 +1103,7 @@ export class GameScene extends Phaser.Scene {
         const pointer = this.input.activePointer;
         const { mapWidth, mapHeight } = this.room.state;
 
-        let hovered: { col: number; row: number } | null = null;
+        let hovered: { col: number; row: number; rotation: number } | null = null;
         if (this.tapPreview && performance.now() < this.tapPreview.until) {
             hovered = this.tapPreview;
         } else {
@@ -1075,12 +1111,18 @@ export class GameScene extends Phaser.Scene {
             if (!pointer.wasTouch) {
                 const target = this.pointerToWorld(pointer);
                 const hex = pixelToHex(target.x, target.y);
-                if (isValidHex(hex.col, hex.row, mapWidth, mapHeight)) hovered = hex;
+                if (isValidHex(hex.col, hex.row, mapWidth, mapHeight)) {
+                    hovered = { ...hex, rotation: this.buildRotation(hex.col, hex.row, target) };
+                }
             }
         }
         const valid =
-            hovered !== null && this.buildMode && this.canPlaceStructure(hovered.col, hovered.row);
-        const key = hovered ? `${hovered.col},${hovered.row},${this.buildMode},${valid}` : '';
+            hovered !== null &&
+            this.buildMode &&
+            this.canPlaceStructure(hovered.col, hovered.row, hovered.rotation);
+        const key = hovered
+            ? `${hovered.col},${hovered.row},${hovered.rotation},${this.buildType},${this.buildMode},${valid}`
+            : '';
         if (key === this.hoverKey) return;
         this.hoverKey = key;
 
@@ -1089,13 +1131,19 @@ export class GameScene extends Phaser.Scene {
         if (!hovered) return;
         if (this.buildMode) {
             const color = valid ? BUILD_PREVIEW_OK_COLOR : BUILD_PREVIEW_BAD_COLOR;
-            const outline = structureCorners(hovered.col, hovered.row).map(
-                (p) => new Phaser.Math.Vector2(p.x, p.y)
-            );
-            g.fillStyle(color, 0.18);
-            g.fillPoints(outline, true);
-            g.lineStyle(2, color, 0.95);
-            g.strokePoints(outline, true);
+            const outlines =
+                STRUCTURE_SPECS[this.buildType].hexes === 3
+                    ? footprintFor(this.buildType, hovered.col, hovered.row, hovered.rotation).map(
+                          (h) => hexCorners(h.col, h.row)
+                      )
+                    : [structureCorners(hovered.col, hovered.row)];
+            for (const corners of outlines) {
+                const outline = corners.map((p) => new Phaser.Math.Vector2(p.x, p.y));
+                g.fillStyle(color, 0.18);
+                g.fillPoints(outline, true);
+                g.lineStyle(2, color, 0.95);
+                g.strokePoints(outline, true);
+            }
             return;
         }
         g.lineStyle(2, 0xffffff, 0.35);
@@ -1103,17 +1151,17 @@ export class GameScene extends Phaser.Scene {
     }
 
     /**
-     * Mirrors the server's StructureSystem.canPlace: all 7 footprint hexes on the map, owned by
-     * you, and not in another structure's footprint.
+     * Mirrors the server's StructureSystem.canPlace: every footprint hex (7, or 3 for a Guard
+     * Tower) on the map, owned by you, and not in another structure's footprint.
      */
-    private canPlaceStructure(col: number, row: number): boolean {
+    private canPlaceStructure(col: number, row: number, rotation: number): boolean {
         const { mapWidth, mapHeight, tiles, structures } = this.room.state;
-        return structureFootprint(col, row).every((hex) => {
+        return footprintFor(this.buildType, col, row, rotation).every((hex) => {
             if (!isValidHex(hex.col, hex.row, mapWidth, mapHeight)) return false;
             if (tiles[hexIndex(hex.col, hex.row, mapWidth)]?.ownerId !== this.sessionId)
                 return false;
             for (const other of structures.values()) {
-                if (inStructureFootprint(hex.col, hex.row, other.tileX, other.tileY)) return false;
+                if (inStructure(hex.col, hex.row, other)) return false;
             }
             return true;
         });
@@ -1168,12 +1216,12 @@ export class GameScene extends Phaser.Scene {
 
     /**
      * Shows a semi-transparent circle, tinted with the player's color, at their claim radius once
-     * they own the Expander (a claim radius above the base one). It's a circle on the ground, so on
+     * they own the Harvester (a claim radius above the base one). It's a circle on the ground, so on
      * screen it's an ellipse squashed by ISO_SQUASH like everything else on the map.
      */
     private updateClaimRing(view: PlayerView, player: PlayerState, at: Point): void {
-        const hasExpander = player.claimRadius > BASE_CLAIM_RADIUS + 0.5;
-        if (!hasExpander) {
+        const hasHarvester = player.claimRadius > BASE_CLAIM_RADIUS + 0.5;
+        if (!hasHarvester) {
             if (view.ring) {
                 view.ring.destroy();
                 view.ring = null;
@@ -1206,8 +1254,8 @@ export class GameScene extends Phaser.Scene {
         if (this.projectileViews.has(projectile.id)) return;
         const start = project(projectile.x, projectile.y);
 
-        // Placeholder art: a glowing bolt floating at body height over a small ground shadow. Big-gun
-        // shots are a larger yellow bolt; basic-gun shots a smaller white one.
+        // Placeholder art: a glowing bolt floating at body height over a small ground shadow. Ion Cannon
+        // shots are a larger yellow bolt; blaster shots a smaller white one.
         const big = projectile.damage >= GUN_DAMAGE.big;
         const radius = PROJECTILE_RADIUS * (big ? BIG_SHOT_SCALE : BASIC_SHOT_SCALE);
         const colors = big ? BIG_SHOT_COLORS : BASIC_SHOT_COLORS;
@@ -1234,9 +1282,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     /**
-     * A structure is a raised slab in the shape of its 7-hex hexagon: side faces in the owner's
-     * team color (darkened), a top face in the structure type's color (STRUCTURE_COLORS), and a
-     * team-colored border. Placeholder until there's art per type. Drawn once — it never moves.
+     * A structure is a raised slab in the shape of its footprint (the 7-hex hexagon, or the clump of
+     * 3 hexes for a Guard Tower): side faces in the owner's team color (darkened), a top face in
+     * the structure type's color (STRUCTURE_COLORS), and a team-colored border. Placeholder until
+     * there's art per type. Drawn once — it never moves.
      */
     private addStructureSprite(structure: StructureState): void {
         if (this.structureSprites.has(structure.id)) return;
@@ -1245,35 +1294,100 @@ export class GameScene extends Phaser.Scene {
             ? Phaser.Display.Color.HexStringToColor(owner.color).color
             : 0xffffff;
         const topColor = STRUCTURE_COLORS[structure.type] ?? STRUCTURE_DEFAULT_COLOR;
+        const compact =
+            isStructureType(structure.type) && STRUCTURE_SPECS[structure.type].hexes === 3;
 
-        const ground = structureCorners(structure.tileX, structure.tileY);
-        const top = ground.map((p) => ({ x: p.x, y: p.y - STRUCTURE_HEIGHT }));
         const g = this.add.graphics();
+        const lift = (p: Point): Phaser.Math.Vector2 =>
+            new Phaser.Math.Vector2(p.x, p.y - STRUCTURE_HEIGHT);
+        let lowest: number[];
+        if (compact) {
+            lowest = this.drawCompactSlab(g, structure, teamColor, topColor);
+        } else {
+            const ground = structureCorners(structure.tileX, structure.tileY);
+            const top = ground.map(lift);
 
-        // Side faces: only the edges facing the viewer (their outward normal points down the
-        // screen) are visible. Corners go clockwise on screen, so the outward normal of edge
-        // a -> b is (b.y - a.y, a.x - b.x).
-        g.fillStyle(blendColors(teamColor, 0x000000, STRUCTURE_SIDE_DARKEN), 1);
-        for (let i = 0; i < 6; i++) {
-            const a = ground[i];
-            const b = ground[(i + 1) % 6];
-            if (a.x - b.x <= 0) continue;
-            g.fillPoints(
-                [a, b, top[(i + 1) % 6], top[i]].map((p) => new Phaser.Math.Vector2(p.x, p.y)),
-                true
-            );
+            // Side faces: only the edges facing the viewer (their outward normal points down the
+            // screen) are visible. Corners go clockwise on screen, so the outward normal of edge
+            // a -> b is (b.y - a.y, a.x - b.x).
+            g.fillStyle(blendColors(teamColor, 0x000000, STRUCTURE_SIDE_DARKEN), 1);
+            for (let i = 0; i < 6; i++) {
+                const a = ground[i];
+                const b = ground[(i + 1) % 6];
+                if (a.x - b.x <= 0) continue;
+                g.fillPoints(
+                    [
+                        new Phaser.Math.Vector2(a.x, a.y),
+                        new Phaser.Math.Vector2(b.x, b.y),
+                        top[(i + 1) % 6],
+                        top[i],
+                    ],
+                    true
+                );
+            }
+            g.fillStyle(topColor, 1);
+            g.fillPoints(top, true);
+            g.lineStyle(STRUCTURE_BORDER_WIDTH, teamColor, 1);
+            g.strokePoints(top, true);
+            lowest = ground.map((p) => p.y);
         }
-        const topPoints = top.map((p) => new Phaser.Math.Vector2(p.x, p.y));
-        g.fillStyle(topColor, 1);
-        g.fillPoints(topPoints, true);
-        g.lineStyle(STRUCTURE_BORDER_WIDTH, teamColor, 1);
-        g.strokePoints(topPoints, true);
 
         // Sort by the slab's northmost ground corner, not its center: anyone standing on it (its
         // owner or a teammate walking through) or in front of it draws on top; players behind it
         // are covered by it.
-        g.setDepth(Math.min(...ground.map((p) => p.y)));
+        g.setDepth(Math.min(...lowest));
         this.structureSprites.set(structure.id, g);
+    }
+
+    /**
+     * Draws a Guard Tower's slab: three hexes raised together. Side faces go only on the outer
+     * edges that face the viewer, then the three tops, then the team-colored border on the outer
+     * edges only (so the hexes read as one piece). Returns the ground corners' y values, for depth.
+     */
+    private drawCompactSlab(
+        g: Phaser.GameObjects.Graphics,
+        structure: StructureState,
+        teamColor: number,
+        topColor: number
+    ): number[] {
+        const hexes = structureHexes(structure);
+        const inside = new Set(hexes.map((h) => `${h.col},${h.row}`));
+        // Hex corner i to i + 1 faces the neighbor at index (i + 1) % 6 of hexNeighbors.
+        const outerEdges = (col: number, row: number) => {
+            const corners = hexCorners(col, row);
+            const around = hexNeighbors(col, row);
+            const edges: Array<{ a: Point; b: Point; faces: boolean }> = [];
+            for (let i = 0; i < 6; i++) {
+                const n = around[(i + 1) % 6];
+                if (inside.has(`${n.col},${n.row}`)) continue;
+                // Edges 0-2 are the ones whose outward normal points down the screen.
+                edges.push({ a: corners[i], b: corners[(i + 1) % 6], faces: i <= 2 });
+            }
+            return { corners, edges };
+        };
+        const v = (p: Point, up = 0) => new Phaser.Math.Vector2(p.x, p.y - up);
+
+        g.fillStyle(blendColors(teamColor, 0x000000, STRUCTURE_SIDE_DARKEN), 1);
+        for (const hex of hexes) {
+            for (const { a, b, faces } of outerEdges(hex.col, hex.row).edges) {
+                if (!faces) continue;
+                g.fillPoints([v(a), v(b), v(b, STRUCTURE_HEIGHT), v(a, STRUCTURE_HEIGHT)], true);
+            }
+        }
+        g.fillStyle(topColor, 1);
+        for (const hex of hexes) {
+            g.fillPoints(
+                outerEdges(hex.col, hex.row).corners.map((p) => v(p, STRUCTURE_HEIGHT)),
+                true
+            );
+        }
+        g.lineStyle(STRUCTURE_BORDER_WIDTH, teamColor, 1);
+        for (const hex of hexes) {
+            for (const { a, b } of outerEdges(hex.col, hex.row).edges) {
+                g.lineBetween(a.x, a.y - STRUCTURE_HEIGHT, b.x, b.y - STRUCTURE_HEIGHT);
+            }
+        }
+        return hexes.flatMap((h) => hexCorners(h.col, h.row).map((p) => p.y));
     }
 
     private removeStructureSprite(id: string): void {

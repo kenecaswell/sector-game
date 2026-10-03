@@ -72,10 +72,17 @@ describe('MovementSystem — speed', () => {
         const state = world();
         const player = addPlayer(state, 'r');
         player.boosterLevel = 3;
+        runMovement(state, inputs({ r: { x: 1, y: 0 } }), 30);
+        expect(onScreenSpeed(player)).toBeCloseTo(PLAYER_SPEED, 0);
+    });
+
+    it('an equipped Jetpack is as fast as Booster 1 (+33%)', () => {
+        const state = world();
+        const player = addPlayer(state, 'r');
         player.wingsLevel = 1;
         player.equippedUpgrade = 'wings';
         runMovement(state, inputs({ r: { x: 1, y: 0 } }), 30);
-        expect(onScreenSpeed(player)).toBeCloseTo(PLAYER_SPEED, 0);
+        expect(onScreenSpeed(player)).toBeCloseTo(PLAYER_SPEED * 1.33, 0);
     });
 
     it('drops stale input: a player whose client went silent coasts to a stop', () => {
@@ -179,14 +186,24 @@ describe('MovementSystem — structures', () => {
                     runMovement(state, input, 1);
                     closest = Math.min(
                         closest,
-                        structureContact(player.x, player.y, 10, 10).distance
+                        structureContact(player.x, player.y, {
+                            type: 'farm',
+                            tileX: 10,
+                            tileY: 10,
+                            rotation: 0,
+                        }).distance
                     );
                     if (Math.hypot(player.x - previous.x, player.y - previous.y) > 0.5)
                         lastMoved = tick;
                     previous = { x: player.x, y: player.y };
                 }
                 approaches++;
-                const contact = structureContact(player.x, player.y, 10, 10);
+                const contact = structureContact(player.x, player.y, {
+                    type: 'farm',
+                    tileX: 10,
+                    tileY: 10,
+                    rotation: 0,
+                });
                 if (contact.distance < PLAYER_RADIUS - 0.5) overlaps++;
                 const mid = player.x > 50 && player.x < 3000 && player.y > 50 && player.y < 3500;
                 if (lastMoved < 150 && mid) {

@@ -229,7 +229,7 @@ describe('LobbyScreen — bots', () => {
             ready: true,
             teamId: 'green',
             color: '#2ecc71',
-            character: 'miner',
+            character: 'engineer',
             ...overrides,
         });
 

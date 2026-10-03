@@ -1,5 +1,6 @@
 import { Pickup, type GameState, type Player } from '../state/GameState';
-import { inStructureFootprint, pixelToHex, type HexCoord } from '../hex';
+import { pixelToHex, type HexCoord } from '../hex';
+import { inStructure } from '../types/shared';
 import { PICKUP_RESPAWN_DELAY_MAX_MS, PICKUP_RESPAWN_MS } from '../constants';
 import {
     generatePickups,
@@ -35,9 +36,7 @@ function apply(player: Player, contents: PickupContents): void {
 function blockedForPods(state: GameState): (h: HexCoord) => boolean {
     return (h) =>
         Array.from(state.pickups.values()).some((p) => p.tileX === h.col && p.tileY === h.row) ||
-        Array.from(state.structures.values()).some((s) =>
-            inStructureFootprint(h.col, h.row, s.tileX, s.tileY)
-        );
+        Array.from(state.structures.values()).some((s) => inStructure(h.col, h.row, s));
 }
 
 /**

@@ -50,7 +50,7 @@ describe('ownsShopItem', () => {
         ...levels,
     });
 
-    it('treats any gun as owning the basic gun, and only the big gun as owning it', () => {
+    it('treats any gun as owning the Blaster, and only the Ion Cannon as owning it', () => {
         expect(ownsShopItem(player(''), 'basicGun')).toBe(false);
         expect(ownsShopItem(player('basic'), 'basicGun')).toBe(true);
         expect(ownsShopItem(player('big'), 'basicGun')).toBe(true);
@@ -58,7 +58,7 @@ describe('ownsShopItem', () => {
         expect(ownsShopItem(player('big'), 'bigGun')).toBe(true);
     });
 
-    it('marks an upgrade owned only at its top level (3, or 1 for Wings)', () => {
+    it('marks an upgrade owned only at its top level (3, or 1 for the Jetpack)', () => {
         expect(ownsShopItem(player('', { boosterLevel: 2 }), 'booster')).toBe(false);
         expect(ownsShopItem(player('', { boosterLevel: 3 }), 'booster')).toBe(true);
         expect(ownsShopItem(player('', { armorLevel: 3 }), 'armor')).toBe(true);
@@ -68,7 +68,7 @@ describe('ownsShopItem', () => {
 
     it('never marks ammo or structures as owned (you can always buy more)', () => {
         const rich = player('big', { boosterLevel: 3, armorLevel: 3, expanderLevel: 3 });
-        for (const id of ['ammo', 'farm', 'fabricator', 'fort', 'power'] as const) {
+        for (const id of ['ammo', 'farm', 'fabricator', 'guardTower', 'power'] as const) {
             expect(ownsShopItem(rich, id)).toBe(false);
         }
     });
@@ -94,7 +94,7 @@ describe('upgrade levels in the shop', () => {
         expect(shopItemDescription({ ...none, expanderLevel: 1 }, 'expander')).toBe(
             'Claim 19 hexes at once, standing mid-hex. 80% of normal speed.'
         );
-        expect(shopItemTitle(none, 'wings')).toBe('Wings'); // one level: no number
+        expect(shopItemTitle(none, 'wings')).toBe('Jetpack'); // one level: no number
         expect(shopItemTitle(none, 'ammo')).toBe('Ammo pack');
     });
 
@@ -150,9 +150,9 @@ describe('pickupLabel', () => {
         expect(pickupLabel('materials', '', 30)).toBe('30 materials');
         expect(pickupLabel('ammo', '', 12)).toBe('12 ammo');
         expect(pickupLabel('item', 'booster', 0)).toBe('Booster 1');
-        expect(pickupLabel('item', 'wings', 0)).toBe('Wings');
-        expect(pickupLabel('item', 'bigGun', 0)).toBe('Big gun');
-        expect(pickupLabel('item', 'fort', 0)).toBe('Fort');
+        expect(pickupLabel('item', 'wings', 0)).toBe('Jetpack');
+        expect(pickupLabel('item', 'bigGun', 0)).toBe('Ion Cannon');
+        expect(pickupLabel('item', 'guardTower', 0)).toBe('Guard Tower');
     });
 });
 

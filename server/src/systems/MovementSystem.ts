@@ -36,7 +36,7 @@ const APPROACH_EPSILON = 1e-3; // px; see findBlockingStructure
  * world-x, and both look equally fast. Longer vectors are clamped to that limit.
  *
  * Mountains and deep water are solid too (see pushOutOfTerrain), except to
- * players with Wings equipped.
+ * players with the Jetpack equipped.
  *
  * Structures are solid to everyone except their owner and the owner's
  * teammates: a player can't move into an enemy structure and instead slides
@@ -129,7 +129,7 @@ function update(state: GameState, inputs: Map<string, PlayerInput>, dt: number):
             }
         }
 
-        // Wings carry a player over mountains and deep water.
+        // The Jetpack carries a player over mountains and deep water.
         if (!UpgradeSystem.canFly(player)) ({ x, y } = pushOutOfTerrain(state, player, x, y));
 
         player.x = Math.max(MAP_EDGE_MARGIN, Math.min(width - MAP_EDGE_MARGIN, x));
@@ -194,10 +194,10 @@ function findBlockingStructure(
     for (const structure of state.structures.values()) {
         if (areAllies(state, structure.ownerId, playerId)) continue;
 
-        const to = structureContact(toX, toY, structure.tileX, structure.tileY);
+        const to = structureContact(toX, toY, structure);
         if (to.distance >= PLAYER_RADIUS) continue;
 
-        const from = structureContact(fromX, fromY, structure.tileX, structure.tileY);
+        const from = structureContact(fromX, fromY, structure);
         // Tolerance: sliding along an edge keeps the distance the same up to floating-point
         // noise, and that must not count as "getting closer" or the player freezes in place.
         if (to.distance < from.distance - APPROACH_EPSILON) return { nx: from.nx, ny: from.ny };

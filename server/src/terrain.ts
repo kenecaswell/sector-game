@@ -447,7 +447,7 @@ export function generateTerrain(
         return roll * total < mountain + lake ? 'lake' : 'river';
     };
 
-    /** Walkable without Wings: ground, or shallow water (1-wide river stretches; isShallowWater). */
+    /** Walkable without the Jetpack: ground, or shallow water (1-wide river stretches; isShallowWater). */
     const isWaterAt = (col: number, row: number): boolean => {
         if (!isValidHex(col, row, cols, rows)) return false;
         const id = featureOf[hexIndex(col, row, cols)];
@@ -538,7 +538,7 @@ export function terrainAt(state: GameState, col: number, row: number): Terrain |
     return state.tiles[hexIndex(col, row, state.mapWidth)]?.terrain;
 }
 
-/** Whether a player on foot (no Wings) is stopped by hex (col, row): a mountain or deep water. */
+/** Whether a player on foot (no Jetpack) is stopped by hex (col, row): a mountain or deep water. */
 export function blocksWalkingAt(state: GameState, col: number, row: number): boolean {
     return blocksWalking((c, r) => terrainAt(state, c, r), col, row);
 }

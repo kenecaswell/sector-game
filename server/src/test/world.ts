@@ -3,8 +3,14 @@ import { GameState, Player, Projectile, Structure, Tile } from '../state/GameSta
 import { MovementSystem, type PlayerInput } from '../systems/MovementSystem';
 import { CombatSystem } from '../systems/CombatSystem';
 import { SCREEN_Y_SCALE, TICK_RATE } from '../constants';
-import { hexCenter, structureFootprint } from '../hex';
-import type { GamePhase, Terrain } from '../types/shared';
+import { hexCenter } from '../hex';
+import {
+    STRUCTURE_SPECS,
+    footprintFor,
+    type GamePhase,
+    type StructureType,
+    type Terrain,
+} from '../types/shared';
 
 export const DT = 1 / TICK_RATE; // one server tick, in seconds
 export const MAP_SIZE = 64;
@@ -51,24 +57,38 @@ export function addPlayerAt(
     return addPlayer(state, id, c.x + dx, c.y + dy, teamId);
 }
 
+/** Puts a structure in the world as if placed (a farm unless `type` says otherwise). */
 export function addStructure(
     state: GameState,
     ownerId: string,
     col: number,
-    row: number
+    row: number,
+    type: StructureType = 'farm',
+    rotation = 0
 ): Structure {
     const structure = new Structure();
     structure.id = `s-${col}-${row}`;
     structure.ownerId = ownerId;
     structure.tileX = col;
     structure.tileY = row;
+    structure.type = type;
+    structure.rotation = rotation;
+    structure.health = STRUCTURE_SPECS[type].health;
+    structure.maxHealth = STRUCTURE_SPECS[type].health;
     state.structures.set(structure.id, structure);
     return structure;
 }
 
-/** Gives `ownerId` all 7 hexes of the footprint centered on (col, row). */
-export function ownFootprint(state: GameState, ownerId: string, col: number, row: number): void {
-    for (const hex of structureFootprint(col, row)) {
+/** Gives `ownerId` every hex of the footprint of a `type` structure at (col, row). */
+export function ownFootprint(
+    state: GameState,
+    ownerId: string,
+    col: number,
+    row: number,
+    type: StructureType = 'farm',
+    rotation = 0
+): void {
+    for (const hex of footprintFor(type, col, row, rotation)) {
         state.tiles[hex.row * state.mapWidth + hex.col].ownerId = ownerId;
     }
 }

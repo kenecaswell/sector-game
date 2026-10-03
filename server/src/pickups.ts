@@ -35,7 +35,7 @@ export interface PickupContents {
 /** The parts of a player the roll looks at: their gun and upgrade levels. */
 export type PickupCollector = UpgradeHolder & { gun: string };
 
-const STRUCTURE_ITEMS: StructureType[] = ['farm', 'fabricator', 'fort', 'power'];
+const STRUCTURE_ITEMS: StructureType[] = ['farm', 'fabricator', 'guardTower', 'power'];
 
 /**
  * A player's score tier, 0 (the leader) to PICKUP_TIER_CHANCES.length - 1 (at the back), from

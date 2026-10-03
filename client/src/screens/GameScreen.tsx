@@ -4,6 +4,7 @@ import { useGameConnection } from '../context/GameContext';
 import { createPhaserGame, destroyPhaserGame } from '../game/PhaserGame';
 import { sendDevMaterials } from '../net/GameConnection';
 import type { GameScene } from '../game/scenes/GameScene';
+import { BuildMenu } from '../components/BuildMenu';
 import { FabricatorMenu } from '../components/FabricatorMenu';
 import { InventoryBar } from '../components/InventoryBar';
 import { hexIndex, isValidHex, pixelToHex } from '../game/hex';
@@ -16,7 +17,7 @@ import { DebugStats } from '../components/DebugStats';
 import { FireButton } from '../components/FireButton';
 import { ScoreBadge } from '../components/ScoreBadge';
 import { RespawnOverlay } from '../components/RespawnOverlay';
-import { STRUCTURE_NAMES, type StructureType } from '../types/shared';
+import { STRUCTURE_NAMES, STRUCTURE_SPECS, type StructureType } from '../types/shared';
 import { cycleStructure, structureToBuild } from '../utils/build';
 import { isTouchDevice } from '../utils/device';
 import { scoreFor } from '../utils/score';
@@ -46,7 +47,7 @@ export function GameScreen() {
         selectedStructureRef.current = selectedStructure;
     }, [selectedStructure]);
     // Only one popup is open at a time.
-    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'fabricator'>('none');
+    const [panel, setPanel] = useState<'none' | 'leaderboard' | 'fabricator' | 'build'>('none');
     // The inventory bar on the right; I hides and shows it.
     const [showInventoryBar, setShowInventoryBar] = useState(true);
     const [showStats, setShowStats] = useState(false);
@@ -59,14 +60,14 @@ export function GameScreen() {
         const game = createPhaserGame(containerRef.current, room, sessionId, {
             onInput: input,
             onShoot: shoot,
-            onPlaceStructure: (tileX, tileY) => {
+            onPlaceStructure: (tileX, tileY, rotation) => {
                 // Build the picked structure, or the first in the inventory (read live: this closure
                 // outlives renders).
                 const next = structureToBuild(
                     room.state.players.get(sessionId)?.structureInventory,
                     selectedStructureRef.current
                 );
-                if (next) placeStructure(tileX, tileY, next);
+                if (next) placeStructure(tileX, tileY, next, rotation);
                 setBuildModeArmed(false);
             },
         });
@@ -85,7 +86,7 @@ export function GameScreen() {
     const getGame = useCallback(() => gameRef.current, []);
 
     // Read live from the room (positions don't re-render React): is the player over a mountain or
-    // deep water right now? The server won't take Wings off there, so the inventory says so.
+    // deep water right now? The server won't take the Jetpack off there, so the inventory says so.
     const overSolidTerrain = useCallback(() => {
         if (!room || !sessionId) return false;
         const self = room.state.players.get(sessionId);
@@ -116,8 +117,12 @@ export function GameScreen() {
     // the next tap back to shooting.
     useEffect(() => {
         const scene = gameRef.current?.scene.getScene('GameScene') as GameScene | undefined;
-        scene?.setBuildMode(buildArmed);
-    }, [buildArmed]);
+        scene?.setBuildMode(buildArmed, nextStructure);
+    }, [buildArmed, nextStructure]);
+
+    // The Fabricator menu is open to you only while you own a Fabricator (build one in the Build
+    // menu), so it also disappears if yours is destroyed while it's open.
+    const hasFabricator = me?.hasFabricator ?? false;
 
     // Build mode stays on until you build, press B again, or press Esc (no timeout).
     const toggleBuildMode = useCallback(() => {
@@ -134,9 +139,10 @@ export function GameScreen() {
         setBuildModeArmed(true);
     };
 
-    // B toggles build mode (with the structure picked last, or the first you have); in build mode
-    // Tab picks the next structure type you hold (Shift+Tab the previous). F toggles the
-    // Fabricator, L the leaderboard, I shows/hides the inventory bar; Esc leaves build mode and
+    // B toggles the Build menu (buy structures), P build mode (place the structure picked last, or
+    // the first you hold); in build mode Tab picks the next structure type you hold (Shift+Tab the
+    // previous). F toggles the Fabricator (once you own one), L the leaderboard, I shows/hides the
+    // inventory bar; Esc leaves build mode and
     // closes any popup; ` toggles the FPS readout. E is unbound (it opened the Shop until
     // 2026-09-27; kept free for later). Phaser only captures the keys it registers (WASD, arrows,
     // Space), so these don't conflict. DEV ONLY (temporary): M adds 500 materials, in dev builds
@@ -155,13 +161,15 @@ export function GameScreen() {
             const key = event.key.toLowerCase();
             if (key === 'l') {
                 setPanel((open) => (open === 'leaderboard' ? 'none' : 'leaderboard'));
-            } else if (key === 'f' && shopAvailable) {
+            } else if (key === 'f' && shopAvailable && hasFabricator) {
                 setPanel((open) => (open === 'fabricator' ? 'none' : 'fabricator'));
             } else if (key === 'i') {
                 setShowInventoryBar((show) => !show);
             } else if (key === 'm' && phase === 'playing' && import.meta.env.DEV && room) {
                 sendDevMaterials(room);
-            } else if (key === 'b' && phase === 'playing') {
+            } else if (key === 'b' && shopAvailable) {
+                setPanel((open) => (open === 'build' ? 'none' : 'build'));
+            } else if (key === 'p' && phase === 'playing') {
                 toggleBuildMode();
             } else if (key === 'escape') {
                 setPanel('none');
@@ -170,7 +178,16 @@ export function GameScreen() {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [shopAvailable, phase, toggleBuildMode, room, buildArmed, inventory, nextStructure]);
+    }, [
+        shopAvailable,
+        phase,
+        toggleBuildMode,
+        room,
+        buildArmed,
+        inventory,
+        nextStructure,
+        hasFabricator,
+    ]);
 
     return (
         // Fixed to the viewport, outside the page's normal flow. (Sizing this 100vw x 100vh inside the
@@ -201,9 +218,19 @@ export function GameScreen() {
                     label="Fabricator"
                     top={56}
                     active={panel === 'fabricator'}
+                    disabled={!hasFabricator}
+                    title={hasFabricator ? undefined : 'Build a Fabricator to unlock this'}
                     onClick={() =>
                         setPanel((open) => (open === 'fabricator' ? 'none' : 'fabricator'))
                     }
+                />
+            )}
+            {shopAvailable && (
+                <TopButton
+                    label="Build"
+                    top={100}
+                    active={panel === 'build'}
+                    onClick={() => setPanel((open) => (open === 'build' ? 'none' : 'build'))}
                 />
             )}
             {panel === 'leaderboard' && (
@@ -213,7 +240,18 @@ export function GameScreen() {
                     onClose={() => setPanel('none')}
                 />
             )}
-            {panel === 'fabricator' && shopAvailable && (
+            {panel === 'build' && shopAvailable && (
+                <BuildMenu
+                    player={me}
+                    onBuy={purchase}
+                    onPlace={(type) => {
+                        setPanel('none');
+                        buildFromBar(type);
+                    }}
+                    onClose={() => setPanel('none')}
+                />
+            )}
+            {panel === 'fabricator' && shopAvailable && hasFabricator && (
                 <FabricatorMenu
                     player={me}
                     onFabricate={purchase}
@@ -250,8 +288,10 @@ export function GameScreen() {
                         pointerEvents: 'none', // taps go through to the map
                     }}
                 >
-                    Pick a spot for the {STRUCTURE_NAMES[nextStructure]} — all 7 hexes must be
-                    yours.{' '}
+                    Pick a spot for the {STRUCTURE_NAMES[nextStructure]} —{' '}
+                    {STRUCTURE_SPECS[nextStructure].hexes === 3
+                        ? 'all 3 touching hexes must be yours (aim at a corner to turn it).'
+                        : 'all 7 hexes must be yours.'}{' '}
                     {touch
                         ? 'Tap its icon again to cancel.'
                         : 'Tab for another structure, Esc to cancel.'}
@@ -271,16 +311,21 @@ interface TopButtonProps {
     label: string;
     top: number;
     active: boolean;
+    // Grayed out and unclickable (with `title` saying why when hovered).
+    disabled?: boolean;
+    title?: string;
     onClick: () => void;
 }
 
 /** A small button at the top-right that toggles a popup. */
-function TopButton({ label, top, active, onClick }: TopButtonProps) {
+function TopButton({ label, top, active, disabled = false, title, onClick }: TopButtonProps) {
     return (
         <button
             type="button"
             tabIndex={-1}
             aria-expanded={active}
+            disabled={disabled}
+            title={title}
             onClick={(e) => {
                 e.currentTarget.blur(); // so Space keeps meaning "shoot", not "press this button"
                 onClick();
@@ -294,6 +339,8 @@ function TopButton({ label, top, active, onClick }: TopButtonProps) {
                 border: 'none',
                 background: active ? '#f1c40f' : 'rgba(0, 0, 0, 0.55)',
                 color: active ? '#000' : '#fff',
+                opacity: disabled ? 0.4 : 1,
+                cursor: disabled ? 'not-allowed' : 'pointer',
                 fontFamily: 'sans-serif',
                 fontSize: 14,
             }}

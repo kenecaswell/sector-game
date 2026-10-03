@@ -8,7 +8,7 @@ import { isMountainAtPoint } from '../terrain';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
-import { GUN_DAMAGE, isGunId, type PlayerHitEvent } from '../types/shared';
+import { GUN_DAMAGE, GUN_SHOT_LIFETIME_MS, isGunId, type PlayerHitEvent } from '../types/shared';
 
 /**
  * `player` fires a shot heading `angle` (world radians), if it's the match and they have a gun and
@@ -23,16 +23,43 @@ function fire(state: GameState, player: Player, angle: number): boolean {
     if (player.gun === '' || player.ammo <= 0 || !Number.isFinite(angle)) return false;
 
     player.ammo--;
+    const gun = isGunId(player.gun) ? player.gun : 'basic';
+    spawnShot(
+        state,
+        player.id,
+        player.x,
+        player.y,
+        angle,
+        GUN_DAMAGE[gun],
+        GUN_SHOT_LIFETIME_MS[gun]
+    );
+    return true;
+}
+
+/**
+ * Starts a projectile for `ownerId` (who gets the credit if it kills, and whose teammates it
+ * passes through) at world point (x, y) heading `angle`. Players' guns and Guard Towers both
+ * shoot through here; the caller has already checked the shooter is allowed to and paid for it.
+ */
+function spawnShot(
+    state: GameState,
+    ownerId: string,
+    x: number,
+    y: number,
+    angle: number,
+    damage: number,
+    lifetimeMs = PROJECTILE_LIFETIME_MS
+): void {
     const projectile = new Projectile();
-    projectile.id = `${player.id}-${state.shotsFired++}`;
-    projectile.ownerId = player.id;
-    projectile.x = player.x;
-    projectile.y = player.y;
+    projectile.id = `${ownerId}-${state.shotsFired++}`;
+    projectile.ownerId = ownerId;
+    projectile.x = x;
+    projectile.y = y;
     projectile.angle = angle;
     projectile.spawnedAt = Date.now();
-    projectile.damage = GUN_DAMAGE[isGunId(player.gun) ? player.gun : 'basic'];
+    projectile.damage = damage;
+    projectile.lifetimeMs = lifetimeMs;
     state.projectiles.set(projectile.id, projectile);
-    return true;
 }
 
 /**
@@ -102,11 +129,11 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
         });
 
         const outOfBounds = proj.x < 0 || proj.y < 0 || proj.x > width || proj.y > height;
-        const expired = now - proj.spawnedAt > PROJECTILE_LIFETIME_MS;
+        const expired = now - proj.spawnedAt > proj.lifetimeMs;
         if (outOfBounds || expired) toRemove.add(id);
     });
 
     toRemove.forEach((id) => state.projectiles.delete(id));
 }
 
-export const CombatSystem = { update, fire };
+export const CombatSystem = { update, fire, spawnShot };

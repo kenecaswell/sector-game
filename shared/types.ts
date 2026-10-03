@@ -3,6 +3,8 @@
 // server/src/types/shared.ts and client/src/types/shared.ts just re-export it.
 // Mirrors the "Message Shapes" section of docs/ARCHITECTURE.md.
 
+import { footprintHexes, inFootprint, type HexCoord } from './hex';
+
 // lobby -> countdown (everyone connected is ready; cancelled back to lobby if that stops being
 // true) -> playing -> results.
 export type GamePhase = 'lobby' | 'countdown' | 'playing' | 'results';
@@ -28,6 +30,9 @@ export interface PlaceStructureMessage {
     tileY: number;
     // Which structure from the player's inventory to place; one is used up.
     structureType: StructureType;
+    // How a 3-hex structure (the Guard Tower) is turned, 0-5 (see `compactFootprint`). Ignored for
+    // the 7-hex structures, and 0 when left out.
+    rotation?: number;
     seq: number;
 }
 
@@ -248,8 +253,9 @@ export interface FinalScore {
     teamId: TeamId | '';
     score: number;
     tilesOwned: number;
-    kills: number;
+    kills: number; // not part of the score (KILL_POINTS is 0), but still shown
     structures: number;
+    structurePoints: number; // what those structures add to the score (a Farmer's farm counts 150)
 }
 
 // Sent once when the match ends (phase -> results): the final standings, best first. Clients keep
@@ -288,12 +294,10 @@ export function isTeamId(value: unknown): value is TeamId {
 }
 
 // --- Characters --------------------------------------------------------------------------------
-// Picked in the lobby; the server applies the starting kit when the match starts. Structure types
-// all behave the same for now.
-export type StructureType = 'farm' | 'fabricator' | 'fort' | 'power';
+// Picked in the lobby; the server applies the starting kit when the match starts.
 export type GunId = 'basic' | 'big';
 export type UpgradeId = 'booster' | 'expander' | 'armor' | 'wings';
-export type CharacterId = 'farmer' | 'miner' | 'builder' | 'robot' | 'scientist' | 'explorer';
+export type CharacterId = 'farmer' | 'engineer' | 'builder' | 'robot' | 'scientist' | 'explorer';
 
 export interface Character {
     id: CharacterId;
@@ -307,17 +311,140 @@ export interface Character {
     equipped?: UpgradeId; // the slot upgrade it starts with equipped
 }
 
-export const STRUCTURE_NAMES: Record<StructureType, string> = {
-    farm: 'Farm',
-    fabricator: 'Fabricator',
-    fort: 'Fort',
-    power: 'Power plant',
+// --- Structures --------------------------------------------------------------------------------
+// What each structure type costs, how tough it is, how many points it scores and how big it is.
+// See docs/GAME_DESIGN.md → Structures. (`STRUCTURE_TYPES` below is in catalog order.)
+export type StructureType = 'farm' | 'fabricator' | 'guardTower' | 'power';
+
+export interface StructureSpec {
+    name: string;
+    description: string; // one line, for the Build menu
+    cost: number; // materials
+    health: number;
+    points: number; // added to the owner's score while it stands
+    hexes: 3 | 7; // footprint size: 7 = a hex and its 6 neighbors, 3 = a clump that all touch
+}
+
+// Tile limit: a player may hold this many hexes at once, plus TILES_PER_FARM for every farm they
+// own. At the limit, walking over hexes that aren't yours claims nothing.
+export const BASE_TILE_CAP = 500;
+export const TILES_PER_FARM = 500;
+
+/** How many hexes a player with `farms` farms may hold. */
+export function tileCapFor(farms: number): number {
+    return BASE_TILE_CAP + farms * TILES_PER_FARM;
+}
+
+export const STRUCTURE_HEALTH = 1000; // every structure but the Guard Tower
+export const STRUCTURE_COST = 100;
+
+export const STRUCTURE_SPECS: Record<StructureType, StructureSpec> = {
+    farm: {
+        name: 'Farm',
+        description: `Raises your tile limit by ${TILES_PER_FARM}. Needs 7 hexes of your own.`,
+        cost: STRUCTURE_COST,
+        health: STRUCTURE_HEALTH,
+        points: 100,
+        hexes: 7,
+    },
+    fabricator: {
+        name: 'Fabricator',
+        description:
+            'Unlocks the Fabricator for guns, ammo and upgrades. Needs 7 hexes of your own.',
+        cost: STRUCTURE_COST,
+        health: STRUCTURE_HEALTH,
+        points: 100,
+        hexes: 7,
+    },
+    guardTower: {
+        name: 'Guard Tower',
+        description:
+            'Shoots enemies nearby with a Blaster and unlimited ammo. Needs 3 touching hexes of your own.',
+        cost: STRUCTURE_COST,
+        health: 500,
+        points: 50,
+        hexes: 3,
+    },
+    power: {
+        name: 'Power plant',
+        description: 'Essential (more to come). Needs 7 hexes of your own.',
+        cost: STRUCTURE_COST,
+        health: STRUCTURE_HEALTH,
+        points: 100,
+        hexes: 7,
+    },
 };
 
-export const GUN_NAMES: Record<GunId, string> = { basic: 'Basic gun', big: 'Big gun' };
+export const STRUCTURE_TYPES = Object.keys(STRUCTURE_SPECS) as StructureType[];
 
-// Damage per hit. Players have 100 health, +100 per Armor level.
-export const GUN_DAMAGE: Record<GunId, number> = { basic: 50, big: 100 };
+export const STRUCTURE_NAMES = Object.fromEntries(
+    STRUCTURE_TYPES.map((type) => [type, STRUCTURE_SPECS[type].name])
+) as Record<StructureType, string>;
+
+// The Farmer is good at farming: a farm they own scores half as much again.
+export const FARMER_FARM_POINTS = 150;
+
+/** What a structure of `type` adds to the score of an owner playing `character`. */
+export function structurePoints(type: StructureType, character: string): number {
+    if (type === 'farm' && character === 'farmer') return FARMER_FARM_POINTS;
+    return STRUCTURE_SPECS[type].points;
+}
+
+/** The fields a structure's footprint depends on (a synced `StructureState` has them). */
+export interface PlacedStructure {
+    type: string;
+    tileX: number;
+    tileY: number;
+    rotation: number;
+}
+
+function footprintSpecOf(structure: PlacedStructure, hexes?: 3 | 7) {
+    return {
+        hexes:
+            hexes ?? (isStructureType(structure.type) ? STRUCTURE_SPECS[structure.type].hexes : 7),
+        tileX: structure.tileX,
+        tileY: structure.tileY,
+        rotation: structure.rotation,
+    };
+}
+
+/** The hexes a placed structure occupies. */
+export function structureHexes(structure: PlacedStructure): HexCoord[] {
+    return footprintHexes(footprintSpecOf(structure));
+}
+
+/** True if hex (col, row) is under a placed structure. */
+export function inStructure(col: number, row: number, structure: PlacedStructure): boolean {
+    return inFootprint(col, row, footprintSpecOf(structure));
+}
+
+/** The hexes a structure of `type` would occupy if placed at (col, row) turned `rotation`. */
+export function footprintFor(
+    type: StructureType,
+    col: number,
+    row: number,
+    rotation = 0
+): HexCoord[] {
+    return structureHexes({ type, tileX: col, tileY: row, rotation });
+}
+
+// The gun ids stay `basic` and `big` in code; players know them as the Blaster and the Ion Cannon
+// (renamed 2026-10-03).
+export const GUN_NAMES: Record<GunId, string> = { basic: 'Blaster', big: 'Ion Cannon' };
+
+// Damage per hit. Players have 100 health, +100 per Armor level. The Blaster did 50 until
+// 2026-10-03, when it halved; the Ion Cannon (100) was cut to double the Blaster.
+export const GUN_DAMAGE: Record<GunId, number> = { basic: 25, big: 50 };
+
+// The least time between shots, in ms. The Blaster is 1 a second (2026-10-03, a first guess: it was
+// 5 a second) and the Ion Cannon twice as fast (it was 5 a second). The Guard Tower fires the
+// Blaster, so it uses the Blaster's. People's clients keep to it (GameScene.tryShoot) and bots never
+// fire faster. 📝 The server doesn't enforce it for people yet.
+export const GUN_FIRE_INTERVAL_MS: Record<GunId, number> = { basic: 1000, big: 500 };
+
+// How long a shot flies, in ms. Shots move 600 on-screen px/s, so this is the range: the Blaster's
+// 2 s is 1,200 px and the Ion Cannon's 4 s is 2,400 px (twice the Blaster's, 2026-10-03).
+export const GUN_SHOT_LIFETIME_MS: Record<GunId, number> = { basic: 2000, big: 4000 };
 
 export function isGunId(value: unknown): value is GunId {
     return typeof value === 'string' && Object.hasOwn(GUN_NAMES, value);
@@ -325,20 +452,23 @@ export function isGunId(value: unknown): value is GunId {
 
 // --- Upgrades ----------------------------------------------------------------------------------
 // Bought in the shop a level at a time. A player has one upgrade *slot*: of the slot upgrades
-// (Booster, Expander, Wings) only the equipped one has an effect, and switching has a cooldown.
+// (Booster, Harvester, Jetpack) only the equipped one has an effect, and switching has a cooldown.
 // Armor isn't a slot upgrade: it always works once bought. See docs/GAME_DESIGN.md → Upgrades.
 export interface UpgradeInfo {
     id: UpgradeId;
     name: string;
     maxLevel: number;
     slot: boolean; // true = only works while equipped
+    cost: number; // materials per level
 }
 
 export const UPGRADES: Record<UpgradeId, UpgradeInfo> = {
-    booster: { id: 'booster', name: 'Booster', maxLevel: 3, slot: true },
-    expander: { id: 'expander', name: 'Expander', maxLevel: 3, slot: true },
-    armor: { id: 'armor', name: 'Armor', maxLevel: 3, slot: false },
-    wings: { id: 'wings', name: 'Wings', maxLevel: 1, slot: true },
+    booster: { id: 'booster', name: 'Booster', maxLevel: 3, slot: true, cost: 100 },
+    // Called the Harvester until 2026-10-03; the id stays `expander` in code.
+    expander: { id: 'expander', name: 'Harvester', maxLevel: 3, slot: true, cost: 100 },
+    armor: { id: 'armor', name: 'Armor', maxLevel: 3, slot: false, cost: 100 },
+    // Called the Jetpack until 2026-10-03 (id `wings`); it also gives Booster 1's speed, so it costs 200.
+    wings: { id: 'wings', name: 'Jetpack', maxLevel: 1, slot: true, cost: 200 },
 };
 
 export const UPGRADE_IDS = Object.keys(UPGRADES) as UpgradeId[];
@@ -352,7 +482,8 @@ export function isUpgradeId(value: unknown): value is UpgradeId {
 }
 
 export const BOOSTER_SPEED_PER_LEVEL = 0.33; // +33% of base top speed per level: 133/166/199%
-export const EXPANDER_SLOW_PER_LEVEL = 0.1; // the Expander costs 10% of base top speed per level: 90/80/70%
+export const JETPACK_SPEED_BONUS = BOOSTER_SPEED_PER_LEVEL; // the Jetpack also gives Booster 1's +33%
+export const EXPANDER_SLOW_PER_LEVEL = 0.1; // the Harvester costs 10% of base top speed per level: 90/80/70%
 export const ARMOR_HEALTH_PER_LEVEL = 100; // +100 max health per level: 200/300/400
 export const EXPANDER_HEXES = [7, 19, 37]; // hexes claimed at once, standing mid-hex, per level
 
@@ -374,7 +505,7 @@ export function activeUpgradeLevel(player: UpgradeHolder, id: UpgradeId): number
     return UPGRADES[id].slot && player.equippedUpgrade !== id ? 0 : upgradeLevel(player, id);
 }
 
-/** "Booster 2" (or just "Wings" for a single-level upgrade). */
+/** "Booster 2" (or just "Jetpack" for a single-level upgrade). */
 export function upgradeLabel(id: UpgradeId, level: number): string {
     return UPGRADES[id].maxLevel > 1 ? `${UPGRADES[id].name} ${level}` : UPGRADES[id].name;
 }
@@ -389,7 +520,7 @@ export function upgradeEffect(id: UpgradeId, level: number): string {
         case 'armor':
             return `${100 + level * ARMOR_HEALTH_PER_LEVEL} max health. Always on, no slot needed.`;
         case 'wings':
-            return "Walk over mountains and deep water. You still can't claim them.";
+            return `Walk over mountains and deep water, and ${Math.round(100 + JETPACK_SPEED_BONUS * 100)}% of normal speed (like Booster 1). You still can't claim terrain.`;
     }
 }
 
@@ -406,9 +537,9 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         materials: 50,
         upgrades: {},
     },
-    miner: {
-        id: 'miner',
-        name: 'Miner',
+    engineer: {
+        id: 'engineer',
+        name: 'Engineer',
         description: 'Starts with a fabricator.',
         gun: null,
         ammo: 0,
@@ -419,10 +550,10 @@ export const CHARACTERS: Record<CharacterId, Character> = {
     builder: {
         id: 'builder',
         name: 'Builder',
-        description: 'Starts with a fort.',
+        description: 'Starts with a Guard Tower.',
         gun: null,
         ammo: 0,
-        structures: ['fort'],
+        structures: ['guardTower'],
         materials: 50,
         upgrades: {},
     },
@@ -466,7 +597,7 @@ export function isCharacterId(value: unknown): value is CharacterId {
 }
 
 export function isStructureType(value: unknown): value is StructureType {
-    return typeof value === 'string' && Object.hasOwn(STRUCTURE_NAMES, value);
+    return typeof value === 'string' && Object.hasOwn(STRUCTURE_SPECS, value);
 }
 
 // --- Shop --------------------------------------------------------------------------------------
@@ -482,7 +613,7 @@ export type ShopItemId =
     | 'wings'
     | 'farm'
     | 'fabricator'
-    | 'fort'
+    | 'guardTower'
     | 'power';
 
 export type ShopCategory = 'weapons' | 'upgrades' | 'structures';
@@ -508,9 +639,6 @@ export interface ShopItem {
 
 export const AMMO_PACK_SIZE = 30; // shots per purchase
 export const AMMO_MATERIALS_PER_SHOT = 2; // 1 until 2026-09-29, when weapons doubled in price
-export const STRUCTURE_COST = 100;
-
-const UPGRADE_COST = 100; // materials per level
 
 // One shop entry per upgrade; it always offers your next level (see shopItemTitle).
 const upgradeItem = (id: UpgradeId): ShopItem => ({
@@ -518,16 +646,16 @@ const upgradeItem = (id: UpgradeId): ShopItem => ({
     category: 'upgrades',
     name: UPGRADES[id].name,
     description: upgradeEffect(id, 1),
-    cost: UPGRADE_COST,
+    cost: UPGRADES[id].cost,
     upgrade: id,
 });
 
 const structureItem = (id: StructureType): ShopItem => ({
     id,
     category: 'structures',
-    name: STRUCTURE_NAMES[id],
-    description: 'One more to place. Needs 7 hexes of your own.',
-    cost: STRUCTURE_COST,
+    name: STRUCTURE_SPECS[id].name,
+    description: STRUCTURE_SPECS[id].description,
+    cost: STRUCTURE_SPECS[id].cost,
     structure: id,
 });
 
@@ -544,7 +672,7 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
         id: 'bigGun',
         category: 'weapons',
         name: GUN_NAMES.big,
-        description: `${GUN_DAMAGE.big} damage per hit (double). Replaces the basic gun.`,
+        description: `Twice the Blaster: ${GUN_DAMAGE.big} damage, 2 shots a second, double the range. Replaces the Blaster.`,
         cost: 400,
         gun: 'big',
     },
@@ -562,7 +690,7 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
     wings: upgradeItem('wings'),
     farm: structureItem('farm'),
     fabricator: structureItem('fabricator'),
-    fort: structureItem('fort'),
+    guardTower: structureItem('guardTower'),
     power: structureItem('power'),
 };
 
@@ -577,7 +705,7 @@ export type ShopCustomer = UpgradeHolder & { gun: string };
 
 /**
  * True if buying `itemId` would get the player nothing: an upgrade already at its top level, or a
- * gun that isn't better than theirs (the basic gun once you have any gun, the big gun once you
+ * gun that isn't better than theirs (the blaster once you have any gun, the ion cannon once you
  * have it). Ammo and structures can always be bought again. The server refuses these purchases;
  * the menu shows them as owned.
  */
@@ -611,7 +739,7 @@ export interface PurchaseMessage {
 }
 
 // Client -> Server: equip a slot upgrade you own, or '' to leave the slot empty (playing phase only;
-// refused during the cooldown, and refused for leaving Wings while over a mountain or deep water).
+// refused during the cooldown, and refused for leaving the Jetpack while over a mountain or deep water).
 export interface EquipUpgradeMessage {
     upgradeId: UpgradeId | '';
 }
@@ -639,10 +767,17 @@ export function isTerrainThemeId(value: unknown): value is TerrainThemeId {
 export type PickupKind = 'materials' | 'ammo' | 'item';
 
 // Server -> Client, to the owner only: they walked onto one of their backpacks and got its contents
-// back ("Big gun, 12 ammo, Booster 2"). Backpacks themselves are synced to their owner only
+// back ("Ion Cannon, 12 ammo, Booster 2"). Backpacks themselves are synced to their owner only
 // (GameState.backpacks); see docs/GAME_DESIGN.md → Players.
 export interface BackpackCollectedEvent {
     contents: string;
+}
+
+// Server -> Client, to the player only: they walked over ground they could have claimed but are at
+// their tile limit (`limit` hexes: 500 plus 500 per farm), so it wasn't claimed. Sent again, at most
+// every few seconds, while they keep trying. The client tells them to build more farms.
+export interface TileLimitReachedEvent {
+    limit: number;
 }
 
 // Server -> Client: a player opened a drop pod, and what was inside (it has gone from `state.pickups`).
@@ -653,7 +788,7 @@ export interface PickupCollectedEvent {
     amount: number; // for 'materials' and 'ammo'
 }
 
-/** What a pickup is, in words: "30 materials", "12 ammo", "Booster 1", "Basic gun", "Farm". */
+/** What a pickup is, in words: "30 materials", "12 ammo", "Booster 1", "Blaster", "Farm". */
 export function pickupLabel(kind: PickupKind, itemId: string, amount: number): string {
     if (kind === 'materials') return `${amount} materials`;
     if (kind === 'ammo') return `${amount} ammo`;
