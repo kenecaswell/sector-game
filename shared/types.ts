@@ -359,7 +359,7 @@ export const STRUCTURE_SPECS: Record<StructureType, StructureSpec> = {
     guardTower: {
         name: 'Guard Tower',
         description:
-            'Shoots enemies nearby with a Basic gun and unlimited ammo. Needs 3 touching hexes of your own.',
+            'Shoots enemies nearby with a Blaster and unlimited ammo. Needs 3 touching hexes of your own.',
         cost: STRUCTURE_COST,
         health: 500,
         points: 50,
@@ -428,17 +428,23 @@ export function footprintFor(
     return structureHexes({ type, tileX: col, tileY: row, rotation });
 }
 
-export const GUN_NAMES: Record<GunId, string> = { basic: 'Basic gun', big: 'Big gun' };
+// The gun ids stay `basic` and `big` in code; players know them as the Blaster and the Ion Cannon
+// (renamed 2026-10-03).
+export const GUN_NAMES: Record<GunId, string> = { basic: 'Blaster', big: 'Ion Cannon' };
 
-// Damage per hit. Players have 100 health, +100 per Armor level. (The Basic gun did 50 until
-// 2026-10-03.)
-export const GUN_DAMAGE: Record<GunId, number> = { basic: 25, big: 100 };
+// Damage per hit. Players have 100 health, +100 per Armor level. The Blaster did 50 until
+// 2026-10-03, when it halved; the Ion Cannon (100) was cut to double the Blaster.
+export const GUN_DAMAGE: Record<GunId, number> = { basic: 25, big: 50 };
 
-// The least time between shots, in ms. The Basic gun is 1 a second (2026-10-03, a first guess: it
-// was 5 a second); the Big gun keeps the old 5 a second. The Guard Tower fires the Basic gun, so it
-// uses the Basic gun's. People's clients keep to it (GameScene.tryShoot) and bots never fire faster.
-// 📝 The server doesn't enforce it for people yet.
-export const GUN_FIRE_INTERVAL_MS: Record<GunId, number> = { basic: 1000, big: 200 };
+// The least time between shots, in ms. The Blaster is 1 a second (2026-10-03, a first guess: it was
+// 5 a second) and the Ion Cannon twice as fast (it was 5 a second). The Guard Tower fires the
+// Blaster, so it uses the Blaster's. People's clients keep to it (GameScene.tryShoot) and bots never
+// fire faster. 📝 The server doesn't enforce it for people yet.
+export const GUN_FIRE_INTERVAL_MS: Record<GunId, number> = { basic: 1000, big: 500 };
+
+// How long a shot flies, in ms. Shots move 600 on-screen px/s, so this is the range: the Blaster's
+// 2 s is 1,200 px and the Ion Cannon's 4 s is 2,400 px (twice the Blaster's, 2026-10-03).
+export const GUN_SHOT_LIFETIME_MS: Record<GunId, number> = { basic: 2000, big: 4000 };
 
 export function isGunId(value: unknown): value is GunId {
     return typeof value === 'string' && Object.hasOwn(GUN_NAMES, value);
@@ -446,20 +452,23 @@ export function isGunId(value: unknown): value is GunId {
 
 // --- Upgrades ----------------------------------------------------------------------------------
 // Bought in the shop a level at a time. A player has one upgrade *slot*: of the slot upgrades
-// (Booster, Expander, Wings) only the equipped one has an effect, and switching has a cooldown.
+// (Booster, Harvester, Jetpack) only the equipped one has an effect, and switching has a cooldown.
 // Armor isn't a slot upgrade: it always works once bought. See docs/GAME_DESIGN.md → Upgrades.
 export interface UpgradeInfo {
     id: UpgradeId;
     name: string;
     maxLevel: number;
     slot: boolean; // true = only works while equipped
+    cost: number; // materials per level
 }
 
 export const UPGRADES: Record<UpgradeId, UpgradeInfo> = {
-    booster: { id: 'booster', name: 'Booster', maxLevel: 3, slot: true },
-    expander: { id: 'expander', name: 'Expander', maxLevel: 3, slot: true },
-    armor: { id: 'armor', name: 'Armor', maxLevel: 3, slot: false },
-    wings: { id: 'wings', name: 'Wings', maxLevel: 1, slot: true },
+    booster: { id: 'booster', name: 'Booster', maxLevel: 3, slot: true, cost: 100 },
+    // Called the Harvester until 2026-10-03; the id stays `expander` in code.
+    expander: { id: 'expander', name: 'Harvester', maxLevel: 3, slot: true, cost: 100 },
+    armor: { id: 'armor', name: 'Armor', maxLevel: 3, slot: false, cost: 100 },
+    // Called the Jetpack until 2026-10-03 (id `wings`); it also gives Booster 1's speed, so it costs 200.
+    wings: { id: 'wings', name: 'Jetpack', maxLevel: 1, slot: true, cost: 200 },
 };
 
 export const UPGRADE_IDS = Object.keys(UPGRADES) as UpgradeId[];
@@ -473,7 +482,8 @@ export function isUpgradeId(value: unknown): value is UpgradeId {
 }
 
 export const BOOSTER_SPEED_PER_LEVEL = 0.33; // +33% of base top speed per level: 133/166/199%
-export const EXPANDER_SLOW_PER_LEVEL = 0.1; // the Expander costs 10% of base top speed per level: 90/80/70%
+export const JETPACK_SPEED_BONUS = BOOSTER_SPEED_PER_LEVEL; // the Jetpack also gives Booster 1's +33%
+export const EXPANDER_SLOW_PER_LEVEL = 0.1; // the Harvester costs 10% of base top speed per level: 90/80/70%
 export const ARMOR_HEALTH_PER_LEVEL = 100; // +100 max health per level: 200/300/400
 export const EXPANDER_HEXES = [7, 19, 37]; // hexes claimed at once, standing mid-hex, per level
 
@@ -495,7 +505,7 @@ export function activeUpgradeLevel(player: UpgradeHolder, id: UpgradeId): number
     return UPGRADES[id].slot && player.equippedUpgrade !== id ? 0 : upgradeLevel(player, id);
 }
 
-/** "Booster 2" (or just "Wings" for a single-level upgrade). */
+/** "Booster 2" (or just "Jetpack" for a single-level upgrade). */
 export function upgradeLabel(id: UpgradeId, level: number): string {
     return UPGRADES[id].maxLevel > 1 ? `${UPGRADES[id].name} ${level}` : UPGRADES[id].name;
 }
@@ -510,7 +520,7 @@ export function upgradeEffect(id: UpgradeId, level: number): string {
         case 'armor':
             return `${100 + level * ARMOR_HEALTH_PER_LEVEL} max health. Always on, no slot needed.`;
         case 'wings':
-            return "Walk over mountains and deep water. You still can't claim them.";
+            return `Walk over mountains and deep water, and ${Math.round(100 + JETPACK_SPEED_BONUS * 100)}% of normal speed (like Booster 1). You still can't claim terrain.`;
     }
 }
 
@@ -629,7 +639,6 @@ export interface ShopItem {
 
 export const AMMO_PACK_SIZE = 30; // shots per purchase
 export const AMMO_MATERIALS_PER_SHOT = 2; // 1 until 2026-09-29, when weapons doubled in price
-const UPGRADE_COST = 100; // materials per level
 
 // One shop entry per upgrade; it always offers your next level (see shopItemTitle).
 const upgradeItem = (id: UpgradeId): ShopItem => ({
@@ -637,7 +646,7 @@ const upgradeItem = (id: UpgradeId): ShopItem => ({
     category: 'upgrades',
     name: UPGRADES[id].name,
     description: upgradeEffect(id, 1),
-    cost: UPGRADE_COST,
+    cost: UPGRADES[id].cost,
     upgrade: id,
 });
 
@@ -663,7 +672,7 @@ export const SHOP_ITEMS: Record<ShopItemId, ShopItem> = {
         id: 'bigGun',
         category: 'weapons',
         name: GUN_NAMES.big,
-        description: `${GUN_DAMAGE.big} damage per hit (double). Replaces the basic gun.`,
+        description: `Twice the Blaster: ${GUN_DAMAGE.big} damage, 2 shots a second, double the range. Replaces the Blaster.`,
         cost: 400,
         gun: 'big',
     },
@@ -696,7 +705,7 @@ export type ShopCustomer = UpgradeHolder & { gun: string };
 
 /**
  * True if buying `itemId` would get the player nothing: an upgrade already at its top level, or a
- * gun that isn't better than theirs (the basic gun once you have any gun, the big gun once you
+ * gun that isn't better than theirs (the blaster once you have any gun, the ion cannon once you
  * have it). Ammo and structures can always be bought again. The server refuses these purchases;
  * the menu shows them as owned.
  */
@@ -730,7 +739,7 @@ export interface PurchaseMessage {
 }
 
 // Client -> Server: equip a slot upgrade you own, or '' to leave the slot empty (playing phase only;
-// refused during the cooldown, and refused for leaving Wings while over a mountain or deep water).
+// refused during the cooldown, and refused for leaving the Jetpack while over a mountain or deep water).
 export interface EquipUpgradeMessage {
     upgradeId: UpgradeId | '';
 }
@@ -758,7 +767,7 @@ export function isTerrainThemeId(value: unknown): value is TerrainThemeId {
 export type PickupKind = 'materials' | 'ammo' | 'item';
 
 // Server -> Client, to the owner only: they walked onto one of their backpacks and got its contents
-// back ("Big gun, 12 ammo, Booster 2"). Backpacks themselves are synced to their owner only
+// back ("Ion Cannon, 12 ammo, Booster 2"). Backpacks themselves are synced to their owner only
 // (GameState.backpacks); see docs/GAME_DESIGN.md → Players.
 export interface BackpackCollectedEvent {
     contents: string;
@@ -779,7 +788,7 @@ export interface PickupCollectedEvent {
     amount: number; // for 'materials' and 'ammo'
 }
 
-/** What a pickup is, in words: "30 materials", "12 ammo", "Booster 1", "Basic gun", "Farm". */
+/** What a pickup is, in words: "30 materials", "12 ammo", "Booster 1", "Blaster", "Farm". */
 export function pickupLabel(kind: PickupKind, itemId: string, amount: number): string {
     if (kind === 'materials') return `${amount} materials`;
     if (kind === 'ammo') return `${amount} ammo`;

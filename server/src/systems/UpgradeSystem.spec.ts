@@ -4,7 +4,7 @@ import { addPlayerAt, setTerrain, world } from '../test/world';
 import { TERRAIN } from '../types/shared';
 import { UpgradeSystem } from './UpgradeSystem';
 
-/** A player in a running match owning Booster 2, Expander 3 and Wings, with nothing equipped. */
+/** A player in a running match owning Booster 2, Harvester 3 and Jetpack, with nothing equipped. */
 function owner() {
     const state = world();
     const player = addPlayerAt(state, 'a', 20, 20);
@@ -59,7 +59,7 @@ describe('UpgradeSystem.equip', () => {
         expect(player.equippedUpgrade).toBe('');
     });
 
-    it("won't take Wings off over a mountain or deep water, only over ground", () => {
+    it("won't take the Jetpack off over a mountain or deep water, only over ground", () => {
         const { state, player } = owner();
         UpgradeSystem.equip(state, player, 'wings');
         setTerrain(state, TERRAIN.mountain, [[20, 20]]);
@@ -78,7 +78,7 @@ describe('UpgradeSystem.equip', () => {
 });
 
 describe('UpgradeSystem.speedMultiplier', () => {
-    it('Booster: +33% a level (133 / 166 / 199%); Expander: −10% a level (90 / 80 / 70%)', () => {
+    it('Booster: +33% a level (133 / 166 / 199%); Harvester: −10% a level (90 / 80 / 70%)', () => {
         const { state, player } = owner();
         const at = (id: 'booster' | 'expander', level: number) => {
             player[`${id}Level`] = level;
@@ -97,10 +97,20 @@ describe('UpgradeSystem.speedMultiplier', () => {
         ]);
     });
 
-    it("an Expander you own but haven't equipped doesn't slow you", () => {
-        const { state, player } = owner(); // owns Expander 3
-        UpgradeSystem.equip(state, player, 'wings');
+    it("a Harvester you own but haven't equipped doesn't slow you", () => {
+        const { player } = owner(); // owns Harvester 3, nothing equipped
         expect(UpgradeSystem.speedMultiplier(player)).toBe(1);
+    });
+
+    it("the Jetpack gives Booster 1's speed, and nothing else changes when it is equipped", () => {
+        const { state, player } = owner(); // owns Booster 2 and the Jetpack
+        UpgradeSystem.equip(state, player, 'wings');
+        expect(UpgradeSystem.speedMultiplier(player)).toBeCloseTo(1.33, 9);
+        expect(UpgradeSystem.canFly(player)).toBe(true);
+        expect(player.claimRadius).toBe(BASE_CLAIM_RADIUS);
+        UpgradeSystem.equip(state, player, 'booster'); // switched away: no flying, Booster 2's 166%
+        expect(UpgradeSystem.canFly(player)).toBe(false);
+        expect(UpgradeSystem.speedMultiplier(player)).toBeCloseTo(1.66, 9);
     });
 });
 

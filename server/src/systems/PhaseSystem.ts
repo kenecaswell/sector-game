@@ -29,6 +29,7 @@ function update(state: GameState, broadcast: Broadcast): void {
 
 function transitionTo(state: GameState, phase: GamePhase, broadcast?: Broadcast): void {
     state.phase.phase = phase;
+    if (phase === 'playing') state.playingStartedAt = Date.now();
     state.phase.endsAt = phase === 'lobby' ? 0 : Date.now() + phaseDurationMs(state, phase);
     broadcast?.('phaseChanged', {
         phase,

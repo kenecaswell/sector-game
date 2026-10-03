@@ -55,7 +55,7 @@ function checkProjectileStructureCollision(
 
 /**
  * Claims tiles for `player`: the hex they're standing on, plus every hex whose center is within
- * their `claimRadius` (the Expander upgrade doubles it). A hex in an enemy structure's footprint
+ * their `claimRadius` (the Harvester upgrade doubles it). A hex in an enemy structure's footprint
  * can't be claimed — the structure protects its tile — and a teammate's hex is left alone. Each
  * hex claimed for the first time this match pays MATERIALS_PER_CLAIM. A player holds at most
  * `tileCap` hexes (500 plus 500 per farm): at the limit nothing more is claimed, the nearest hexes

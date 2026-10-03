@@ -86,7 +86,7 @@ export function GameScreen() {
     const getGame = useCallback(() => gameRef.current, []);
 
     // Read live from the room (positions don't re-render React): is the player over a mountain or
-    // deep water right now? The server won't take Wings off there, so the inventory says so.
+    // deep water right now? The server won't take the Jetpack off there, so the inventory says so.
     const overSolidTerrain = useCallback(() => {
         if (!room || !sessionId) return false;
         const self = room.state.players.get(sessionId);

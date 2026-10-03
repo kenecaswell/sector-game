@@ -42,7 +42,7 @@ function carriesGear(player: Player): boolean {
 
 /**
  * Where a backpack dropped at (x, y) goes: that hex if the owner can walk to it, else the nearest
- * one they can (they may have fallen flying over a mountain or deep water, and their Wings are in
+ * one they can (they may have fallen flying over a mountain or deep water, and their Jetpack is in
  * the backpack). Never inside an enemy's structure.
  */
 function dropHex(state: GameState, player: Player): HexCoord {
@@ -137,7 +137,7 @@ function restore(player: Player, pack: Backpack): void {
     player.health += player.maxHealth - before;
 }
 
-/** "Big gun, 12 ammo, Booster 2" */
+/** "Ion Cannon, 12 ammo, Booster 2" */
 function contentsLabel(pack: Backpack): string {
     const parts: string[] = [];
     if (isGunId(pack.gun)) parts.push(GUN_NAMES[pack.gun]);

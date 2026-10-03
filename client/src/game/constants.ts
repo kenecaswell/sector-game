@@ -1,12 +1,12 @@
 // Client tunables. Sizes the server must agree on (HEX_SIZE, PLAYER_RADIUS, PROJECTILE_RADIUS,
 // BASE_CLAIM_RADIUS, SCREEN_Y_SCALE) live in shared/constants.ts and are re-exported here, so
 // rendering always lines up with the server's collision math. A claim radius above
-// BASE_CLAIM_RADIUS means the player owns the Expander.
+// BASE_CLAIM_RADIUS means the player owns the Harvester.
 import { HEX_SIZE, SCREEN_Y_SCALE } from '../../../shared/constants';
 
 export * from '../../../shared/constants';
 
-// The tinted ground circle showing an Expander owner's claim radius (in the player's color).
+// The tinted ground circle showing a Harvester owner's claim radius (in the player's color).
 // A player whose connection dropped stays on the map, frozen (the server holds their seat and tiles
 // for the reconnect window). They're drawn dimmed by this much so they read as "not here right now"
 // rather than disappearing.

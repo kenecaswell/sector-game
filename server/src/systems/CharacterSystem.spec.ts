@@ -38,7 +38,7 @@ describe('CharacterSystem.apply', () => {
         expect(player.maxHealth).toBe(
             BASE_MAX_HEALTH + ARMOR_HEALTH_PER_LEVEL * (kit.upgrades.armor ?? 0)
         );
-        expect(player.claimRadius).toBe(BASE_CLAIM_RADIUS); // and so is the old Expander
+        expect(player.claimRadius).toBe(BASE_CLAIM_RADIUS); // and so is the old Harvester
     });
 
     it('the Explorer starts unarmed, with Armor 1: 200 health', () => {

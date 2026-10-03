@@ -122,7 +122,7 @@ interface PlayerView {
     nose: Phaser.GameObjects.Arc;
     color: number;
     // Tinted circle on the ground showing the claim radius; exists only while the player owns the
-    // Expander. A separate scene object (not part of `container`) so it sits under every entity.
+    // Harvester. A separate scene object (not part of `container`) so it sits under every entity.
     ring: Phaser.GameObjects.Ellipse | null;
     ringRadius: number;
     // Their spawn platform, on the ground at the hex they start and respawn on.
@@ -1216,12 +1216,12 @@ export class GameScene extends Phaser.Scene {
 
     /**
      * Shows a semi-transparent circle, tinted with the player's color, at their claim radius once
-     * they own the Expander (a claim radius above the base one). It's a circle on the ground, so on
+     * they own the Harvester (a claim radius above the base one). It's a circle on the ground, so on
      * screen it's an ellipse squashed by ISO_SQUASH like everything else on the map.
      */
     private updateClaimRing(view: PlayerView, player: PlayerState, at: Point): void {
-        const hasExpander = player.claimRadius > BASE_CLAIM_RADIUS + 0.5;
-        if (!hasExpander) {
+        const hasHarvester = player.claimRadius > BASE_CLAIM_RADIUS + 0.5;
+        if (!hasHarvester) {
             if (view.ring) {
                 view.ring.destroy();
                 view.ring = null;
@@ -1254,8 +1254,8 @@ export class GameScene extends Phaser.Scene {
         if (this.projectileViews.has(projectile.id)) return;
         const start = project(projectile.x, projectile.y);
 
-        // Placeholder art: a glowing bolt floating at body height over a small ground shadow. Big-gun
-        // shots are a larger yellow bolt; basic-gun shots a smaller white one.
+        // Placeholder art: a glowing bolt floating at body height over a small ground shadow. Ion Cannon
+        // shots are a larger yellow bolt; blaster shots a smaller white one.
         const big = projectile.damage >= GUN_DAMAGE.big;
         const radius = PROJECTILE_RADIUS * (big ? BIG_SHOT_SCALE : BASIC_SHOT_SCALE);
         const colors = big ? BIG_SHOT_COLORS : BASIC_SHOT_COLORS;

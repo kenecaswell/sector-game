@@ -93,7 +93,7 @@ describe('rollPickup', () => {
         expect(share('structure')).toBeCloseTo(row.structure / left, 1);
     });
 
-    it('an upgrade is level 1 of one you lack; a basic gun only if unarmed', () => {
+    it('an upgrade is level 1 of one you lack; a blaster only if unarmed', () => {
         const collector: PickupCollector = { ...fresh(), gun: 'basic', boosterLevel: 1 };
         const random = seededRandom(9);
         for (let i = 0; i < 3000; i++) {

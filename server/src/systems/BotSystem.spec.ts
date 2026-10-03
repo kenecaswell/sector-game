@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOT_PROFILES, RESPAWN_DELAY_MS, SPAWN_SLOTS } from '../constants';
+import { BOT_PROFILES, BOT_START_DELAY_MS, RESPAWN_DELAY_MS, SPAWN_SLOTS } from '../constants';
 import { hexCenter, hexNeighbors } from '../hex';
 import { GameState, type Player } from '../state/GameState';
 import { DT, addPlayerAt, addStructure, ownFootprint, setTerrain, world } from '../test/world';
@@ -11,6 +11,7 @@ import { CollisionSystem } from './CollisionSystem';
 import { CombatSystem } from './CombatSystem';
 import { LobbySystem } from './LobbySystem';
 import { MovementSystem, type PlayerInput } from './MovementSystem';
+import { PhaseSystem } from './PhaseSystem';
 import { RespawnSystem } from './RespawnSystem';
 import { StructureSystem } from './StructureSystem';
 
@@ -220,6 +221,18 @@ describe('BotSystem — playing', () => {
             Array.from(bot.structureInventory).includes('farm') ||
                 Array.from(state.structures.values()).some((s) => s.type === 'farm')
         ).toBe(true);
+    });
+
+    it('waits BOT_START_DELAY_MS after the match starts before doing anything', () => {
+        const state = world();
+        const bot = botInMatch(state, 'hard', 20, 20, { materials: 1000 });
+        PhaseSystem.transitionTo(state, 'playing'); // stamps the start time on the fake clock
+        const start = { x: bot.x, y: bot.y };
+        play(state, BOT_START_DELAY_MS / 1000 - 0.2);
+        expect([bot.x, bot.y]).toEqual([start.x, start.y]);
+        expect(bot.structureInventory.length).toBeLessThanOrEqual(1); // fabricated nothing either
+        play(state, 1.5);
+        expect(Math.hypot(bot.x - start.x, bot.y - start.y)).toBeGreaterThan(5);
     });
 
     describe('shooting', () => {

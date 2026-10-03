@@ -71,13 +71,13 @@ describe('InventoryBar', () => {
         expect(booster).toBeDisabled();
         expect(booster).toHaveTextContent('2'); // level badge
         expect(screen.getByRole('button', { name: 'Armor 3' })).toBeDisabled();
-        const wings = screen.getByRole('button', { name: 'Switch to Wings' });
+        const wings = screen.getByRole('button', { name: 'Switch to Jetpack' });
         expect(wings).not.toHaveTextContent(/\d/); // one level, no badge
         await userEvent.click(wings);
         expect(onEquip).toHaveBeenCalledWith('wings');
     });
 
-    it("won't switch off Wings over a mountain or deep water, re-checking as you move", () => {
+    it("won't switch off the Jetpack over a mountain or deep water, re-checking as you move", () => {
         vi.useFakeTimers();
         let overMountain = true;
         show(

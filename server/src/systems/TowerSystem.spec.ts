@@ -27,7 +27,7 @@ function enemyAt(
 }
 
 describe('TowerSystem', () => {
-    it('shoots the Basic gun at an enemy in range, with no ammo and no gun needed', () => {
+    it('shoots the Blaster at an enemy in range, with no ammo and no gun needed', () => {
         const { state, from } = towerWorld();
         const foe = enemyAt(state, from, TOWER_RANGE - 50);
         expect(state.players.get('a')?.gun).toBe('');

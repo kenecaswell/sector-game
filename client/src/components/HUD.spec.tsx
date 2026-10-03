@@ -20,7 +20,7 @@ describe('HUD', () => {
             />
         );
         expect(screen.getByText('Health: 140 / 200')).toBeInTheDocument();
-        expect(screen.getByText('Gun: Big gun')).toBeInTheDocument();
+        expect(screen.getByText('Gun: Ion Cannon')).toBeInTheDocument();
         expect(screen.getByText('Ammo: 12')).toBeInTheDocument();
         expect(screen.getByText('Tiles: 7 / 500')).toBeInTheDocument();
         expect(screen.getByText('Materials: 55')).toBeInTheDocument();

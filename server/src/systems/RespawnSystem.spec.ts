@@ -22,7 +22,7 @@ import { UpgradeSystem } from './UpgradeSystem';
 const NOW = 1_000_000;
 const quiet = () => {};
 
-/** A player at hex (col, row) carrying a Big gun, 12 ammo, Booster 2 (equipped) and Armor 1. */
+/** A player at hex (col, row) carrying a Ion Cannon, 12 ammo, Booster 2 (equipped) and Armor 1. */
 function geared(state: GameState, id = 'a', col = 20, row = 20): Player {
     const player = addPlayerAt(state, id, col, row);
     Object.assign(player, {
@@ -79,7 +79,7 @@ describe('RespawnSystem — defeat', () => {
         expect(player.respawnAt).toBe(NOW + RESPAWN_DELAY_MS);
     });
 
-    it('falling over a mountain or deep water (with Wings), the backpack lands on the nearest walkable hex', () => {
+    it('falling over a mountain or deep water (with the Jetpack), the backpack lands on the nearest walkable hex', () => {
         const state = world();
         const lake: Array<[number, number]> = [];
         for (let col = 18; col <= 22; col++)
@@ -152,7 +152,7 @@ describe('RespawnSystem — taking a backpack back', () => {
             health: 200, // Armor's extra health comes back too
         });
         expect(messages).toEqual([
-            ['a', 'backpackCollected', { contents: 'Big gun, 12 ammo, Booster 2, Armor 1' }],
+            ['a', 'backpackCollected', { contents: 'Ion Cannon, 12 ammo, Booster 2, Armor 1' }],
         ]);
     });
 
@@ -161,7 +161,7 @@ describe('RespawnSystem — taking a backpack back', () => {
         const owner = geared(state);
         RespawnSystem.defeat(state, owner, NOW);
         RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
-        // Fabricated again meanwhile: a Basic gun, 30 ammo, Booster 3, and the Expander equipped.
+        // Fabricated again meanwhile: a Blaster, 30 ammo, Booster 3, and the Harvester equipped.
         Object.assign(owner, { gun: 'basic', ammo: 30, boosterLevel: 3, expanderLevel: 1 });
         owner.equippedUpgrade = 'expander';
         standOn(owner, 20, 20);

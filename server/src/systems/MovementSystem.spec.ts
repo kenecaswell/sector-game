@@ -72,10 +72,17 @@ describe('MovementSystem — speed', () => {
         const state = world();
         const player = addPlayer(state, 'r');
         player.boosterLevel = 3;
+        runMovement(state, inputs({ r: { x: 1, y: 0 } }), 30);
+        expect(onScreenSpeed(player)).toBeCloseTo(PLAYER_SPEED, 0);
+    });
+
+    it('an equipped Jetpack is as fast as Booster 1 (+33%)', () => {
+        const state = world();
+        const player = addPlayer(state, 'r');
         player.wingsLevel = 1;
         player.equippedUpgrade = 'wings';
         runMovement(state, inputs({ r: { x: 1, y: 0 } }), 30);
-        expect(onScreenSpeed(player)).toBeCloseTo(PLAYER_SPEED, 0);
+        expect(onScreenSpeed(player)).toBeCloseTo(PLAYER_SPEED * 1.33, 0);
     });
 
     it('drops stale input: a player whose client went silent coasts to a stop', () => {

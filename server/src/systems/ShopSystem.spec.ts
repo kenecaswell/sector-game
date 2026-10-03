@@ -15,7 +15,6 @@ describe('ShopSystem — prices', () => {
             'booster',
             'armor',
             'expander',
-            'wings',
             'farm',
             'fabricator',
             'guardTower',
@@ -23,6 +22,9 @@ describe('ShopSystem — prices', () => {
         ] as const) {
             expect(SHOP_ITEMS[id].cost, id).toBe(100);
         }
+        expect(SHOP_ITEMS.wings.cost).toBe(200); // the Jetpack (also Booster 1's speed)
+        expect(SHOP_ITEMS.wings.name).toBe('Jetpack');
+        expect(SHOP_ITEMS.expander.name).toBe('Harvester');
         expect(SHOP_ITEMS.ammo.cost).toBe(AMMO_PACK_SIZE * 2);
     });
 
@@ -91,7 +93,7 @@ describe('ShopSystem — weapons', () => {
         expect(p.materials).toBe(1000 - 2 * SHOP_ITEMS.ammo.cost);
     });
 
-    it('the basic gun arms you, once', () => {
+    it('the blaster arms you, once', () => {
         const p = buyer();
         expect(ShopSystem.purchase(p, 'basicGun')).toBe(true);
         expect(p.gun).toBe('basic');
@@ -99,7 +101,7 @@ describe('ShopSystem — weapons', () => {
         expect(p.materials).toBe(800);
     });
 
-    it("the big gun replaces the basic one, and you can't go back or buy it twice", () => {
+    it("the Ion Cannon replaces the Blaster, and you can't go back or buy it twice", () => {
         const p = buyer();
         ShopSystem.purchase(p, 'basicGun');
         expect(ShopSystem.purchase(p, 'bigGun')).toBe(true);
@@ -109,7 +111,7 @@ describe('ShopSystem — weapons', () => {
         expect(p.materials).toBe(400);
     });
 
-    it("the big gun doesn't need the basic one first", () => {
+    it("the Ion Cannon doesn't need the Blaster first", () => {
         const p = buyer();
         expect(ShopSystem.purchase(p, 'bigGun')).toBe(true);
         expect(p.gun).toBe('big');
@@ -128,7 +130,7 @@ describe('ShopSystem — upgrades', () => {
         expect(p.equippedUpgrade).toBe(''); // Armor never takes the slot
     });
 
-    it('Booster and Expander go up a level at a time, to 3, at 100 materials a level', () => {
+    it('Booster and Harvester go up a level at a time, to 3, at 100 materials a level', () => {
         const p = buyer();
         for (const level of [1, 2, 3]) {
             expect(ShopSystem.purchase(p, 'booster')).toBe(true);
@@ -141,11 +143,12 @@ describe('ShopSystem — upgrades', () => {
         expect(p.materials).toBe(1000 - 6 * 100);
     });
 
-    it('Wings has one level', () => {
+    it('Jetpack has one level', () => {
         const p = buyer();
         expect(ShopSystem.purchase(p, 'wings')).toBe(true);
         expect(ShopSystem.purchase(p, 'wings')).toBe(false);
         expect(p.wingsLevel).toBe(1);
+        expect(p.materials).toBe(1000 - 200);
     });
 
     it('the first slot upgrade you buy is equipped; later ones wait in the inventory', () => {

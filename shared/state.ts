@@ -26,7 +26,7 @@ export interface PlayerState {
     kills: number;
     score: number; // computed server-side: tiles + structure points (kills are worth 0) (materials excluded)
     materials: number;
-    claimRadius: number; // world px; above the base radius means the Expander is owned
+    claimRadius: number; // world px; above the base radius means the Harvester is owned
     connected: boolean;
     color: string; // the team's color
     teamId: string; // a TeamId; same team = allies

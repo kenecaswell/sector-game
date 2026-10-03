@@ -1,6 +1,7 @@
 import { Player, type GameState } from '../state/GameState';
 import {
     BOT_NAMES,
+    BOT_START_DELAY_MS,
     BOT_PROFILES,
     BOT_SPAWN_MERCY_RADIUS,
     HEX_SIZE,
@@ -523,6 +524,8 @@ function update(
     now: number = Date.now()
 ): void {
     if (state.phase.phase !== 'playing') return;
+    // A moment's pause at the start, so bots don't move before people's game screens are up.
+    if (now < state.playingStartedAt + BOT_START_DELAY_MS) return;
 
     state.botBrains.forEach((brain, id) => {
         const bot = state.players.get(id);

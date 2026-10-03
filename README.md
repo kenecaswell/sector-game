@@ -151,16 +151,16 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 | | Item | Cost | What it does |
 |---|---|---|---|
-| Weapons | Basic gun | 200 | Lets you shoot, 25 damage per hit, 1 shot a second |
-| | Big gun | 400 | 100 damage per hit; replaces the basic gun |
+| Weapons | Blaster | 200 | Lets you shoot, 25 damage per hit, 1 shot a second |
+| | Ion Cannon | 400 | Twice the Blaster: 50 damage per hit, 2 shots a second, double the range; replaces the Blaster |
 | | Ammo pack | 60 | 30 shots |
 | Upgrades | Booster 1–3 | 100 a level | 133 / 166 / 199% speed |
-| | Expander 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you); 90 / 80 / 70% speed |
+| | Harvester 1–3 | 100 a level | Claim 7 / 19 / 37 hexes at once (shown as a tinted circle around you); 90 / 80 / 70% speed |
 | | Armor 1–3 | 100 a level | 200 / 300 / 400 health; always on |
-| | Wings | 100 | Walk over mountains and deep water |
+| | Jetpack | 200 | Walk over mountains and deep water, and 133% speed (like Booster 1) |
 
 
-The Fabricator offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Expander and Wings, only the equipped one works (Armor always does); the first one you fabricate equips itself, and you switch in the **Inventory**, instantly and as often as you like. Hexes with an enemy's structure on them can't be claimed.
+The Fabricator offers your next level of each upgrade. Levels last the whole match. You have **one upgrade slot**: of Booster, Harvester and Jetpack, only the equipped one works (Armor always does); the first one you fabricate equips itself, and you switch in the **Inventory**, instantly and as often as you like. Hexes with an enemy's structure on them can't be claimed.
 
 **Structures** are bought for 100 materials in the **Build** menu (the **Build** button or `B`, which never needs a Fabricator) and then placed on hexes you own (`P`, or click their icon in the inventory bar). Each has its own health, points and job:
 
@@ -168,12 +168,12 @@ The Fabricator offers your next level of each upgrade. Levels last the whole mat
 |---|---|---|---|---|
 | Farm | 7 | 1000 | 100 (Farmer: 150) | Raises your **tile limit** by 500 |
 | Fabricator | 7 | 1000 | 100 | Opens the Fabricator (any more only add points) |
-| Guard Tower | 3 touching | 500 | 50 | Shoots enemy players nearby with the Basic gun, never runs out of ammo |
+| Guard Tower | 3 touching | 500 | 50 | Shoots enemy players nearby with the Blaster, never runs out of ammo |
 | Power plant | 7 | 1000 | 100 | Essential — its job is still to come |
 
 **Tile limit:** you can hold at most **500 hexes**, plus 500 for every farm you own. At the limit, walking over ground claims nothing (the HUD shows **Tiles: x / 500** and warns you), so build more farms. A 7-hex structure covers a hex and its 6 neighbors and a Guard Tower three hexes that touch; every one must be yours, on the map (not at the edge), and not under another structure. The structure is a slab inside its hexes; its top color shows its type (farm: pale green, fabricator: brown, Guard Tower: sandstone, power plant: pale blue) and its edge shows the owner's team. Enemies can't claim its hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
-**Score** (always shown at the top center): 1 point per hex you own and the points of each structure you own (table above); kills don't score. Materials aren't part of the score. Players have 100 health (200 with Armor); a basic-gun hit does 25 and a big-gun hit 100.
+**Score** (always shown at the top center): 1 point per hex you own and the points of each structure you own (table above); kills don't score. Materials aren't part of the score. Players have 100 health (200 with Armor); a Blaster hit does 25 and an Ion Cannon hit 50.
 
 The first time anyone claims a hex, the claimer earns 1 material to fabricate with (re-taking a hex pays nothing). **Drop pods** are scattered on the map, all looking the same: walk onto one to open it and find out what's inside (materials, ammo, a gun, an upgrade or a structure). The further behind you are on score, the better your odds. About 2:50 into the match, empty spots get new pods over the following 15 seconds. **Connection drops:** if your connection drops, the game reconnects by itself (immediately when you switch back to the tab). Your player stays on the map, dimmed, and your spot and hexes are held for 3 minutes. Everyone else sees a notice when you disconnect and when you return. Players can't walk off the screen: the camera always follows you, even at the map's edge.
 
@@ -221,7 +221,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 | `EADDRINUSE` on port 2567 | Another server instance is running. Stop it, or set a different `PORT` |
 | The match doesn't start | Every connected player has to press **Ready**. A newcomer joining (not ready yet) cancels the countdown |
 | Can't change team or character | You're ready — press **✓ Ready** again to un-ready, then change it |
-| Shooting does nothing | You need a gun: fabricate the Basic gun in the **Fabricator** or find one in a drop pod (nobody starts armed), plus ammo |
+| Shooting does nothing | You need a gun: fabricate the Blaster in the **Fabricator** or find one in a drop pod (nobody starts armed), plus ammo |
 | Results screen says "This room has closed." | Expected: finished rooms close after the results period. Choose **Play again** for a fresh lobby |
 | Server restarts mid-game and everyone is dropped | Expected: `npm run dev` restarts on any file change and rooms live in memory |
 

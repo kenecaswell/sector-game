@@ -28,7 +28,7 @@ describe('CollisionSystem — claiming', () => {
         expect(p.tilesOwned).toBe(1);
     });
 
-    it('with the Expander on a hex center: claims it and all 6 neighbors', () => {
+    it('with the Harvester on a hex center: claims it and all 6 neighbors', () => {
         const state = world();
         const p = addPlayerAt(state, 'a', 20, 20);
         p.claimRadius = EXPANDER_CLAIM_RADII[0];
@@ -36,7 +36,7 @@ describe('CollisionSystem — claiming', () => {
     });
 
     it.each([1, 2, 3])(
-        'Expander %i on a hex center claims EXPANDER_HEXES (7 / 19 / 37)',
+        'Harvester %i on a hex center claims EXPANDER_HEXES (7 / 19 / 37)',
         (level) => {
             const state = world();
             const p = addPlayerAt(state, 'a', 30, 30);
@@ -202,7 +202,7 @@ describe('CollisionSystem — the tile limit', () => {
         expect(CollisionSystem.claimTiles(state, p, [])).toBe(false);
     });
 
-    it('the Expander takes only as many as fit, the hex under you first', () => {
+    it('the Harvester takes only as many as fit, the hex under you first', () => {
         const state = world();
         const p = addPlayerAt(state, 'a', 20, 20);
         p.claimRadius = EXPANDER_CLAIM_RADII[0];

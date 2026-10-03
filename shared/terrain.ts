@@ -25,7 +25,7 @@ export function isShallowWater(
 }
 
 /**
- * Whether the hex at (col, row) stops a player on foot (without Wings): a mountain, or deep water.
+ * Whether the hex at (col, row) stops a player on foot (without the Jetpack): a mountain, or deep water.
  * `terrainAt` gives a hex's terrain, or undefined off the map.
  */
 export function blocksWalking(

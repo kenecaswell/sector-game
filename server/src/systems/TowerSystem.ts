@@ -17,7 +17,7 @@ function muzzle(tower: Structure): { x: number; y: number } {
 }
 
 /**
- * Every Guard Tower that's ready fires the Basic gun at the nearest enemy player within
+ * Every Guard Tower that's ready fires the Blaster at the nearest enemy player within
  * TOWER_RANGE that it has a clear line to (mountains stop shots). Towers never run out of ammo and
  * ignore structures; a kill counts for the tower's owner, even one who has left the match room's
  * players (no owner in `state.players`, no shot). Defeated players aren't targets, a frozen

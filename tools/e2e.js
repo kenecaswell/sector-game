@@ -278,8 +278,9 @@ async function lobby() {
 }
 
 async function lifecycle() {
-    section('Match lifecycle (phase times scaled to 5%)');
-    await withServer(0.05, async () => {
+    section('Match lifecycle (phase times scaled to 10%)');
+    // 10%, so the match (30 s) outlasts building a Fabricator and a farm on foot.
+    await withServer(0.1, async () => {
         const client = new Client(URL);
         const a = await join(client);
         const b = await join(client);
@@ -376,10 +377,11 @@ async function lifecycle() {
             !!built &&
                 built.type === 'farm' &&
                 built.tileX === spot.col &&
-                me(a).structureInventory.length === 0
+                me(a).structureInventory.length === 0,
+            `built ${built?.type}@${built?.tileX}, spot ${spot.col}, inventory ${me(a).structureInventory.length}, owns all ${ownsAll}`
         );
 
-        await waitFor(() => phaseOf(a) === 'results', 25000);
+        await waitFor(() => phaseOf(a) === 'results', 40000);
         await sleep(500);
         check('the match ends: playing -> results', phaseOf(a) === 'results');
         const standings = a.gameOver?.scores;
@@ -820,7 +822,7 @@ async function backpacks() {
             b.send('selectCharacter', { characterId: 'robot' }); // Booster 1, equipped
             await sleep(300);
             await startMatch(a, b);
-            await buildFabricator(a); // the shooter fabricates a Basic gun and ammo
+            await buildFabricator(a); // the shooter fabricates a Blaster and ammo
             a.send('purchase', { itemId: 'basicGun' });
             a.send('purchase', { itemId: 'ammo' });
             await waitFor(() => me(b).boosterLevel === 1 && me(a).gun === 'basic' && me(a).ammo > 0, 2000);
@@ -838,7 +840,7 @@ async function backpacks() {
             await waitFor(() => b.state.backpacks.size === 1, 2000);
             const pack = Array.from(b.state.backpacks.values())[0];
             check(
-                'four basic-gun hits: the robot is down (respawnAt set) and its Booster is gone',
+                'four blaster hits: the robot is down (respawnAt set) and its Booster is gone',
                 me(b).respawnAt > Date.now() && me(b).boosterLevel === 0 && me(a).kills === 1,
                 `respawnAt in ${me(b).respawnAt - Date.now()} ms`
             );

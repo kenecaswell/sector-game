@@ -14,6 +14,6 @@ export const PLAYER_RADIUS = 20; // world px: body size, projectile hit radius, 
 export const PROJECTILE_RADIUS = 6; // world px, for player collision (the same for every gun)
 
 // Claiming: a player claims the hex they're standing on plus every hex whose center is within
-// their claim radius. This is the radius without the Expander; the client shows a claim circle
+// their claim radius. This is the radius without the Harvester; the client shows a claim circle
 // once a player's radius is larger.
 export const BASE_CLAIM_RADIUS = HEX_SIZE;

@@ -103,7 +103,7 @@ describe('GameState schema', () => {
         });
     });
 
-    it('defaults shots to basic-gun damage and structures to full health', () => {
+    it('defaults shots to blaster damage and structures to full health', () => {
         expect(new Projectile().damage).toBe(GUN_DAMAGE.basic);
         expect(new Projectile().speed).toBe(600); // on-screen px/s (400 until 2026-09-27)
         const structure = new Structure();

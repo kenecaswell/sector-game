@@ -7,6 +7,7 @@
 import { PLAYER_RADIUS } from '../../shared/constants';
 import {
     GUN_FIRE_INTERVAL_MS,
+    GUN_SHOT_LIFETIME_MS,
     MAX_PLAYERS,
     type BotDifficulty,
     type ShopItemId,
@@ -30,9 +31,9 @@ export const MAP_EDGE_MARGIN = 20;
 // Damage per hit comes from the shooter's gun (GUN_DAMAGE in types/shared.ts: basic 50, big 100).
 // A defeated player is out of the match this long, then respawns at their spawn spot (RespawnSystem).
 export const RESPAWN_DELAY_MS = 5_000;
-export const BASE_MAX_HEALTH = 100; // two basic-gun hits kill; Armor adds ARMOR_HEALTH_PER_LEVEL a level
+export const BASE_MAX_HEALTH = 100; // two blaster hits kill; Armor adds ARMOR_HEALTH_PER_LEVEL a level
 export const PROJECTILE_SPEED = 600; // on-screen px/sec (was 400 until 2026-09-27); see projectileVelocity
-export const PROJECTILE_LIFETIME_MS = 2000; // with PROJECTILE_SPEED, a shot's range: 1,200 on-screen px
+export const PROJECTILE_LIFETIME_MS = GUN_SHOT_LIFETIME_MS.basic; // the Blaster's (and the tower's) shot: with PROJECTILE_SPEED, a range of 1,200 on-screen px; the Ion Cannon's is double
 // Mountains stop shots: each tick's travel is checked for mountain every this many world px, so a
 // fast shot can't skip over the thin tip of a mountain hex between ticks.
 export const SHOT_TERRAIN_STEP = 10;
@@ -49,10 +50,10 @@ export const COUNTDOWN_DURATION_MS = 3_000 * PHASE_TIME_SCALE;
 export const RESULTS_DURATION_MS = 60_000 * PHASE_TIME_SCALE;
 
 // Claiming uses the player's `claimRadius`: BASE_CLAIM_RADIUS (shared/constants.ts) normally, or one
-// of these with the Expander equipped, by level (see UpgradeSystem.applyUpgradeEffects). They're
+// of these with the Harvester equipped, by level (see UpgradeSystem.applyUpgradeEffects). They're
 // picked so a player standing mid-hex claims EXPANDER_HEXES (7 / 19 / 37: 1, 2 and 3 rings of
 // neighbors), whose centers sit up to 55 / 111 / 166 world px away. Level 1 is 4 x the player radius
-// (80 px), the Expander's radius before it had levels. The client draws a tinted circle of the
+// (80 px), the Harvester's radius before it had levels. The client draws a tinted circle of the
 // player's `claimRadius` whenever it's above the base.
 export const EXPANDER_CLAIM_RADII = [PLAYER_RADIUS * 4, 125, 180];
 
@@ -67,11 +68,11 @@ export const KILL_POINTS = 0;
 // hexes they can't claim.
 export const TILE_LIMIT_NOTICE_INTERVAL_MS = 8_000;
 
-// Guard Tower: it fires the Basic gun (damage and shot speed as for a player) at the nearest enemy
+// Guard Tower: it fires the Blaster (damage and shot speed as for a player) at the nearest enemy
 // player within range, as often as the interval allows, and never runs out of ammo.
-// The Basic gun was nerfed 2026-10-03 (50 -> 25 damage, 5 -> 1 shot a second); towers inherit it.
+// The Blaster was nerfed 2026-10-03 (50 -> 25 damage, 5 -> 1 shot a second); towers inherit it.
 export const TOWER_RANGE = 550; // world px, center of the tower to the target
-export const TOWER_FIRE_INTERVAL_MS = GUN_FIRE_INTERVAL_MS.basic; // the Basic gun's rate
+export const TOWER_FIRE_INTERVAL_MS = GUN_FIRE_INTERVAL_MS.basic; // the Blaster's rate
 
 // Materials from claiming: this many for a hex nobody has claimed before this match. Re-taking a hex
 // (from an enemy, or one released when its owner left) pays nothing. Pickups are the other source.
@@ -189,7 +190,7 @@ export interface BotProfile {
     keepBuilding: boolean; // once the list is done, it fabricates a Guard Tower whenever it has none to place
     buildSites: boolean; // holding a structure, it claims the hexes a spot needs (else it only places where it happens to own the footprint)
     // Which upgrade it keeps in its slot: 'never' switches (keeps whatever equipped itself first),
-    // 'expander' equips the Expander once it has one, 'smart' also switches to the Booster to chase.
+    // 'expander' equips the Harvester once it has one, 'smart' also switches to the Booster to chase.
     equip: 'never' | 'expander' | 'smart';
 }
 
@@ -298,6 +299,10 @@ export const BOT_PROFILES: Record<BotDifficulty, BotProfile> = {
 // Bots leave an enemy alone (don't chase or shoot them) while they're within this many hexes of
 // their own spawn hex, so a bot can't camp a spawn point. People get no such protection from people.
 export const BOT_SPAWN_MERCY_RADIUS = SPAWN_CLEAR_RADIUS;
+
+// Bots wait this long after the match starts before they do anything, so they don't get a head
+// start on people whose game screen is still appearing.
+export const BOT_START_DELAY_MS = 2_000 * PHASE_TIME_SCALE;
 
 // Bots are named "Bot <name>", the first of these no player in the room has (then "Bot 11", ...).
 export const BOT_NAMES = [

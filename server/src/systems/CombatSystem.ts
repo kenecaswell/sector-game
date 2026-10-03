@@ -8,7 +8,7 @@ import { isMountainAtPoint } from '../terrain';
 import { mapPixelSize } from '../hex';
 import { areAllies } from '../teams';
 import type { Broadcast } from './Broadcast';
-import { GUN_DAMAGE, isGunId, type PlayerHitEvent } from '../types/shared';
+import { GUN_DAMAGE, GUN_SHOT_LIFETIME_MS, isGunId, type PlayerHitEvent } from '../types/shared';
 
 /**
  * `player` fires a shot heading `angle` (world radians), if it's the match and they have a gun and
@@ -23,13 +23,15 @@ function fire(state: GameState, player: Player, angle: number): boolean {
     if (player.gun === '' || player.ammo <= 0 || !Number.isFinite(angle)) return false;
 
     player.ammo--;
+    const gun = isGunId(player.gun) ? player.gun : 'basic';
     spawnShot(
         state,
         player.id,
         player.x,
         player.y,
         angle,
-        GUN_DAMAGE[isGunId(player.gun) ? player.gun : 'basic']
+        GUN_DAMAGE[gun],
+        GUN_SHOT_LIFETIME_MS[gun]
     );
     return true;
 }
@@ -45,7 +47,8 @@ function spawnShot(
     x: number,
     y: number,
     angle: number,
-    damage: number
+    damage: number,
+    lifetimeMs = PROJECTILE_LIFETIME_MS
 ): void {
     const projectile = new Projectile();
     projectile.id = `${ownerId}-${state.shotsFired++}`;
@@ -55,6 +58,7 @@ function spawnShot(
     projectile.angle = angle;
     projectile.spawnedAt = Date.now();
     projectile.damage = damage;
+    projectile.lifetimeMs = lifetimeMs;
     state.projectiles.set(projectile.id, projectile);
 }
 
@@ -125,7 +129,7 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
         });
 
         const outOfBounds = proj.x < 0 || proj.y < 0 || proj.x > width || proj.y > height;
-        const expired = now - proj.spawnedAt > PROJECTILE_LIFETIME_MS;
+        const expired = now - proj.spawnedAt > proj.lifetimeMs;
         if (outOfBounds || expired) toRemove.add(id);
     });
 

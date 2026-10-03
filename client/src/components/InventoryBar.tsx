@@ -59,7 +59,7 @@ interface InventoryBarProps {
     onBuild: (type: StructureType) => void;
     /** An upgrade icon was clicked: switch to it. */
     onEquip: (upgradeId: UpgradeId) => void;
-    /** True while the player is over a mountain or deep water (Wings can't come off there). */
+    /** True while the player is over a mountain or deep water (Jetpack can't come off there). */
     overSolidTerrain: () => boolean;
 }
 
@@ -76,7 +76,7 @@ export function InventoryBar({
     onEquip,
     overSolidTerrain,
 }: InventoryBarProps) {
-    useRerenderEvery(WINGS_CHECK_MS); // keeps the Wings-over-terrain check current
+    useRerenderEvery(WINGS_CHECK_MS); // keeps the Jetpack-over-terrain check current
     if (!player) return null;
 
     const counts = new Map<StructureType, number>();
@@ -145,7 +145,7 @@ export function InventoryBar({
                 let title = `Switch to ${label}: ${effect}`;
                 if (equipped) title = `${label} (in use): ${effect}`;
                 else if (wingsStuck)
-                    title = "You can't take Wings off over a mountain or deep water.";
+                    title = "You can't take the Jetpack off over a mountain or deep water.";
                 return (
                     <Slot
                         key={id}

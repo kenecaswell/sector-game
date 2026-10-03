@@ -10,7 +10,12 @@ import {
 import { hexCenter } from '../hex';
 import { spawnPoint } from '../terrain';
 import { DT, addPlayer, addShot, addStructure, shootAt, world } from '../test/world';
-import { GUN_DAMAGE, type PlayerHitEvent } from '../types/shared';
+import {
+    GUN_DAMAGE,
+    GUN_FIRE_INTERVAL_MS,
+    GUN_SHOT_LIFETIME_MS,
+    type PlayerHitEvent,
+} from '../types/shared';
 import { UpgradeSystem } from './UpgradeSystem';
 import { CombatSystem } from './CombatSystem';
 import { RespawnSystem } from './RespawnSystem';
@@ -18,7 +23,7 @@ import { RespawnSystem } from './RespawnSystem';
 const quiet = () => {};
 
 describe('CombatSystem — hits and kills', () => {
-    it('a basic-gun hit does 25, and four kill: +1 kill, the target is down, then respawns at its spawn', () => {
+    it('a blaster hit does 25, and four kill: +1 kill, the target is down, then respawns at its spawn', () => {
         const state = world();
         const shooter = addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 'b', 1500, 1500);
@@ -65,16 +70,19 @@ describe('CombatSystem — hits and kills', () => {
         expect(events).toEqual([{ targetId: 'b', damage: GUN_DAMAGE.big, shooterId: 'a' }]);
     });
 
-    it('a big-gun hit kills an unarmored player; an armored one survives with 100', () => {
+    it('two Ion Cannon hits kill an unarmored player; an armored one is left with 100', () => {
         const state = world();
         const shooter = addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 't');
+        shootAt(state, 'a', target, GUN_DAMAGE.big);
+        expect(target.health).toBe(100 - GUN_DAMAGE.big);
         shootAt(state, 'a', target, GUN_DAMAGE.big);
         expect(shooter.kills).toBe(1);
         target.respawnAt = 0; // back in play
         target.armorLevel = 1;
         UpgradeSystem.applyUpgradeEffects(target);
         target.health = target.maxHealth;
+        shootAt(state, 'a', target, GUN_DAMAGE.big);
         shootAt(state, 'a', target, GUN_DAMAGE.big);
         expect(target.health).toBe(100);
         expect(shooter.kills).toBe(1);
@@ -146,6 +154,33 @@ describe('CombatSystem — structures', () => {
         CombatSystem.update(state, DT, broadcast);
         expect(state.structures.has(farm.id)).toBe(false);
         expect(destroyed).toEqual([farm.id]);
+    });
+});
+
+describe('CombatSystem — the two guns', () => {
+    it('the Ion Cannon is double the Blaster: damage, fire rate and range', () => {
+        expect(GUN_DAMAGE.big).toBe(2 * GUN_DAMAGE.basic);
+        expect(GUN_FIRE_INTERVAL_MS.big).toBe(GUN_FIRE_INTERVAL_MS.basic / 2);
+        expect(GUN_SHOT_LIFETIME_MS.big).toBe(2 * GUN_SHOT_LIFETIME_MS.basic);
+    });
+
+    it("a shot lives as long as its gun's: the Ion Cannon's twice the Blaster's", () => {
+        const state = world();
+        const shooter = addPlayer(state, 'a', 100, 100);
+        shooter.ammo = 2;
+        shooter.gun = 'basic';
+        CombatSystem.fire(state, shooter, 0);
+        shooter.gun = 'big';
+        CombatSystem.fire(state, shooter, 0);
+        const [blaster, cannon] = Array.from(state.projectiles.values());
+        expect(blaster.lifetimeMs).toBe(GUN_SHOT_LIFETIME_MS.basic);
+        expect(cannon.lifetimeMs).toBe(GUN_SHOT_LIFETIME_MS.big);
+        expect([blaster.damage, cannon.damage]).toEqual([GUN_DAMAGE.basic, GUN_DAMAGE.big]);
+        // After 3 s the Blaster's shot has gone and the Ion Cannon's is still flying.
+        blaster.spawnedAt = cannon.spawnedAt = Date.now() - 3000;
+        CombatSystem.update(state, DT, quiet);
+        expect(state.projectiles.has(blaster.id)).toBe(false);
+        expect(state.projectiles.has(cannon.id)).toBe(true);
     });
 });
 
