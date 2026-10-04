@@ -105,6 +105,7 @@ export interface GameSettingsState {
     teams: boolean;
     pods: boolean;
     matchMinutes: number;
+    guns: boolean; // players can have guns and ammo (chosen when the game is created)
 }
 
 export interface GamePhaseStateShape {

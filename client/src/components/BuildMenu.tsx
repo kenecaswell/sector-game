@@ -24,6 +24,8 @@ export interface BuildMenuProps {
     onClose: () => void;
     /** How many Guard Towers a player may have in this game (by map size); omit for no limit. */
     towerLimit?: number;
+    /** Whether the game has guns (the game's `guns` setting); without them the Upgrades tab has none. Default true. */
+    guns?: boolean;
 }
 
 /**
@@ -32,7 +34,8 @@ export interface BuildMenuProps {
  * Fabricator. **Upgrades**: fabricate guns, ammo and upgrades (the Fabricator popup until
  * 2026-10-03); grayed out until you own a Fabricator. GameScreen opens it from the Build button or
  * `B` (Structures) and `F` / `U` (Upgrades) during the match. Clicking the dimmed backdrop, the close
- * button, or pressing Esc closes it.
+ * button, or pressing Esc closes it. With `guns` false (the game's `guns` setting off) guns and ammo
+ * aren't offered.
  */
 export function BuildMenu({
     player,
@@ -43,6 +46,7 @@ export function BuildMenu({
     onPlace,
     onClose,
     towerLimit,
+    guns = true,
 }: BuildMenuProps) {
     const hasFabricator = player?.hasFabricator ?? false;
     const activeTab: BuildMenuTab = tab === 'upgrades' && hasFabricator ? 'upgrades' : 'structures';
@@ -171,13 +175,13 @@ export function BuildMenu({
                 </div>
 
                 {activeTab === 'upgrades' ? (
-                    <UpgradesPanel player={player} onFabricate={onFabricate} />
+                    <UpgradesPanel player={player} onFabricate={onFabricate} guns={guns} />
                 ) : (
                     <div role="tabpanel" aria-label="Structures">
                         <div style={{ margin: '10px 0', opacity: 0.8 }}>
                             Buy a structure here, then place it on ground that is all yours.
                             {!hasFabricator &&
-                                ' Build a Fabricator to unlock the Upgrades tab (guns, ammo and upgrades).'}
+                                ` Build a Fabricator to unlock the Upgrades tab (${guns ? 'guns, ammo and upgrades' : 'upgrades'}).`}
                         </div>
 
                         {STRUCTURE_TYPES.map((type) => {

@@ -45,6 +45,23 @@ describe("UpgradesPanel (the Build menu's Upgrades tab)", () => {
         expect(screen.getByText('Blaster', { selector: 'span' })).toBeInTheDocument();
     });
 
+    it('without guns: no Weapons, gun or ammo, just the upgrades', () => {
+        render(
+            <UpgradesPanel
+                player={makePlayer({ materials: 500 })}
+                onFabricate={vi.fn()}
+                guns={false}
+            />
+        );
+        expect(screen.queryByRole('region', { name: 'Weapons' })).not.toBeInTheDocument();
+        for (const name of ['Blaster', 'Ion Cannon', 'Ammo pack']) {
+            expect(screen.queryByRole('group', { name })).not.toBeInTheDocument();
+        }
+        expect(screen.queryByText(/Ammo:/)).not.toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Upgrades' })).toBeInTheDocument();
+        expect(buttonFor('Booster')).toBeEnabled();
+    });
+
     it('only enables what you can afford', () => {
         renderMenu(makePlayer({ materials: 100 }));
         expect(buttonFor('Ammo pack')).toBeEnabled(); // 60

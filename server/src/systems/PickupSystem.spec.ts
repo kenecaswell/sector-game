@@ -83,6 +83,21 @@ describe('PickupSystem', () => {
         expect(last.structureInventory).toHaveLength(1);
     });
 
+    it('with guns disabled, a pod never holds a gun or ammo', () => {
+        // The same 0.95 roll that gives the leader an Ion Cannon when guns are on.
+        const state = match();
+        state.settings.guns = false;
+        const leader = addPlayerAt(state, 'lead', 10, 10);
+        leader.score = 100;
+        addPlayerAt(state, 'other', 30, 30).score = 0;
+        addPod(state, 10, 10);
+        const events = run(state, () => 0.95);
+        expect(events).toHaveLength(1);
+        expect(events[0].itemId).not.toBe('bigGun');
+        expect(leader.gun).toBe('');
+        expect(leader.ammo).toBe(0);
+    });
+
     it('never hands out a Guard Tower to a player who is at the limit', () => {
         // The roll 0.95 picks "structure" in tier 4's row, then 0.6 picks the third of the four types.
         const rolls = () => {

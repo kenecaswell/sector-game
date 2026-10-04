@@ -110,6 +110,28 @@ describe('rollPickup', () => {
     });
 });
 
+describe('rollPickup with guns disabled', () => {
+    it('never rolls ammo or a gun, and the rest of the row shares their chance', () => {
+        for (let tier = 0; tier < 4; tier++) {
+            for (let step = 0; step < 200; step++) {
+                const roll = rollPickup(tier, fresh(), () => step / 200, undefined, false);
+                expect(roll.kind, `tier ${tier} roll ${step}`).not.toBe('ammo');
+                expect(['basicGun', 'bigGun']).not.toContain(roll.itemId);
+            }
+        }
+    });
+
+    it('still rolls guns and ammo when enabled', () => {
+        const kinds = new Set<string>();
+        for (let step = 0; step < 200; step++) {
+            const roll = rollPickup(3, fresh(), () => step / 200);
+            kinds.add(roll.kind === 'ammo' ? 'ammo' : roll.itemId);
+        }
+        expect(kinds).toContain('ammo');
+        expect(kinds).toContain('basicGun');
+    });
+});
+
 describe('structures from a pod', () => {
     it('are any of the four by default, and never a type left out of the list given', () => {
         const random = seededRandom(5);

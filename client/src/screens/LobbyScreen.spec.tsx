@@ -118,6 +118,27 @@ describe('LobbyScreen — team, character and ready', () => {
         expect(screen.getByText('Armor 1')).toBeInTheDocument(); // the Explorer's kit, since 2026-09-29
     });
 
+    it("leaves Gun and Ammo off the character's kit unless the game has guns", () => {
+        const game = (guns: boolean): GameSettingsState => ({
+            name: 'G',
+            mapSize: 'small',
+            teams: false,
+            pods: true,
+            matchMinutes: 5,
+            guns,
+        });
+        connection.settings = game(false);
+        const { unmount } = showLobby({ character: 'explorer' });
+        expect(screen.getByText('Materials:')).toBeInTheDocument();
+        expect(screen.queryByText('Gun:')).not.toBeInTheDocument();
+        expect(screen.queryByText('Ammo:')).not.toBeInTheDocument();
+        unmount();
+        connection.settings = game(true);
+        showLobby({ character: 'explorer' });
+        expect(screen.getByText('Gun:')).toBeInTheDocument();
+        expect(screen.getByText('Ammo:')).toBeInTheDocument();
+    });
+
     it('Ready toggles, and locks team and character while you are ready', async () => {
         const { unmount } = showLobby();
         await userEvent.click(screen.getByRole('button', { name: 'Ready' }));
@@ -169,6 +190,7 @@ describe('LobbyScreen — game settings', () => {
         teams,
         pods: true,
         matchMinutes: 10,
+        guns: false,
     });
 
     it("shows the game's name, code and settings", () => {
@@ -176,7 +198,9 @@ describe('LobbyScreen — game settings', () => {
         showLobby();
         expect(screen.getByText("Ada's game")).toBeInTheDocument();
         expect(screen.getByText('K7QF')).toBeInTheDocument();
-        expect(screen.getByText('Big map · Teams on · Drop pods · 10 min')).toBeInTheDocument();
+        expect(
+            screen.getByText('Big map · Teams on · Drop pods · No guns · 10 min')
+        ).toBeInTheDocument();
         expect(screen.getByRole('combobox', { name: 'Team' })).toBeInTheDocument();
     });
 
@@ -218,6 +242,7 @@ describe('LobbyScreen — bots', () => {
             teams: false,
             pods: true,
             matchMinutes: 5,
+            guns: false,
         };
     };
     const bot = (overrides: Partial<PlayerState> = {}) =>

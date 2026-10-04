@@ -169,6 +169,7 @@ export class GameSettingsSchema extends Schema implements GameSettingsState {
     @type('boolean') teams: boolean = false;
     @type('boolean') pods: boolean = true;
     @type('uint8') matchMinutes: number = 5;
+    @type('boolean') guns: boolean = false;
 }
 
 export class GamePhaseState extends Schema implements GamePhaseStateShape {

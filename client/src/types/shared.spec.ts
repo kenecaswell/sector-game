@@ -164,6 +164,7 @@ describe('normalizeGameSettings', () => {
                 mapSize: 'large',
                 teams: true,
                 pods: false,
+                guns: true,
                 matchMinutes: 10,
             })
         ).toEqual({
@@ -171,6 +172,7 @@ describe('normalizeGameSettings', () => {
             mapSize: 'large',
             teams: true,
             pods: false,
+            guns: true,
             matchMinutes: 10,
         });
     });
@@ -182,10 +184,12 @@ describe('normalizeGameSettings', () => {
                 mapSize: 'huge',
                 teams: 'yes',
                 pods: 1,
+                guns: 'on',
                 matchMinutes: 8,
                 name: 5,
             })
         ).toEqual(DEFAULT_GAME_SETTINGS);
+        expect(DEFAULT_GAME_SETTINGS.guns).toBe(false); // guns are opt-in
         expect(normalizeGameSettings({ name: 'x'.repeat(50) }).name).toHaveLength(30);
         expect(normalizeGameSettings({ matchMinutes: 7 }).matchMinutes).toBe(7);
     });

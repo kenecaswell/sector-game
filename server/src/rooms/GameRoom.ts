@@ -286,6 +286,7 @@ export class GameRoom extends Room<GameState> {
             mapSize: settings.mapSize as MapSizeId,
             teams: settings.teams,
             pods: settings.pods,
+            guns: settings.guns,
             matchMinutes: settings.matchMinutes,
             phase: phase.phase,
             bots: BotSystem.botCount(this.state),
@@ -375,7 +376,8 @@ export class GameRoom extends Room<GameState> {
             player,
             msg?.itemId,
             StructureSystem.hasFabricator(this.state, player.id),
-            (type) => StructureSystem.canHold(this.state, player, type)
+            (type) => StructureSystem.canHold(this.state, player, type),
+            this.state.settings.guns
         );
     }
 }

@@ -10,7 +10,7 @@ function show(busy = false, error: string | null = null) {
 }
 
 describe('CreateGameScreen', () => {
-    it('starts from the defaults: Small map, teams off, drop pods on, 5 minutes', async () => {
+    it('starts from the defaults: Small map, teams off, drop pods on, guns off, 5 minutes', async () => {
         const { onCreate } = show();
         expect(screen.getByRole('textbox', { name: 'Game name' })).toHaveValue("Ada's game");
         expect(screen.getByRole('radio', { name: /Small/ })).toBeChecked();
@@ -20,6 +20,7 @@ describe('CreateGameScreen', () => {
             mapSize: 'small',
             teams: false,
             pods: true,
+            guns: false,
             matchMinutes: 5,
         });
     });
@@ -30,12 +31,9 @@ describe('CreateGameScreen', () => {
         await userEvent.clear(name);
         await userEvent.type(name, '  Friday night  ');
         await userEvent.click(screen.getByRole('radio', { name: /Large/ }));
-        await userEvent.click(
-            screen.getByRole('group', { name: 'Teams' }).querySelectorAll('input')[1]
-        );
-        await userEvent.click(
-            screen.getByRole('group', { name: 'Drop pods' }).querySelectorAll('input')[1]
-        );
+        await userEvent.click(screen.getByRole('switch', { name: 'Teams' }));
+        await userEvent.click(screen.getByRole('switch', { name: 'Drop pods' }));
+        await userEvent.click(screen.getByRole('switch', { name: 'Guns' }));
         await userEvent.click(screen.getByRole('radio', { name: '10 min' }));
         await userEvent.click(screen.getByRole('button', { name: 'Create game' }));
         expect(onCreate).toHaveBeenCalledWith({
@@ -43,8 +41,78 @@ describe('CreateGameScreen', () => {
             mapSize: 'large',
             teams: true,
             pods: false,
+            guns: true,
             matchMinutes: 10,
         });
+    });
+
+    it('shows Map size, then Game length, then the Teams, Drop pods and Guns switches', () => {
+        show();
+        const text = document.body.textContent ?? '';
+        const order = ['Map size', 'Game length', 'Teams', 'Drop pods', 'Guns'].map((label) =>
+            text.indexOf(label)
+        );
+        expect(order.every((at) => at >= 0)).toBe(true);
+        expect(order).toEqual([...order].sort((a, b) => a - b));
+    });
+
+    it('Teams, Drop pods and Guns are switches (pods on, the others off) that flip when clicked', async () => {
+        show();
+        const [teams, pods, guns] = ['Teams', 'Drop pods', 'Guns'].map((name) =>
+            screen.getByRole('switch', { name })
+        );
+        expect(teams).toHaveAttribute('aria-checked', 'false');
+        expect(pods).toHaveAttribute('aria-checked', 'true');
+        expect(guns).toHaveAttribute('aria-checked', 'false');
+        await userEvent.click(teams);
+        await userEvent.click(pods);
+        expect(teams).toHaveAttribute('aria-checked', 'true');
+        expect(pods).toHaveAttribute('aria-checked', 'false');
+        expect(screen.queryByRole('radio', { name: 'On' })).not.toBeInTheDocument();
+    });
+
+    it('explains each switch in a [?] tooltip, not in the page text', async () => {
+        show();
+        expect(screen.queryByText(/pick a team color/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        const help = screen.getByRole('button', { name: 'About Teams' });
+        expect(help).toHaveTextContent('?');
+        await userEvent.click(help);
+        expect(screen.getByRole('tooltip')).toHaveTextContent(/pick a team color/);
+        expect(help).toHaveAccessibleDescription(/pick a team color/);
+        await userEvent.click(help); // unpins; the mouse is still over it, so it shows until it leaves
+        await userEvent.unhover(help);
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    });
+
+    it('shows the help while the mouse is over [?], and Esc or clicking away closes it', async () => {
+        show();
+        const help = screen.getByRole('button', { name: 'About Guns' });
+        await userEvent.hover(help);
+        expect(screen.getByRole('tooltip')).toHaveTextContent(
+            /Only Guard Towers shoot|only Guard Towers shoot/
+        );
+        await userEvent.unhover(help);
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        await userEvent.click(help);
+        expect(screen.getByRole('tooltip')).toBeInTheDocument();
+        await userEvent.keyboard('{Escape}');
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        await userEvent.click(help);
+        await userEvent.unhover(help);
+        expect(screen.getByRole('tooltip')).toBeInTheDocument(); // pinned: leaving doesn't close it
+        await userEvent.click(screen.getByRole('textbox', { name: 'Game name' })); // blur closes it
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    });
+
+    it('opening help does not flip the switch or submit the form', async () => {
+        const { onCreate } = show();
+        await userEvent.click(screen.getByRole('button', { name: 'About Drop pods' }));
+        expect(screen.getByRole('switch', { name: 'Drop pods' })).toHaveAttribute(
+            'aria-checked',
+            'true'
+        );
+        expect(onCreate).not.toHaveBeenCalled();
     });
 
     it('offers 5, 7 and 10 minute games', () => {

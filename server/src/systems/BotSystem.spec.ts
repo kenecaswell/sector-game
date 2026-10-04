@@ -180,6 +180,16 @@ describe('BotSystem — playing', () => {
         expect(Array.from(state.structures.values()).some((s) => s.ownerId === bot.id)).toBe(true);
     });
 
+    it('with guns disabled, a Medium bot with a Fabricator skips the gun and buys armor', () => {
+        const state = world('playing', { guns: false });
+        const bot = botInMatch(state, 'medium', 20, 20, { materials: SHOP_ITEMS.basicGun.cost });
+        addStructure(state, bot.id, 40, 40, 'fabricator');
+        play(state, 0.1);
+        expect(bot.gun).toBe('');
+        expect(bot.ammo).toBe(0);
+        expect(bot.armorLevel).toBe(1);
+    });
+
     it('fabricates from its list: a Medium bot with a Fabricator makes a gun first', () => {
         const state = world();
         const cost = SHOP_ITEMS.basicGun.cost;

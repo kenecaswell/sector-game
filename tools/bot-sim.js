@@ -39,6 +39,7 @@ const minutes = Number(process.argv[3] || 5);
 const seed = Number(process.argv[4] || 1);
 const size = MAP_SIZES[process.argv[5] || 'small'];
 const teams = process.argv[6] === '1';
+const guns = process.argv[7] === '1'; // guns are off by default, like a new game
 const random = seededRandom(seed);
 Math.random = seededRandom(seed + 1); // anything that doesn't take `random` (pod rolls, ...)
 
@@ -47,6 +48,7 @@ const state = new GameState();
 state.settings.matchMinutes = minutes;
 state.settings.teams = teams;
 // The same server flags GameRoom copies into the state.
+state.settings.guns = guns;
 state.dropBackpacks = BACKPACKS_ENABLED;
 state.respawnWhereDied = RESPAWN_WHERE_DIED_ENABLED;
 state.mapWidth = size.cols;

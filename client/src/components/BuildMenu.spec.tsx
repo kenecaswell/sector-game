@@ -181,6 +181,16 @@ describe('BuildMenu', () => {
             expect(onFabricate).toHaveBeenCalledWith('booster');
         });
 
+        it('without guns the Upgrades tab has no Weapons, and the Structures hint says so', () => {
+            const { unmount } = renderMenu(withFabricator(), { tab: 'upgrades', guns: false });
+            expect(screen.queryByRole('group', { name: 'Blaster' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('group', { name: 'Ammo pack' })).not.toBeInTheDocument();
+            expect(screen.getByRole('group', { name: 'Booster' })).toBeInTheDocument();
+            unmount();
+            renderMenu(makePlayer({ hasFabricator: false }), { guns: false });
+            expect(screen.getByText(/Upgrades tab \(upgrades\)/)).toBeInTheDocument();
+        });
+
         it('keeps materials and the tile limit on show on both tabs', () => {
             renderMenu(withFabricator({ materials: 42, tilesOwned: 7, tileCap: 500 }), {
                 tab: 'upgrades',

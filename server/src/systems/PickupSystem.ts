@@ -114,7 +114,8 @@ function update(
                 scoreTier(scores, player.score),
                 player,
                 random,
-                structures
+                structures,
+                state.settings.guns
             );
             apply(player, contents);
             state.pickups.delete(id);

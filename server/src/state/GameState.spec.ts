@@ -49,6 +49,15 @@ describe('GameState schema', () => {
         expect(client.respawnWhereDied).toBe(true);
     });
 
+    it('syncs the guns flag in the game settings (off until GameRoom turns it on)', () => {
+        const state = new GameState();
+        expect(state.settings.guns).toBe(false);
+        state.settings.guns = true;
+        const client = new GameState();
+        new Decoder(client).decode(new Encoder(state).encodeAll());
+        expect(client.settings.guns).toBe(true);
+    });
+
     it("syncs each tile's terrain (sent once with the full state)", () => {
         const state = new GameState();
         for (const terrain of [TERRAIN.ground, TERRAIN.mountain, TERRAIN.water]) {

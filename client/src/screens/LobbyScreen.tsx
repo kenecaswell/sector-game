@@ -341,7 +341,7 @@ export function LobbyScreen() {
                     onAdd={addBot}
                 />
 
-                {me && <CharacterCard character={characterOf(me)} />}
+                {me && <CharacterCard character={characterOf(me)} guns={settings?.guns ?? false} />}
 
                 <p style={{ margin: '16px 0 0', fontSize: 13, opacity: 0.65, lineHeight: 1.5 }}>
                     {teams
@@ -363,6 +363,7 @@ function settingsLine(settings: GameSettingsState): string {
         `${size} map`,
         settings.teams ? 'Teams on' : 'Teams off',
         settings.pods ? 'Drop pods' : 'No drop pods',
+        settings.guns ? 'Guns' : 'No guns',
         `${settings.matchMinutes} min`,
     ].join(' · ');
 }
@@ -732,11 +733,15 @@ function OtherRow({ player, teams }: { player: PlayerState; teams: boolean }) {
 }
 
 /** What your chosen character starts the match with. */
-function CharacterCard({ character }: { character: Character }) {
+function CharacterCard({ character, guns }: { character: Character; guns: boolean }) {
     const list = (items: string[]) => (items.length > 0 ? items.join(', ') : 'None');
     const stats: Array<[string, string]> = [
-        ['Gun', character.gun ? GUN_NAMES[character.gun] : 'None'],
-        ['Ammo', String(character.ammo)],
+        ...(guns
+            ? ([
+                  ['Gun', character.gun ? GUN_NAMES[character.gun] : 'None'],
+                  ['Ammo', String(character.ammo)],
+              ] as Array<[string, string]>)
+            : []),
         ['Materials', String(character.materials)],
         ['Structures', list(character.structures.map((type) => STRUCTURE_NAMES[type]))],
         [

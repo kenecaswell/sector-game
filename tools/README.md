@@ -16,14 +16,14 @@ cd server && npm run build
 
 | Script | What it does | Needs a server? | Time |
 |---|---|---|---|
-| `e2e.js` | Real `colyseus.js` clients against its own throwaway server (port 2598, phase times scaled down): the lobby (names, ready-up, countdown and its cancelling), match lifecycle with character kits, the Fabricator gate (guns need a built Fabricator), guns and the structure inventory, room closing, shop over the wire, mid-match joins, disconnect/reconnect notices, the game list, bots (add/change/remove, a full room, playing), defeat and private backpacks, Guard Towers, map edge | It starts its own | ~1.5 min |
+| `e2e.js` | Real `colyseus.js` clients against its own throwaway server (port 2598, phase times scaled down): the lobby (names, ready-up, countdown and its cancelling), match lifecycle with character kits, the Fabricator gate (guns need a built Fabricator), guns and the structure inventory, room closing, shop over the wire, the guns game setting (off by default, on when asked, shown in the game list), mid-match joins, disconnect/reconnect notices, the game list, bots (add/change/remove, a full room, playing), defeat and private backpacks, Guard Towers, map edge | It starts its own | ~1.5 min |
 | `bot-sim.js` | Headless bot-vs-bot matches (the in-game bots) on a virtual clock, printing each bot's score, hexes, kills, structures and kit, and the tick cost — for tuning `BOT_PROFILES`; not a pass/fail check | No | ~2 s per 5-minute match |
 | `bots.js` | Load bots (wandering WebSocket clients, not the in-game bots) for profiling a browser client; not a pass/fail check | Yes (yours) | as long as you run it |
 | `map-preview.js` | Renders generated maps to PNG, whole map top-down, one image per seed — for judging terrain generation; not a pass/fail check | No | ~1 s per map |
 
 ```bash
 node tools/e2e.js
-node tools/bot-sim.js easy,medium,hard 5 7   # difficulties, minutes, map seed [, mapSize, teams 0/1]
+node tools/bot-sim.js easy,medium,hard 5 7   # difficulties, minutes, map seed [, mapSize, teams 0/1, guns 0/1]
 node tools/bots.js 4 120            # then profile the browser; see ARCHITECTURE.md, Performance pass
 node tools/map-preview.js           # seeds 1-6 into map-previews/ (git-ignored)
 node tools/map-preview.js 7 42 --out /tmp/maps   # chosen seeds, chosen folder
