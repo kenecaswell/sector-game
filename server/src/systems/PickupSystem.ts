@@ -7,11 +7,13 @@ import {
     pickupGrid,
     rollPickup,
     scoreTier,
+    STRUCTURE_ITEMS,
     type PickupContents,
     type PodSpot,
 } from '../pickups';
 import { isShopItemId, type PickupCollectedEvent } from '../types/shared';
 import { ShopSystem } from './ShopSystem';
+import { StructureSystem } from './StructureSystem';
 import { PhaseSystem } from './PhaseSystem';
 import type { Broadcast } from './Broadcast';
 
@@ -104,7 +106,16 @@ function update(
         const { col, row } = pixelToHex(player.x, player.y);
         state.pickups.forEach((pod, id) => {
             if (pod.tileX !== col || pod.tileY !== row) return;
-            const contents = rollPickup(scoreTier(scores, player.score), player, random);
+            // A structure from a pod is never a Guard Tower the player has no room for.
+            const structures = STRUCTURE_ITEMS.filter((type) =>
+                StructureSystem.canHold(state, player, type)
+            );
+            const contents = rollPickup(
+                scoreTier(scores, player.score),
+                player,
+                random,
+                structures
+            );
             apply(player, contents);
             state.pickups.delete(id);
             broadcast('pickupCollected', {

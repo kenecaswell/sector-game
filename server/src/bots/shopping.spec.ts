@@ -77,6 +77,27 @@ describe("nextPurchase — keeping a farm's price back near the tile limit", () 
     });
 });
 
+describe('nextPurchase — at the Guard Tower limit', () => {
+    const full = {
+        hasFabricator: true,
+        nearTileCap: false,
+        approachingTileCap: false,
+        towersFull: true,
+    };
+
+    it('skips the towers on its list and goes on to the next item', () => {
+        const list = plan(['guardTower', 'armor'], true);
+        expect(nextPurchase(buyer({ materials: 100 }), list, 0)).toBe('guardTower');
+        expect(nextPurchase(buyer({ materials: 100 }), list, 0, full)).toBe('armor');
+    });
+
+    it('does not keep building towers once the list is done', () => {
+        const list = plan([], true, true);
+        expect(nextPurchase(buyer({ materials: 500 }), list, 0)).toBe('guardTower');
+        expect(nextPurchase(buyer({ materials: 500 }), list, 0, full)).toBeNull();
+    });
+});
+
 describe('nextPurchase', () => {
     it('follows the list in order, skipping what it already has', () => {
         const list = plan(['basicGun', 'expander', 'expander', 'guardTower']);

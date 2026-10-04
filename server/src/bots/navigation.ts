@@ -15,6 +15,7 @@ import {
 import { blocksWalkingAt } from '../terrain';
 import { UpgradeSystem } from '../systems/UpgradeSystem';
 import { areAllies } from '../teams';
+import { otherSpawnZones } from '../spawnZones';
 import {
     STRUCTURE_SPECS,
     TERRAIN,
@@ -78,7 +79,8 @@ interface Search {
     order: number[]; // hex indices in the order they were reached (nearest first)
     parent: Map<number, number>;
     depth: Map<number, number>;
-    blocked: Set<number>;
+    blocked: Set<number>; // hexes it can't walk into: enemy structures
+    unclaimable: Set<number>; // hexes it can't claim: those, plus other players' spawn zones
 }
 
 /** Breadth-first search from the player's hex over the hexes they can walk to, up to `maxDepth` steps. */
@@ -87,6 +89,7 @@ function explore(state: GameState, player: Player, maxDepth: number): Search {
     const fly = UpgradeSystem.canFly(player);
     const walkable = walkableGrid(state);
     const blocked = enemyFootprints(state, player.id);
+    const unclaimable = new Set([...blocked, ...otherSpawnZones(state, player.id)]);
     const from = hexOf(state, player.x, player.y);
     const start = hexIndex(from.col, from.row, cols);
     const parent = new Map([[start, -1]]);
@@ -105,7 +108,7 @@ function explore(state: GameState, player: Player, maxDepth: number): Search {
             order.push(j);
         }
     }
-    return { start, order, parent, depth, blocked };
+    return { start, order, parent, depth, blocked, unclaimable };
 }
 
 /** The hexes to walk through from the search's start to hex `goal` (start left out, goal last). */
@@ -117,7 +120,7 @@ function routeFrom(search: Search, goal: number, cols: number): HexCoord[] {
     return route.reverse();
 }
 
-/** What claiming hex `i` would be worth to `playerId` (0 = nothing: theirs, an ally's, terrain or protected). */
+/** What claiming hex `i` would be worth to `playerId` (0 = nothing: theirs, an ally's, terrain, or protected: under an enemy structure or in someone else's spawn zone). */
 export function claimValue(
     state: GameState,
     i: number,
@@ -153,7 +156,7 @@ export function planClaimRoute(
     const search = explore(state, player, depth);
     const pods = new Set<number>();
     state.pickups.forEach((pod) => pods.add(hexIndex(pod.tileX, pod.tileY, cols)));
-    const value = (i: number) => claimValue(state, i, player.id, search.blocked);
+    const value = (i: number) => claimValue(state, i, player.id, search.unclaimable);
     const speed = Math.hypot(player.vx, player.vy);
 
     let best = -1;
@@ -248,6 +251,7 @@ export function findBuildSite(
     const cols = state.mapWidth;
     const here = hexOf(state, player.x, player.y);
     const rotations = STRUCTURE_SPECS[type].hexes === 3 ? COMPACT_ROTATIONS : 1;
+    const spawnZones = otherSpawnZones(state, player.id);
     let best: BuildSite | null = null;
     let bestCost = Infinity;
     for (let row = here.row - radius - 1; row <= here.row + radius + 1; row++) {
@@ -277,7 +281,14 @@ export function findBuildSite(
                         ok = false;
                         break;
                     }
-                    if (tile.ownerId !== player.id) missing.push(hex);
+                    if (tile.ownerId !== player.id) {
+                        // Someone else's spawn zone can't be claimed to complete the site.
+                        if (spawnZones.has(hexIndex(hex.col, hex.row, cols))) {
+                            ok = false;
+                            break;
+                        }
+                        missing.push(hex);
+                    }
                 }
                 if (!ok || missing.length > maxMissing) continue;
                 const cost = missing.length * 3 + distance;

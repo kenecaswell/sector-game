@@ -46,6 +46,7 @@ export class Player extends Schema implements PlayerState {
     @type('number') ammo: number = 0;
     @type('number') tilesOwned: number = 0;
     @type('number') tileCap: number = BASE_TILE_CAP; // StructureSystem keeps it at 500 + 500 per farm
+    @type('uint16') towersBuilt: number = 0; // standing Guard Towers (StructureSystem.refreshOwner)
     @type('boolean') hasFabricator: boolean = false; // owns a Fabricator: the Fabricator menu is open
     @type('number') kills: number = 0;
     @type('number') score: number = 0; // computed by ScoreSystem: tiles + structure points (kills are worth 0)
@@ -72,6 +73,9 @@ export class Player extends Schema implements PlayerState {
     @type('string') botDifficulty: string = ''; // a BotDifficulty, or '' for a person
     // Defeated: waiting to respawn until this server time (ms); 0 = alive. See RespawnSystem.
     @type('number') respawnAt: number = 0;
+    // Just respawned: until this server time (ms) nothing can hurt them and bots and towers ignore
+    // them (RESPAWN_GRACE_MS); 0 = no grace. The client pulses their opacity meanwhile.
+    @type('number') graceUntil: number = 0;
     // Server only (not synced): when the player was last told they're at their tile limit (ms).
     tileLimitNoticeAt: number = 0;
     // Server only (not synced): which spawn-line slot this player starts and respawns at.
@@ -96,6 +100,8 @@ export class Projectile extends Schema implements ProjectileState {
     @type('number') damage: number = GUN_DAMAGE.basic; // set from the shooter's gun when fired
     // Server only (not synced): how long it flies before it vanishes (the gun's GUN_SHOT_LIFETIME_MS).
     lifetimeMs: number = PROJECTILE_LIFETIME_MS;
+    // Server only (not synced): fired by a Guard Tower, so it passes through players in their spawn's safe area.
+    fromTower = false;
 }
 
 export class Structure extends Schema implements StructureState {
@@ -188,6 +194,13 @@ export class GameState
         >
 {
     @type({ map: Player }) players = new MapSchema<Player>();
+    // Server only (not synced): whether a defeated player's gear drops in a backpack (the
+    // BACKPACKS_ENABLED flag; off by default, so they keep it).
+    dropBackpacks = false;
+    // Whether a defeated player respawns where they fell (the RESPAWN_WHERE_DIED_ENABLED flag) rather
+    // than at their spawn spot. Synced, so the client can draw each player's spawn platform where
+    // they will come back.
+    @type('boolean') respawnWhereDied: boolean = false;
     // Server only (not synced): when the `playing` phase began (ms), so bots can wait a moment (BOT_START_DELAY_MS).
     playingStartedAt = 0;
     @type({ map: Structure }) structures = new MapSchema<Structure>();

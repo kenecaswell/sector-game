@@ -35,7 +35,7 @@ export interface PickupContents {
 /** The parts of a player the roll looks at: their gun and upgrade levels. */
 export type PickupCollector = UpgradeHolder & { gun: string };
 
-const STRUCTURE_ITEMS: StructureType[] = ['farm', 'fabricator', 'guardTower', 'power'];
+export const STRUCTURE_ITEMS: StructureType[] = ['farm', 'fabricator', 'guardTower', 'power'];
 
 /**
  * A player's score tier, 0 (the leader) to PICKUP_TIER_CHANCES.length - 1 (at the back), from
@@ -70,12 +70,14 @@ function usable(outcome: PickupOutcome, collector: PickupCollector): boolean {
  * Rolls a drop pod's contents for `collector` in score `tier`, from that tier's row of
  * PICKUP_TIER_CHANCES. Outcomes they couldn't use are dropped and the rest share the chance, so a
  * pod always holds something useful. An upgrade is level 1 of one they don't have yet; a structure
- * is a random type. `random` returns [0, 1).
+ * is a random one of `structures` (all four unless the collector is at a limit, like Guard Towers).
+ * `random` returns [0, 1).
  */
 export function rollPickup(
     tier: number,
     collector: PickupCollector,
-    random: () => number = Math.random
+    random: () => number = Math.random,
+    structures: readonly StructureType[] = STRUCTURE_ITEMS
 ): PickupContents {
     const row = PICKUP_TIER_CHANCES[Math.min(Math.max(tier, 0), PICKUP_TIER_CHANCES.length - 1)];
     const options = (Object.entries(row) as [PickupOutcome, number][]).filter(
@@ -106,7 +108,7 @@ export function rollPickup(
         case 'bigGun':
             return { kind: 'item', itemId: outcome, amount: 0 };
         case 'structure':
-            return { kind: 'item', itemId: pick(STRUCTURE_ITEMS), amount: 0 };
+            return { kind: 'item', itemId: pick(structures), amount: 0 };
         default:
             return { kind: 'materials', itemId: '', amount: between(PICKUP_MATERIALS) };
     }

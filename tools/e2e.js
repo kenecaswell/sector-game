@@ -136,6 +136,7 @@ async function goTo(room, target, ms = 4000) {
 // A player's first structure, if they have built one (everyone sees everyone's).
 const ownedBy = (room) =>
     Array.from(room.state.structures.values()).find((s) => s.ownerId === room.sessionId);
+const hexDistanceOf = (p, q) => dist('hex.js').hexDistance(p, q);
 const hexUnder = (room) => pixelToHex(me(room).x, me(room).y);
 // A player's materials minus what they earned claiming (MATERIALS_PER_CLAIM a hex; the spawn hex is
 // claimed at once), i.e. what's left of their character's starting materials if they bought nothing.
@@ -810,7 +811,7 @@ async function bots() {
 
 async function backpacks() {
     // Plain ground, so the shots and the walks aren't stopped by a mountain.
-    section('Defeat, respawn delay and backpacks');
+    section('Defeat, respawn at the spawn spot, and backpacks (BACKPACKS=1, RESPAWN_WHERE_DIED=0)');
     await withServer(
         0.2,
         async () => {
@@ -822,6 +823,7 @@ async function backpacks() {
             b.send('selectCharacter', { characterId: 'robot' }); // Booster 1, equipped
             await sleep(300);
             await startMatch(a, b);
+            check('with RESPAWN_WHERE_DIED=0 the synced flag is off', a.state.respawnWhereDied === false);
             await buildFabricator(a); // the shooter fabricates a Blaster and ammo
             a.send('purchase', { itemId: 'basicGun' });
             a.send('purchase', { itemId: 'ammo' });
@@ -879,6 +881,68 @@ async function backpacks() {
                 JSON.stringify(collected)
             );
         },
+        { TERRAIN_COVERAGE: '0', PICKUPS: '0', BACKPACKS: '1', RESPAWN_WHERE_DIED: '0' }
+    );
+}
+
+async function keepsGear() {
+    // The default (BACKPACKS off): being defeated costs nothing but the respawn delay.
+    section('Defeat keeps your gear and respawns where you fell (the defaults)');
+    await withServer(
+        0.2,
+        async () => {
+            const a = await join(new Client(URL), { name: 'Shooter' });
+            const b = await join(new Client(URL), { name: 'Robot' });
+            b.send('selectCharacter', { characterId: 'robot' }); // Booster 1, equipped
+            await sleep(300);
+            await startMatch(a, b);
+            await buildFabricator(a);
+            a.send('purchase', { itemId: 'basicGun' });
+            a.send('purchase', { itemId: 'ammo' });
+            await waitFor(() => me(a).gun === 'basic' && me(a).ammo > 0, 2000);
+            check(
+                'the respawn-where-died flag is synced to clients (on by default)',
+                a.state.respawnWhereDied === true && b.state.respawnWhereDied === true
+            );
+            const spawn = { x: me(b).x, y: me(b).y };
+            await goTo(b, { x: spawn.x - 150, y: spawn.y });
+            for (let i = 0; i < 4 && me(b).respawnAt === 0; i++) {
+                const angle = Math.atan2(me(b).y - me(a).y, me(b).x - me(a).x);
+                a.send('shoot', { angle, seq: ++seq });
+                await waitFor(() => me(b).health < 100 || me(b).respawnAt > 0, 3000);
+                await sleep(250);
+            }
+            await waitFor(() => me(b).respawnAt > 0, 2000);
+            const fell = { x: me(b).x, y: me(b).y };
+            check(
+                'defeated: down for the delay, with its Booster still on and no backpack anywhere',
+                me(b).respawnAt > Date.now() &&
+                    me(b).boosterLevel === 1 &&
+                    me(b).equippedUpgrade === 'booster' &&
+                    b.state.backpacks.size === 0 &&
+                    a.state.backpacks.size === 0
+            );
+            await waitFor(() => me(b).respawnAt === 0, C.RESPAWN_DELAY_MS + 2000);
+            check(
+                'back where it fell (not at its spawn) with full health and its Booster',
+                Math.hypot(me(b).x - fell.x, me(b).y - fell.y) < 5 &&
+                    Math.hypot(me(b).x - spawn.x, me(b).y - spawn.y) > 50 &&
+                    me(b).health === 100 &&
+                    me(b).boosterLevel === 1
+            );
+
+            // Spawn zones: the shooter walks onto the robot's spawn hex, and can't claim it or the
+            // six hexes around it.
+            const zone = [
+                { col: me(b).spawnTileX, row: me(b).spawnTileY },
+                ...hexNeighbors(me(b).spawnTileX, me(b).spawnTileY),
+            ];
+            for (const hex of zone) await goTo(a, hexCenter(hex.col, hex.row), 3000);
+            check(
+                "another player can't claim a spawn hex or the six around it",
+                zone.every((h) => a.state.tiles[h.row * 64 + h.col].ownerId !== a.sessionId)
+            );
+        },
         { TERRAIN_COVERAGE: '0', PICKUPS: '0' }
     );
 }
@@ -889,14 +953,17 @@ async function towers() {
     await withServer(
         0.2,
         async () => {
-            const a = await join(new Client(URL), { name: 'Builder' });
+            const a = await join(new Client(URL), { name: 'Tower owner' });
             const b = await join(new Client(URL), { name: 'Intruder' });
-            a.send('selectCharacter', { characterId: 'builder' }); // starts with a Guard Tower
-            await sleep(300);
             await startMatch(a, b);
+            // Nobody starts with a Guard Tower: buy one (structures need no Fabricator).
+            a.send('devMaterials');
+            await waitFor(() => me(a).materials >= C.DEV_MATERIALS, 2000);
+            a.send('purchase', { itemId: 'guardTower' });
+            await waitFor(() => Array.from(me(a).structureInventory).includes('guardTower'), 2000);
             check(
-                'the Builder starts with a Guard Tower and no gun',
-                Array.from(me(a).structureInventory).join() === 'guardTower' && me(a).gun === ''
+                'a Guard Tower can be bought without a Fabricator, and its owner has no gun',
+                me(a).hasFabricator === false && me(a).gun === ''
             );
 
             // A tower needs just 3 touching hexes: the anchor and two neighbors.
@@ -924,19 +991,51 @@ async function towers() {
                     tower.health === 500 &&
                     tower.maxHealth === 500 &&
                     tower.rotation === 0 &&
-                    me(a).structureInventory.length === 0 &&
+                    !Array.from(me(a).structureInventory).includes('guardTower') &&
                     me(a).score === me(a).tilesOwned + shared.STRUCTURE_SPECS.guardTower.points,
                 tower ? `score ${me(a).score}, tiles ${me(a).tilesOwned}` : 'not placed'
             );
 
-            // An enemy walks into range and the tower, with no gun or ammo of its owner's, shoots.
+            // The limit: 10 on the default Small map, built and held together. One is built, so 9
+            // more can be bought and the 10th purchase is refused (structures need no Fabricator).
+            const limit = shared.MAP_SIZES.small.maxGuardTowers;
+            for (let i = 0; i < 3; i++) {
+                a.send('devMaterials');
+                await sleep(100);
+            }
+            for (let i = 0; i < limit + 2; i++) a.send('purchase', { itemId: 'guardTower' });
+            await sleep(500);
+            const held = Array.from(me(a).structureInventory).filter((t) => t === 'guardTower');
+            check(
+                `at most ${limit} Guard Towers (built and held) on the default map`,
+                limit === 10 && held.length === limit - 1 && me(a).towersBuilt === 1,
+                `held ${held.length}, built ${me(a).towersBuilt}`
+            );
+
+            // An enemy standing in range but inside the safe area of its own spawn isn't shot...
             const at = hexCenter(spot.col, spot.row);
             await goTo(b, { x: at.x + 150, y: at.y }, 8000);
+            await sleep(2500);
+            const spawnHex = { col: me(b).spawnTileX, row: me(b).spawnTileY };
+            check(
+                "the tower doesn't shoot a player in the safe area of their own spawn",
+                hexDistanceOf(hexUnder(b), spawnHex) <= C.SPAWN_SAFE_RADIUS &&
+                    me(b).health === me(b).maxHealth,
+                `health ${me(b).health}`
+            );
+
+            // ...but one walking into range outside it is, though the owner has no gun or ammo.
+            // (Around the tower, which is solid, and away from the intruder's spawn.)
+            const away = spawnHex.row > spot.row ? -1 : 1;
+            await goTo(b, { x: at.x + 150, y: at.y + away * 260 }, 8000);
+            await goTo(b, { x: at.x - 280, y: at.y + away * 260 }, 8000);
             await waitFor(() => me(b).health < me(b).maxHealth || me(b).respawnAt > 0, 6000);
             check(
-                'the tower shoots an enemy in range (the owner is unarmed)',
-                (me(b).health < me(b).maxHealth || me(b).respawnAt > 0) && me(a).gun === '',
-                `health ${me(b).health}`
+                'the tower shoots an enemy in range outside the safe area (the owner is unarmed)',
+                hexDistanceOf(hexUnder(b), spawnHex) > C.SPAWN_SAFE_RADIUS &&
+                    (me(b).health < me(b).maxHealth || me(b).respawnAt > 0) &&
+                    me(a).gun === '',
+                `health ${me(b).health}, ${hexDistanceOf(hexUnder(b), spawnHex)} hexes from spawn, at ${Math.round(me(b).x - at.x)},${Math.round(me(b).y - at.y)} from the tower`
             );
         },
         { TERRAIN_COVERAGE: '0', PICKUPS: '0' }
@@ -999,6 +1098,7 @@ async function edges() {
         await games();
         await bots();
         await backpacks();
+        await keepsGear();
         await towers();
         await edges();
     } catch (error) {

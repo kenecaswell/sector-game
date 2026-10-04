@@ -116,11 +116,22 @@ export interface JoinOptions {
 // and used in its URL (/game/CODE).
 export type MapSizeId = 'small' | 'big' | 'large';
 
-export const MAP_SIZES: Record<MapSizeId, { name: string; cols: number; rows: number }> = {
-    small: { name: 'Small', cols: 64, rows: 64 },
-    big: { name: 'Big', cols: 80, rows: 80 },
-    large: { name: 'Large', cols: 96, rows: 96 },
+// `maxGuardTowers` is how many Guard Towers one player may have (built and held, not yet placed)
+// on that map: 10 on the default Small map, and more on bigger ones in step with their area
+// (1.56x and 2.25x, rounded).
+export const MAP_SIZES: Record<
+    MapSizeId,
+    { name: string; cols: number; rows: number; maxGuardTowers: number }
+> = {
+    small: { name: 'Small', cols: 64, rows: 64, maxGuardTowers: 10 },
+    big: { name: 'Big', cols: 80, rows: 80, maxGuardTowers: 16 },
+    large: { name: 'Large', cols: 96, rows: 96, maxGuardTowers: 23 },
 };
+
+/** The most Guard Towers a player may have in a game on this map size (Small's if unknown). */
+export function maxGuardTowers(mapSize: string): number {
+    return (MAP_SIZES[mapSize as MapSizeId] ?? MAP_SIZES.small).maxGuardTowers;
+}
 export const MAP_SIZE_IDS = Object.keys(MAP_SIZES) as MapSizeId[];
 export const MATCH_LENGTH_OPTIONS = [5, 7, 10]; // minutes
 export const MAX_PLAYERS = 10; // people and bots together (one spawn slot each)
@@ -255,7 +266,7 @@ export interface FinalScore {
     tilesOwned: number;
     kills: number; // not part of the score (KILL_POINTS is 0), but still shown
     structures: number;
-    structurePoints: number; // what those structures add to the score (a Farmer's farm counts 150)
+    structurePoints: number; // what those structures add to the score (a specialist's own type counts 150, SPECIALTIES)
 }
 
 // Sent once when the match ends (phase -> results): the final standings, best first. Clients keep
@@ -297,7 +308,7 @@ export function isTeamId(value: unknown): value is TeamId {
 // Picked in the lobby; the server applies the starting kit when the match starts.
 export type GunId = 'basic' | 'big';
 export type UpgradeId = 'booster' | 'expander' | 'armor' | 'wings';
-export type CharacterId = 'farmer' | 'engineer' | 'builder' | 'robot' | 'scientist' | 'explorer';
+export type CharacterId = 'farmer' | 'engineer' | 'robot' | 'scientist' | 'explorer';
 
 export interface Character {
     id: CharacterId;
@@ -381,12 +392,19 @@ export const STRUCTURE_NAMES = Object.fromEntries(
     STRUCTURE_TYPES.map((type) => [type, STRUCTURE_SPECS[type].name])
 ) as Record<StructureType, string>;
 
-// The Farmer is good at farming: a farm they own scores half as much again.
-export const FARMER_FARM_POINTS = 150;
+// Three characters are good at the structure they start with: one of that type they own scores
+// 150 instead of 100 (the Farmer's farms from the start; the Engineer's fabricators and the
+// Scientist's power plants since 2026-10-03).
+export const SPECIALIST_STRUCTURE_POINTS = 150;
+export const SPECIALTIES: Partial<Record<string, StructureType>> = {
+    farmer: 'farm',
+    engineer: 'fabricator',
+    scientist: 'power',
+};
 
 /** What a structure of `type` adds to the score of an owner playing `character`. */
 export function structurePoints(type: StructureType, character: string): number {
-    if (type === 'farm' && character === 'farmer') return FARMER_FARM_POINTS;
+    if (SPECIALTIES[character] === type) return SPECIALIST_STRUCTURE_POINTS;
     return STRUCTURE_SPECS[type].points;
 }
 
@@ -544,16 +562,6 @@ export const CHARACTERS: Record<CharacterId, Character> = {
         gun: null,
         ammo: 0,
         structures: ['fabricator'],
-        materials: 50,
-        upgrades: {},
-    },
-    builder: {
-        id: 'builder',
-        name: 'Builder',
-        description: 'Starts with a Guard Tower.',
-        gun: null,
-        ammo: 0,
-        structures: ['guardTower'],
         materials: 50,
         upgrades: {},
     },

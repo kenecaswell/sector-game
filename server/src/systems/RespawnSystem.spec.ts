@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { RESPAWN_DELAY_MS } from '../constants';
-import { hexCenter, inStructureFootprint } from '../hex';
+import {
+    RESPAWN_DELAY_MS,
+    RESPAWN_GRACE_MS,
+    SPAWN_CLEAR_RADIUS,
+    SPAWN_SAFE_RADIUS,
+} from '../constants';
+import { hexCenter, hexDistance, inStructureFootprint, pixelToHex } from '../hex';
 import { Pickup, type GameState, type Player } from '../state/GameState';
 import {
     addPlayerAt,
@@ -11,7 +16,7 @@ import {
     tileAt,
     world,
 } from '../test/world';
-import { spawnPoint } from '../terrain';
+import { blocksWalkingAt, spawnPoint } from '../terrain';
 import { TERRAIN } from '../types/shared';
 import { CollisionSystem } from './CollisionSystem';
 import { PickupSystem } from './PickupSystem';
@@ -20,6 +25,13 @@ import { StructureSystem } from './StructureSystem';
 import { UpgradeSystem } from './UpgradeSystem';
 
 const NOW = 1_000_000;
+
+/** A match with the backpack feature on (it is off by default: defeated players keep their gear). */
+function backpackWorld(...args: Parameters<typeof world>): GameState {
+    const state = world(...args);
+    state.dropBackpacks = true;
+    return state;
+}
 const quiet = () => {};
 
 /** A player at hex (col, row) carrying a Ion Cannon, 12 ammo, Booster 2 (equipped) and Armor 1. */
@@ -46,7 +58,7 @@ function standOn(player: Player, col: number, row: number): void {
 
 describe('RespawnSystem — defeat', () => {
     it('drops the gun, ammo and upgrades in a backpack where they fell; keeps the rest', () => {
-        const state = world();
+        const state = backpackWorld();
         const player = geared(state);
         const pack = RespawnSystem.defeat(state, player, NOW)!;
         expect(pack).toMatchObject({ ownerId: 'a', tileX: 20, tileY: 20, gun: 'big', ammo: 12 });
@@ -72,7 +84,7 @@ describe('RespawnSystem — defeat', () => {
     });
 
     it('drops nothing when there is nothing to drop', () => {
-        const state = world();
+        const state = backpackWorld();
         const player = addPlayerAt(state, 'a', 20, 20);
         expect(RespawnSystem.defeat(state, player, NOW)).toBeNull();
         expect(state.backpacks.size).toBe(0);
@@ -80,7 +92,7 @@ describe('RespawnSystem — defeat', () => {
     });
 
     it('falling over a mountain or deep water (with the Jetpack), the backpack lands on the nearest walkable hex', () => {
-        const state = world();
+        const state = backpackWorld();
         const lake: Array<[number, number]> = [];
         for (let col = 18; col <= 22; col++)
             for (let row = 18; row <= 22; row++) lake.push([col, row]);
@@ -96,7 +108,7 @@ describe('RespawnSystem — defeat', () => {
 
 describe('RespawnSystem — while down, and respawning', () => {
     it("can't move, claim, open pods or build until the delay is over, then respawns at its spawn", () => {
-        const state = world();
+        const state = backpackWorld();
         const player = geared(state);
         player.spawnSlot = 2;
         RespawnSystem.defeat(state, player, Date.now());
@@ -123,7 +135,7 @@ describe('RespawnSystem — while down, and respawning', () => {
 
 describe('RespawnSystem — taking a backpack back', () => {
     it('only its owner, walking onto its hex once back in play, takes it; they hear what was in it', () => {
-        const state = world();
+        const state = backpackWorld();
         const owner = geared(state);
         const pack = RespawnSystem.defeat(state, owner, NOW)!;
         const other = addPlayerAt(state, 'b', 30, 30);
@@ -157,7 +169,7 @@ describe('RespawnSystem — taking a backpack back', () => {
     });
 
     it('keeps whatever is better of what they have now, and adds the ammo', () => {
-        const state = world();
+        const state = backpackWorld();
         const owner = geared(state);
         RespawnSystem.defeat(state, owner, NOW);
         RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
@@ -177,7 +189,7 @@ describe('RespawnSystem — taking a backpack back', () => {
     });
 
     it('never lands inside an enemy structure; and leaves with its owner', () => {
-        const state = world();
+        const state = backpackWorld();
         const owner = geared(state);
         addPlayerAt(state, 'foe', 40, 40);
         addStructure(state, 'foe', 20, 20);
@@ -185,5 +197,126 @@ describe('RespawnSystem — taking a backpack back', () => {
         expect(inStructureFootprint(pack.tileX, pack.tileY, 20, 20)).toBe(false);
         RespawnSystem.removeBackpacksOf(state, 'a');
         expect(state.backpacks.size).toBe(0);
+    });
+});
+
+describe('RespawnSystem — backpacks off (the default)', () => {
+    it('a defeated player keeps their gun, ammo, upgrades, structures and materials', () => {
+        const state = world();
+        expect(state.dropBackpacks).toBe(false);
+        const player = geared(state);
+        expect(RespawnSystem.defeat(state, player, NOW)).toBeNull();
+        expect(state.backpacks.size).toBe(0);
+        expect(player).toMatchObject({
+            gun: 'big',
+            ammo: 12,
+            boosterLevel: 2,
+            armorLevel: 1,
+            equippedUpgrade: 'booster',
+            materials: 77,
+            kills: 3,
+            maxHealth: 200,
+        });
+        expect(Array.from(player.structureInventory)).toEqual(['farm']);
+    });
+
+    it('is still down for the respawn delay, then back with full health (Armor included)', () => {
+        const state = world();
+        const player = geared(state);
+        RespawnSystem.defeat(state, player, NOW);
+        expect(player.health).toBe(0);
+        expect(player.respawnAt).toBe(NOW + RESPAWN_DELAY_MS);
+        RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
+        expect(player.respawnAt).toBe(0);
+        expect(player.health).toBe(200);
+        expect(player.gun).toBe('big');
+    });
+});
+
+describe('RespawnSystem — the spawn safe area', () => {
+    it('is within SPAWN_SAFE_RADIUS hexes of your own spawn spot, and no further', () => {
+        const state = world();
+        const player = addPlayerAt(state, 'a', 30, 30);
+        player.spawnTileX = 30;
+        player.spawnTileY = 30;
+        expect(RespawnSystem.inSpawnSafeArea(player)).toBe(true);
+        standOn(player, 30 + SPAWN_SAFE_RADIUS, 30);
+        expect(RespawnSystem.inSpawnSafeArea(player)).toBe(true);
+        standOn(player, 30 + SPAWN_SAFE_RADIUS + 1, 30);
+        expect(RespawnSystem.inSpawnSafeArea(player)).toBe(false);
+    });
+
+    it('is wider than the ground kept clear for building', () => {
+        expect(SPAWN_SAFE_RADIUS).toBeGreaterThan(SPAWN_CLEAR_RADIUS);
+    });
+});
+
+describe('RespawnSystem — respawning where you died (the flag)', () => {
+    function down(where: 'spawn' | 'died') {
+        const state = world();
+        state.respawnWhereDied = where === 'died';
+        const player = geared(state, 'a', 30, 30);
+        player.spawnSlot = 3;
+        standOn(player, 40, 22);
+        RespawnSystem.defeat(state, player, NOW);
+        return { state, player };
+    }
+
+    it('off: back at their spawn spot', () => {
+        const { state, player } = down('spawn');
+        RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
+        const start = spawnPoint(state, 3);
+        expect([player.x, player.y]).toEqual([start.x, start.y]);
+    });
+
+    it('on: back exactly where they fell, with full health', () => {
+        const { state, player } = down('died');
+        const fell = { x: player.x, y: player.y };
+        RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
+        expect([player.x, player.y]).toEqual([fell.x, fell.y]);
+        expect(player.respawnAt).toBe(0);
+        expect(player.health).toBe(player.maxHealth);
+    });
+
+    it("on: a spot they can't stand on (a mountain, flying) moves them to the nearest walkable hex", () => {
+        const state = world();
+        state.respawnWhereDied = true;
+        setTerrain(state, TERRAIN.mountain, [[40, 22]]);
+        const player = geared(state, 'a', 30, 30);
+        standOn(player, 40, 22);
+        RespawnSystem.defeat(state, player, NOW);
+        RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
+        const hex = pixelToHex(player.x, player.y);
+        expect(hex.col === 40 && hex.row === 22).toBe(false);
+        expect(hexDistance(hex, { col: 40, row: 22 })).toBe(1);
+        expect(blocksWalkingAt(state, hex.col, hex.row)).toBe(false);
+    });
+
+    it("on: never back inside an enemy's structure", () => {
+        const state = world();
+        state.respawnWhereDied = true;
+        addPlayerAt(state, 'foe', 5, 5);
+        addStructure(state, 'foe', 40, 22, 'farm');
+        const player = geared(state, 'a', 30, 30);
+        standOn(player, 40, 22);
+        RespawnSystem.defeat(state, player, NOW);
+        RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
+        const hex = pixelToHex(player.x, player.y);
+        expect(inStructureFootprint(hex.col, hex.row, 40, 22)).toBe(false);
+    });
+});
+
+describe('RespawnSystem — the respawn grace period', () => {
+    it('starts when they come back and lasts RESPAWN_GRACE_MS', () => {
+        const state = world();
+        const player = geared(state);
+        RespawnSystem.defeat(state, player, NOW);
+        expect(RespawnSystem.inGrace(player, NOW)).toBe(false); // not while down
+        RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
+        const back = NOW + RESPAWN_DELAY_MS;
+        expect(player.graceUntil).toBe(back + RESPAWN_GRACE_MS);
+        expect(RespawnSystem.inGrace(player, back)).toBe(true);
+        expect(RespawnSystem.inGrace(player, back + RESPAWN_GRACE_MS - 1)).toBe(true);
+        expect(RespawnSystem.inGrace(player, back + RESPAWN_GRACE_MS)).toBe(false);
     });
 });

@@ -235,6 +235,20 @@ describe('BotSystem — playing', () => {
         expect(Math.hypot(bot.x - start.x, bot.y - start.y)).toBeGreaterThan(5);
     });
 
+    it('ignores a player who has just respawned: no shot, no chase, until the grace is over', () => {
+        const state = world('playing', { teams: false });
+        const bot = botInMatch(state, 'hard', 20, 20, { gun: 'basic', ammo: 30 });
+        const enemy = addPlayerAt(state, 'foe', 25, 20, 'blue');
+        enemy.spawnTileX = 60;
+        enemy.spawnTileY = 60;
+        enemy.graceUntil = Date.now() + 3000;
+        play(state, 2.5);
+        expect(state.projectiles.size).toBe(0);
+        expect(bot.ammo).toBe(30);
+        play(state, 3); // the grace is over: now it's fair game
+        expect(bot.ammo).toBeLessThan(30);
+    });
+
     describe('shooting', () => {
         /** An armed Hard bot and an enemy person standing 5 hexes east of it, far from their spawn. */
         function duel({ teams = false, enemyTeam = 'blue' } = {}) {
@@ -248,6 +262,38 @@ describe('BotSystem — playing', () => {
         }
         const shotsBy = (state: GameState, id: string) =>
             Array.from(state.projectiles.values()).filter((p) => p.ownerId === id).length;
+
+        it('fires at half the rate its gun allows: a Blaster every 2 s, an Ion Cannon every second', () => {
+            for (const [gun, intervalMs] of [
+                ['basic', 2000],
+                ['big', 1000],
+            ] as const) {
+                const { state, bot, enemy } = duel();
+                bot.gun = gun;
+                bot.ammo = 30;
+                enemy.health = 10_000; // survives; we only count shots
+                enemy.maxHealth = 10_000;
+                let shots = 0;
+                const inputs = new Map<string, PlayerInput>();
+                const random = seededRandom(3);
+                let last = -Infinity;
+                for (let i = 0; i < 10 / DT; i++) {
+                    vi.advanceTimersByTime(DT * 1000);
+                    const before = bot.ammo;
+                    BotSystem.update(state, inputs, random, Date.now());
+                    if (bot.ammo < before) {
+                        shots++;
+                        if (last > -Infinity) {
+                            expect(Date.now() - last, gun).toBeGreaterThanOrEqual(intervalMs - 1);
+                        }
+                        last = Date.now();
+                    }
+                }
+                // About one shot per interval over the ~9.5 s after the reaction time, never more.
+                expect(shots, gun).toBeGreaterThan(0);
+                expect(shots, gun).toBeLessThanOrEqual(Math.ceil(10_000 / intervalMs));
+            }
+        });
 
         it('fires at an enemy in sight once its reaction time has passed, and hits', () => {
             const { state, bot, enemy } = duel();
@@ -296,6 +342,7 @@ describe('BotSystem — playing', () => {
 
     it('sits out its respawn delay, then goes back for its backpack and gets its gear back', () => {
         const state = world();
+        state.dropBackpacks = true; // backpacks are off by default
         const bot = botInMatch(state, 'medium', 30, 20, { gun: 'big', ammo: 20 });
         bot.structureInventory.clear();
         RespawnSystem.defeat(state, bot);

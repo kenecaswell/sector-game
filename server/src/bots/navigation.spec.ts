@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { compactFootprint, hexIndex, inStructureFootprint } from '../hex';
+import {
+    compactFootprint,
+    hexDistance,
+    hexIndex,
+    hexNeighbors,
+    inStructureFootprint,
+} from '../hex';
 import { Pickup } from '../state/GameState';
 import { addPlayerAt, addStructure, ownFootprint, setTerrain, tileAt, world } from '../test/world';
 import { TERRAIN } from '../types/shared';
@@ -170,5 +176,42 @@ describe('findBuildSite for a Guard Tower', () => {
         expect(site!.rotation).toBeGreaterThanOrEqual(0);
         // 7 owned hexes would be needed for a farm; 3 are not enough.
         expect(findBuildSite(state, bot, 1, 'farm', 0)).toBeNull();
+    });
+});
+
+describe("bots and other players' spawn zones", () => {
+    it("place no value on claiming hexes in someone else's spawn zone", () => {
+        const state = world();
+        const bot = addPlayerAt(state, 'bot', 30, 30);
+        bot.spawnTileX = 5;
+        bot.spawnTileY = 5;
+        const owner = addPlayerAt(state, 'owner', 33, 30);
+        owner.spawnTileX = 33;
+        owner.spawnTileY = 30;
+        const route = planClaimRoute(state, bot, { depth: 6, noise: 0, random: () => 0 });
+        const zone = new Set(
+            [[33, 30], ...hexNeighbors(33, 30).map((h) => [h.col, h.row])].map(
+                ([c, r]) => `${c},${r}`
+            )
+        );
+        expect(route.length).toBeGreaterThan(0);
+        // The goal is the last hex of the route, and it is never inside the zone.
+        const goal = route[route.length - 1];
+        expect(zone.has(`${goal.col},${goal.row}`)).toBe(false);
+    });
+
+    it('never pick a build site that needs hexes from another spawn zone', () => {
+        const state = world();
+        const bot = addPlayerAt(state, 'bot', 33, 30);
+        bot.spawnTileX = 5;
+        bot.spawnTileY = 5;
+        const owner = addPlayerAt(state, 'owner', 40, 40);
+        owner.spawnTileX = 33;
+        owner.spawnTileY = 30;
+        const site = findBuildSite(state, bot, 3, 'farm');
+        expect(site).not.toBeNull();
+        for (const hex of [site!.center, ...site!.missing]) {
+            expect(hexDistance(hex, { col: 33, row: 30 })).toBeGreaterThan(1);
+        }
     });
 });

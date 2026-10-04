@@ -88,8 +88,9 @@ describe('CombatSystem — hits and kills', () => {
         expect(shooter.kills).toBe(1);
     });
 
-    it('a defeated player drops their Armor with the rest, so comes back with 100 health', () => {
+    it('a defeated player drops their Armor with the rest, so comes back with 100 health (backpacks on)', () => {
         const state = world();
+        state.dropBackpacks = true;
         addPlayer(state, 'a', 100, 100);
         const target = addPlayer(state, 't');
         target.armorLevel = 3;
@@ -154,6 +155,21 @@ describe('CombatSystem — structures', () => {
         CombatSystem.update(state, DT, broadcast);
         expect(state.structures.has(farm.id)).toBe(false);
         expect(destroyed).toEqual([farm.id]);
+    });
+});
+
+describe('CombatSystem — respawn grace', () => {
+    it("shots fly through a player who has just respawned, and hit them once it's over", () => {
+        const state = world();
+        addPlayer(state, 'a', 100, 100);
+        const target = addPlayer(state, 't');
+        target.graceUntil = Date.now() + 5000;
+        const shot = shootAt(state, 'a', target);
+        expect(target.health).toBe(target.maxHealth);
+        expect(state.projectiles.has(shot.id)).toBe(true); // it flew on
+        target.graceUntil = Date.now() - 1;
+        shootAt(state, 'a', target);
+        expect(target.health).toBe(target.maxHealth - GUN_DAMAGE.basic);
     });
 });
 

@@ -5,6 +5,7 @@ import {
     footprintFor,
     inStructure,
     isStructureType,
+    maxGuardTowers,
     tileCapFor,
     type StructureDestroyedEvent,
     type StructureType,
@@ -53,6 +54,27 @@ function hasFabricator(state: GameState, playerId: string): boolean {
 }
 
 /**
+ * How many Guard Towers this player has: standing ones plus those they hold to place. The limit
+ * (`maxGuardTowers` for the game's map size) is on this total.
+ */
+function towerCount(state: GameState, player: Player): number {
+    return (
+        count(state, player.id, 'guardTower') +
+        player.structureInventory.filter((type) => type === 'guardTower').length
+    );
+}
+
+/**
+ * Whether the player may take on one more structure of `type` (buy it, or find it in a pod): always
+ * for every type but the Guard Tower, which is limited per player by map size.
+ */
+function canHold(state: GameState, player: Player, type: StructureType): boolean {
+    return (
+        type !== 'guardTower' || towerCount(state, player) < maxGuardTowers(state.settings.mapSize)
+    );
+}
+
+/**
  * Sets what a player's structures give them: their tile limit (from the farms they own) and
  * whether the Fabricator is open to them (they own one). Called whenever one is placed or
  * destroyed. Losing a farm lowers the limit but never takes hexes away: a player over the new
@@ -63,6 +85,7 @@ function refreshOwner(state: GameState, playerId: string): void {
     if (!player) return;
     player.tileCap = tileCapFor(count(state, playerId, 'farm'));
     player.hasFabricator = hasFabricator(state, playerId);
+    player.towersBuilt = count(state, playerId, 'guardTower');
 }
 
 /**
@@ -129,6 +152,8 @@ export const StructureSystem = {
     place,
     applyDamage,
     count,
+    towerCount,
+    canHold,
     hasFabricator,
     refreshOwner,
 };

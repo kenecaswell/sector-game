@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { compactFootprint, hexNeighbors, structureFootprint } from '../hex';
-import { BASE_TILE_CAP, STRUCTURE_SPECS, TILES_PER_FARM } from '../types/shared';
+import {
+    BASE_TILE_CAP,
+    DEFAULT_GAME_SETTINGS,
+    MAP_SIZES,
+    STRUCTURE_SPECS,
+    TILES_PER_FARM,
+    maxGuardTowers,
+} from '../types/shared';
 import { addPlayer, addStructure, ownFootprint, tileAt, world } from '../test/world';
 import { StructureSystem } from './StructureSystem';
 
@@ -218,5 +225,68 @@ describe('StructureSystem — tile limit and Fabricator', () => {
         expect(player.hasFabricator).toBe(true);
         StructureSystem.applyDamage(state, 'struct-20-20', 1000);
         expect(player.hasFabricator).toBe(false);
+    });
+});
+
+describe('StructureSystem — the Guard Tower limit', () => {
+    it('is 10 on the default Small map, and bigger on bigger maps', () => {
+        expect(MAP_SIZES.small.maxGuardTowers).toBe(10);
+        expect(DEFAULT_GAME_SETTINGS.mapSize).toBe('small');
+        expect(maxGuardTowers('small')).toBe(10);
+        expect(maxGuardTowers('big')).toBeGreaterThan(maxGuardTowers('small'));
+        expect(maxGuardTowers('large')).toBeGreaterThan(maxGuardTowers('big'));
+        expect(maxGuardTowers('nonsense')).toBe(10); // falls back to Small's
+    });
+
+    it('counts standing towers and held ones together', () => {
+        const state = world();
+        const player = addPlayer(state, 'a');
+        for (let i = 0; i < 4; i++) addStructure(state, 'a', 10 + 4 * i, 10, 'guardTower');
+        addStructure(state, 'b', 50, 50, 'guardTower'); // someone else's doesn't count
+        player.structureInventory.push('guardTower', 'guardTower', 'farm');
+        expect(StructureSystem.towerCount(state, player)).toBe(6);
+    });
+
+    it('lets you hold towers only up to the limit, and never limits other structures', () => {
+        const state = world();
+        const player = addPlayer(state, 'a');
+        for (let i = 0; i < 9; i++) player.structureInventory.push('guardTower');
+        expect(StructureSystem.canHold(state, player, 'guardTower')).toBe(true); // 9 of 10
+        player.structureInventory.push('guardTower');
+        expect(StructureSystem.canHold(state, player, 'guardTower')).toBe(false); // 10 of 10
+        for (const type of ['farm', 'fabricator', 'power'] as const) {
+            expect(StructureSystem.canHold(state, player, type)).toBe(true);
+        }
+    });
+
+    it('placing a tower does not free or use up room: the limit counts it either way', () => {
+        const state = world();
+        const player = addPlayer(state, 'a');
+        for (let i = 0; i < 9; i++) addStructure(state, 'a', 6 + 4 * i, 6, 'guardTower');
+        player.structureInventory.push('guardTower');
+        expect(StructureSystem.canHold(state, player, 'guardTower')).toBe(false); // 9 + 1 held
+        ownFootprint(state, 'a', 20, 30, 'guardTower');
+        expect(StructureSystem.place(state, player, 'guardTower', 20, 30)).toBe(true);
+        expect(StructureSystem.towerCount(state, player)).toBe(10);
+        expect(player.towersBuilt).toBe(10);
+    });
+
+    it('a bigger map allows more', () => {
+        const state = world();
+        state.settings.mapSize = 'big';
+        const player = addPlayer(state, 'a');
+        for (let i = 0; i < 10; i++) player.structureInventory.push('guardTower');
+        expect(StructureSystem.canHold(state, player, 'guardTower')).toBe(true);
+    });
+
+    it('a destroyed tower makes room again', () => {
+        const state = world();
+        const player = addPlayer(state, 'a');
+        for (let i = 0; i < 10; i++) addStructure(state, 'a', 6 + 4 * i, 6, 'guardTower');
+        StructureSystem.refreshOwner(state, 'a');
+        expect(StructureSystem.canHold(state, player, 'guardTower')).toBe(false);
+        StructureSystem.applyDamage(state, 's-6-6', 500);
+        expect(player.towersBuilt).toBe(9);
+        expect(StructureSystem.canHold(state, player, 'guardTower')).toBe(true);
     });
 });

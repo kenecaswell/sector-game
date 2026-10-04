@@ -9,6 +9,7 @@ import {
     pixelToHex,
     structureFootprint,
 } from '../hex';
+import { StructureSystem } from './StructureSystem';
 import type { GameState, Player } from '../state/GameState';
 import { addPlayer, addPlayerAt, addStructure, ownFootprint, tileAt, world } from '../test/world';
 import type { TilesClaimedEvent } from '../types/shared';
@@ -260,5 +261,78 @@ describe('CollisionSystem — the tile limit', () => {
             100_000
         );
         expect(told).toEqual([]);
+    });
+});
+
+describe('CollisionSystem — spawn zones', () => {
+    /** Player `id` with their spawn spot on hex (col, row). */
+    function withSpawn(
+        state: GameState,
+        id: string,
+        col: number,
+        row: number,
+        teamId = ''
+    ): Player {
+        const p = addPlayerAt(state, id, col, row, teamId);
+        p.spawnTileX = col;
+        p.spawnTileY = row;
+        return p;
+    }
+
+    it('nobody else can claim the spawn hex or the six around it, but anywhere else is fine', () => {
+        const state = world();
+        withSpawn(state, 'owner', 30, 30);
+        const intruder = addPlayerAt(state, 'x', 30, 30);
+        intruder.spawnTileX = 5;
+        intruder.spawnTileY = 5;
+        intruder.claimRadius = EXPANDER_CLAIM_RADII[0]; // reaches the spawn hex and its six neighbors
+        const claimed = claimOnce(state, intruder);
+        expect(claimed).toEqual([]);
+        for (const hex of structureFootprint(30, 30)) {
+            expect(tileAt(state, hex.col, hex.row).ownerId).toBe('');
+        }
+        // One ring further out is open ground like any other.
+        const outside = addPlayerAt(state, 'y', 34, 30);
+        outside.spawnTileX = 6;
+        outside.spawnTileY = 6;
+        expect(claimOnce(state, outside).length).toBeGreaterThan(0);
+    });
+
+    it('the spawn owner can claim their own zone, and so can a teammate', () => {
+        const state = world();
+        const owner = withSpawn(state, 'owner', 30, 30, 'red');
+        owner.claimRadius = EXPANDER_CLAIM_RADII[0];
+        expect(claimOnce(state, owner)).toHaveLength(7);
+
+        const state2 = world();
+        withSpawn(state2, 'owner', 30, 30, 'red');
+        const mate = addPlayerAt(state2, 'mate', 30, 30, 'red');
+        mate.spawnTileX = 5;
+        mate.spawnTileY = 5;
+        mate.claimRadius = EXPANDER_CLAIM_RADII[0];
+        expect(claimOnce(state2, mate)).toHaveLength(7);
+    });
+
+    it("so nobody can build on or beside another player's spawn", () => {
+        const state = world();
+        withSpawn(state, 'owner', 30, 30);
+        const intruder = addPlayerAt(state, 'x', 30, 30);
+        intruder.spawnTileX = 5;
+        intruder.spawnTileY = 5;
+        intruder.claimRadius = EXPANDER_CLAIM_RADII[2];
+        claimOnce(state, intruder); // claims what it can around, but not the zone
+        intruder.structureInventory.push('farm', 'guardTower');
+        expect(StructureSystem.canPlace(state, 'x', 'farm', 30, 30)).toBe(false);
+        expect(StructureSystem.canPlace(state, 'x', 'guardTower', 30, 30, 0)).toBe(false);
+    });
+
+    it('a player who has left no longer protects their spawn', () => {
+        const state = world();
+        withSpawn(state, 'owner', 30, 30);
+        const intruder = addPlayerAt(state, 'x', 30, 30);
+        intruder.spawnTileX = 5;
+        intruder.spawnTileY = 5;
+        state.players.delete('owner');
+        expect(claimOnce(state, intruder)).toHaveLength(1);
     });
 });

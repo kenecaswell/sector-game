@@ -14,6 +14,7 @@ export interface BotNeeds {
     hasFabricator: boolean; // it owns one, so the Fabricator menu is open to it
     nearTileCap: boolean; // it's within FARM_MARGIN hexes of its tile limit: time to buy a farm
     approachingTileCap: boolean; // within RESERVE_MARGIN: keep a farm's price in hand
+    towersFull?: boolean; // at its Guard Tower limit: no more towers to buy
 }
 
 // At its tile limit a bot can't claim, so it earns no materials, and a bot that has spent
@@ -77,7 +78,8 @@ export function nextPurchase(
             upgradesSeen.set(item.upgrade, k);
             done = upgradeLevel(player, item.upgrade) >= k;
         } else if (item.structure) {
-            done = structuresBought >= ++structuresSeen;
+            done =
+                structuresBought >= ++structuresSeen || (id === 'guardTower' && !!needs.towersFull);
         } else {
             done = ownsShopItem(player, id);
         }
@@ -91,6 +93,7 @@ export function nextPurchase(
     }
     if (
         profile.keepBuilding &&
+        !needs.towersFull &&
         player.structureInventory.length === 0 &&
         affordable('guardTower')
     ) {

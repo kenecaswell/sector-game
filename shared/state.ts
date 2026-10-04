@@ -22,6 +22,7 @@ export interface PlayerState {
     ammo: number;
     tilesOwned: number;
     tileCap: number; // the most hexes they may hold (500 + 500 per farm); see tileCapFor
+    towersBuilt: number; // Guard Towers they have standing (the limit counts these plus the ones they hold)
     hasFabricator: boolean; // owns a Fabricator, so the Fabricator menu (guns, ammo, upgrades) is open
     kills: number;
     score: number; // computed server-side: tiles + structure points (kills are worth 0) (materials excluded)
@@ -44,6 +45,7 @@ export interface PlayerState {
     bot: boolean; // computer-controlled (see BotSystem on the server); always ready
     botDifficulty: string; // a BotDifficulty for a bot, '' for a person
     respawnAt: number; // defeated, respawning at this server time (ms); 0 = alive
+    graceUntil: number; // respawn grace: can't be hurt, and bots ignore them, until this server time (ms)
 }
 
 export interface TileState {
@@ -118,6 +120,7 @@ export interface GameStateShape {
     backpacks: ReadonlyMap<string, BackpackState>; // only your own
     tiles: readonly TileState[];
     mountains: readonly MountainPieceState[]; // how the mountain hexes group into mountains
+    respawnWhereDied: boolean; // defeated players respawn where they fell (so the client moves their spawn platform there)
     theme: string; // a TerrainThemeId: the match's color scheme, fixed for the match
     phase: GamePhaseStateShape;
     settings: GameSettingsState;

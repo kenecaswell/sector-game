@@ -23,7 +23,7 @@ function update(state: GameState): void {
     });
 }
 
-/** Each owner's structure points: every structure counts for its type's value (and the Farmer's farms for more). */
+/** Each owner's structure points: every structure counts for its type's value (and a specialist's own type for more: SPECIALTIES). */
 function sumStructurePoints(state: GameState): Map<string, number> {
     const totals = new Map<string, number>();
     state.structures.forEach((structure) => {

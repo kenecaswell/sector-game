@@ -1,6 +1,14 @@
 import { Backpack, type GameState, type Player } from '../state/GameState';
-import { RESPAWN_DELAY_MS } from '../constants';
-import { hexIndex, hexNeighbors, isValidHex, pixelToHex, type HexCoord } from '../hex';
+import { RESPAWN_DELAY_MS, RESPAWN_GRACE_MS, SPAWN_SAFE_RADIUS } from '../constants';
+import {
+    hexCenter,
+    hexDistance,
+    hexIndex,
+    hexNeighbors,
+    isValidHex,
+    pixelToHex,
+    type HexCoord,
+} from '../hex';
 import { blocksWalkingAt, spawnPoint } from '../terrain';
 import { areAllies } from '../teams';
 import {
@@ -26,6 +34,25 @@ import { UpgradeSystem } from './UpgradeSystem';
 
 /** Sends one player a private message (their client, if they have one; bots have none). */
 export type Notify = (playerId: string, type: string, payload: unknown) => void;
+
+/**
+ * Whether the player is inside the safe area of their own spawn spot (within SPAWN_SAFE_RADIUS
+ * hexes). Guard Towers don't shoot anyone there, so nobody is shot as they respawn.
+ */
+function inSpawnSafeArea(player: {
+    x: number;
+    y: number;
+    spawnTileX: number;
+    spawnTileY: number;
+}): boolean {
+    const spawn = { col: player.spawnTileX, row: player.spawnTileY };
+    return hexDistance(pixelToHex(player.x, player.y), spawn) <= SPAWN_SAFE_RADIUS;
+}
+
+/** Whether the player has just respawned and is still in their grace period (RESPAWN_GRACE_MS). */
+function inGrace(player: { graceUntil: number }, now = Date.now()): boolean {
+    return player.graceUntil > now;
+}
 
 /** Whether the player is in play (not waiting to respawn). */
 function isAlive(player: { respawnAt: number }): boolean {
@@ -73,13 +100,14 @@ function dropHex(state: GameState, player: Player): HexCoord {
 }
 
 /**
- * `player` has been defeated: their gun, ammo and upgrades go into a backpack where they fell
- * (none if they had nothing), and they're out until `now + RESPAWN_DELAY_MS`. Kills are the
- * caller's business (CombatSystem). Returns the backpack, if any.
+ * `player` has been defeated and is out until `now + RESPAWN_DELAY_MS`. Kills are the caller's
+ * business (CombatSystem). With backpacks on (`state.dropBackpacks`, the BACKPACKS_ENABLED flag)
+ * their gun, ammo and upgrades go into a backpack where they fell (none if they had nothing) and
+ * the backpack is returned; with them off, the default, they keep everything.
  */
 function defeat(state: GameState, player: Player, now = Date.now()): Backpack | null {
     let pack: Backpack | null = null;
-    if (carriesGear(player)) {
+    if (state.dropBackpacks && carriesGear(player)) {
         const hex = dropHex(state, player);
         pack = new Backpack();
         pack.id = `pack-${state.backpacksMade++}`;
@@ -93,11 +121,13 @@ function defeat(state: GameState, player: Player, now = Date.now()): Backpack | 
         state.backpacks.set(pack.id, pack);
     }
 
-    player.gun = '';
-    player.ammo = 0;
-    for (const id of UPGRADE_IDS) player[`${id}Level`] = 0;
-    player.equippedUpgrade = '';
-    UpgradeSystem.applyUpgradeEffects(player);
+    if (state.dropBackpacks) {
+        player.gun = '';
+        player.ammo = 0;
+        for (const id of UPGRADE_IDS) player[`${id}Level`] = 0;
+        player.equippedUpgrade = '';
+        UpgradeSystem.applyUpgradeEffects(player);
+    }
     player.health = 0;
     player.vx = 0;
     player.vy = 0;
@@ -105,15 +135,31 @@ function defeat(state: GameState, player: Player, now = Date.now()): Backpack | 
     return pack;
 }
 
-/** Back in play at their spawn spot, with full health. */
-function respawn(state: GameState, player: Player): void {
-    const start = spawnPoint(state, player.spawnSlot);
-    player.x = start.x;
-    player.y = start.y;
+/**
+ * Back in play with full health: at their spawn spot, or, with `state.respawnWhereDied` (the
+ * RESPAWN_WHERE_DIED_ENABLED flag), where they fell. They stay put if that spot is fine; if it's
+ * somewhere they can't stand (over a mountain or deep water, flying), or inside an enemy structure,
+ * they come back on the nearest hex that's neither (`dropHex`, as for a backpack).
+ */
+function respawn(state: GameState, player: Player, now = Date.now()): void {
+    if (state.respawnWhereDied) {
+        const under = pixelToHex(player.x, player.y);
+        const hex = dropHex(state, player);
+        if (hex.col !== under.col || hex.row !== under.row) {
+            const center = hexCenter(hex.col, hex.row);
+            player.x = center.x;
+            player.y = center.y;
+        }
+    } else {
+        const start = spawnPoint(state, player.spawnSlot);
+        player.x = start.x;
+        player.y = start.y;
+    }
     player.vx = 0;
     player.vy = 0;
     player.health = player.maxHealth;
     player.respawnAt = 0;
+    player.graceUntil = now + RESPAWN_GRACE_MS; // briefly untouchable
 }
 
 const GUN_RANK = { '': 0, basic: 1, big: 2 } as const;
@@ -156,7 +202,7 @@ function contentsLabel(pack: Backpack): string {
  */
 function update(state: GameState, notify: Notify, now = Date.now()): void {
     state.players.forEach((player) => {
-        if (!isAlive(player) && now >= player.respawnAt) respawn(state, player);
+        if (!isAlive(player) && now >= player.respawnAt) respawn(state, player, now);
     });
     if (state.phase.phase !== 'playing' || state.backpacks.size === 0) return;
 
@@ -181,4 +227,11 @@ function removeBackpacksOf(state: GameState, playerId: string): void {
     });
 }
 
-export const RespawnSystem = { isAlive, defeat, update, removeBackpacksOf };
+export const RespawnSystem = {
+    isAlive,
+    inGrace,
+    inSpawnSafeArea,
+    defeat,
+    update,
+    removeBackpacksOf,
+};

@@ -22,6 +22,10 @@ Use 4-space indentation (Prettier `tabWidth: 4`, see `client/.prettierrc.json` a
 - Tests. After server changes, run `cd server && npm test` (Vitest; spec files sit next to the code) and `npm run build && node ../tools/e2e.js` (a real server with real clients; see `tools/README.md`). When you add or change a rule, add or update a spec for it. After client changes, run `cd client && npm test` (Vitest; spec files sit next to the code) and add or update specs for what you changed.
 - When you change behavior, update the docs in the same change: `docs/GAME_DESIGN.md` for rules and numbers, `docs/ARCHITECTURE.md` for implementation, and the README for anything user-facing. Add a Decisions Log row to the matching doc for deliberate choices (gameplay in GAME_DESIGN, technical in ARCHITECTURE). The code is the source of truth for numbers; keep GAME_DESIGN's values in step with it.
 
+## Quick Changes
+
+Sometimes I will ask for a change but will want to see a change and manually test it first to see if I like it. If I say "quick change" in my prompt simply make the feature change, but do not run e2e tests, update docs, or do extensive testing. Once I decide if I like the change or not I will let you know next steps which will most likely to finish making normal end to end changes.
+
 ## Testing
 
 I usually have my own dev server and browser open (ports 2567 and 5173). Don't start anything on those ports and don't join my rooms. For anything that joins a game, use private ports (for example server `PORT=2599` and client `VITE_SERVER_URL=ws://localhost:2599 npx vite --port 5199`) and stop what you started when you're done.

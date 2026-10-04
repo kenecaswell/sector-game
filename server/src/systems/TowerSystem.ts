@@ -20,8 +20,9 @@ function muzzle(tower: Structure): { x: number; y: number } {
  * Every Guard Tower that's ready fires the Blaster at the nearest enemy player within
  * TOWER_RANGE that it has a clear line to (mountains stop shots). Towers never run out of ammo and
  * ignore structures; a kill counts for the tower's owner, even one who has left the match room's
- * players (no owner in `state.players`, no shot). Defeated players aren't targets, a frozen
- * (disconnected) one is, as with any shooter. `now` is for tests.
+ * players (no owner in `state.players`, no shot). Defeated players aren't targets, nor is anyone
+ * in the safe area of their own spawn (SPAWN_SAFE_RADIUS); a frozen (disconnected) one is, as with
+ * any shooter. `now` is for tests.
  */
 function update(state: GameState, now = Date.now()): void {
     if (state.phase.phase !== 'playing') return;
@@ -37,6 +38,8 @@ function update(state: GameState, now = Date.now()): void {
         state.players.forEach((player) => {
             if (!RespawnSystem.isAlive(player) || areAllies(state, tower.ownerId, player.id))
                 return;
+            if (RespawnSystem.inSpawnSafeArea(player)) return; // nobody is shot as they respawn
+            if (RespawnSystem.inGrace(player, now)) return; // nor just after it
             const distance = screenDistance(from, player);
             if (distance > nearest || !hasLineOfSight(state, from, player)) return;
             nearest = distance;
@@ -46,7 +49,16 @@ function update(state: GameState, now = Date.now()): void {
 
         tower.nextShotAt = now + TOWER_FIRE_INTERVAL_MS;
         const angle = aimAngle(from, target, 0);
-        CombatSystem.spawnShot(state, tower.ownerId, from.x, from.y, angle, GUN_DAMAGE.basic);
+        CombatSystem.spawnShot(
+            state,
+            tower.ownerId,
+            from.x,
+            from.y,
+            angle,
+            GUN_DAMAGE.basic,
+            undefined,
+            true
+        );
     });
 }
 
