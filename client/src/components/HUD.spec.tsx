@@ -38,6 +38,15 @@ describe('HUD', () => {
         expect(screen.queryByText(/Structures|Upgrade|Farm|Booster/)).not.toBeInTheDocument();
     });
 
+    it('leaves out Gun and Ammo when the game has no guns', () => {
+        render(
+            <HUD me={makePlayer({ materials: 5 })} phase="playing" phaseEndsAt={0} guns={false} />
+        );
+        expect(screen.queryByText(/Gun:/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Ammo:/)).not.toBeInTheDocument();
+        expect(screen.getByText('Materials: 5')).toBeInTheDocument();
+    });
+
     it('shows the tile limit your farms give you, and warns at it', () => {
         const { rerender } = render(
             <HUD

@@ -8,6 +8,7 @@ const meta = (name: string, phase: GameMetadata['phase'] = 'lobby', bots = 0): G
     mapSize: 'small',
     teams: false,
     pods: true,
+    guns: false,
     matchMinutes: 5,
     phase,
     bots,

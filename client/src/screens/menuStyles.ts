@@ -159,5 +159,69 @@ export const MENU_CSS = `
     cursor: pointer;
 }
 .menu-choice input:checked + span { background: #f1c40f; border-color: #f1c40f; color: #000; font-weight: bold; }
+/* On/off settings: a label, a [?] help button and an iPhone-style switch on the right. */
+.menu-toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 24px; }
+.menu-toggle-label { margin: 0; }
+.menu-help { position: relative; display: inline-flex; }
+.menu-help-button {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+}
+.menu-help-button:hover, .menu-help-button[aria-expanded="true"] { color: #fff; border-color: #fff; }
+.menu-help-button:focus-visible, .menu-switch:focus-visible { outline: 2px solid #f1c40f; outline-offset: 2px; }
+.menu-tooltip {
+    position: absolute;
+    top: 28px;
+    left: -8px;
+    z-index: 10;
+    width: 260px;
+    max-width: calc(100vw - 48px);
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #2b2b45;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    font-size: 13px;
+    font-weight: normal;
+    line-height: 1.4;
+}
+.menu-switch {
+    position: relative;
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 51px;
+    height: 31px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.25);
+    cursor: pointer;
+    transition: background-color 180ms ease;
+}
+.menu-switch[aria-checked="true"] { background: #2ecc71; }
+.menu-switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+    transition: transform 180ms ease;
+}
+.menu-switch[aria-checked="true"] .menu-switch-knob { transform: translateX(20px); }
+@media (prefers-reduced-motion: reduce) {
+    .menu-switch, .menu-switch-knob { transition: none; }
+}
 .menu-alert { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: rgba(231, 76, 60, 0.2); border: 1px solid rgba(231, 76, 60, 0.6); }
 `;

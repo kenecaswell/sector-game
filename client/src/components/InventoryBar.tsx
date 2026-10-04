@@ -123,7 +123,7 @@ export function InventoryBar({
                         badge={String(counts.get(type))}
                         onClick={() => onBuild(type)}
                     >
-                        <ItemIcon kind="structure" id={type} />
+                        <ItemIcon kind="structure" id={type} size={38} teamColor={player.color} />
                     </Slot>
                 );
             })}

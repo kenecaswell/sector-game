@@ -27,6 +27,41 @@ describe("UpgradesPanel (the Build menu's Upgrades tab)", () => {
         expect(screen.queryByRole('group', { name: 'Farm' })).not.toBeInTheDocument();
     });
 
+    it('shows a picture beside every item, like the structure rows, and they all differ', () => {
+        renderMenu(makePlayer({ materials: 500 }));
+        const names = [
+            'Blaster',
+            'Ion Cannon',
+            'Ammo pack',
+            'Booster',
+            'Harvester',
+            'Armor',
+            'Jetpack',
+        ];
+        const pictures = names.map((name) => {
+            const svg = screen.getByRole('group', { name }).querySelector('svg');
+            expect(svg, name).not.toBeNull();
+            expect(svg).toHaveAttribute('aria-hidden', 'true');
+            expect(svg).toHaveAttribute('width', '36');
+            return svg?.innerHTML;
+        });
+        expect(new Set(pictures).size).toBe(names.length);
+    });
+
+    it('no pictures for weapons that are not offered, but the upgrades keep theirs', () => {
+        render(
+            <UpgradesPanel
+                player={makePlayer({ materials: 500 })}
+                onFabricate={vi.fn()}
+                guns={false}
+            />
+        );
+        for (const name of ['Booster', 'Harvester', 'Armor', 'Jetpack']) {
+            expect(screen.getByRole('group', { name }).querySelector('svg'), name).not.toBeNull();
+        }
+        expect(document.querySelectorAll('svg')).toHaveLength(4);
+    });
+
     it('lists the Jetpack under Upgrades, and shows it as Owned once you have it', () => {
         const { unmount } = render(
             <UpgradesPanel player={makePlayer({ materials: 500 })} onFabricate={vi.fn()} />
@@ -43,6 +78,23 @@ describe("UpgradesPanel (the Build menu's Upgrades tab)", () => {
         renderMenu(makePlayer({ materials: 77, ammo: 9, gun: 'basic' }));
         expect(screen.getByText('Ammo: 9')).toBeInTheDocument();
         expect(screen.getByText('Blaster', { selector: 'span' })).toBeInTheDocument();
+    });
+
+    it('without guns: no Weapons, gun or ammo, just the upgrades', () => {
+        render(
+            <UpgradesPanel
+                player={makePlayer({ materials: 500 })}
+                onFabricate={vi.fn()}
+                guns={false}
+            />
+        );
+        expect(screen.queryByRole('region', { name: 'Weapons' })).not.toBeInTheDocument();
+        for (const name of ['Blaster', 'Ion Cannon', 'Ammo pack']) {
+            expect(screen.queryByRole('group', { name })).not.toBeInTheDocument();
+        }
+        expect(screen.queryByText(/Ammo:/)).not.toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Upgrades' })).toBeInTheDocument();
+        expect(buttonFor('Booster')).toBeEnabled();
     });
 
     it('only enables what you can afford', () => {

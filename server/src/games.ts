@@ -58,6 +58,7 @@ export function listingsFrom(rooms: readonly RoomSummary[]): GameListing[] {
                 mapSize: meta.mapSize,
                 teams: meta.teams,
                 pods: meta.pods,
+                guns: meta.guns,
                 matchMinutes: meta.matchMinutes,
                 phase: meta.phase,
                 // Bots take seats without being clients (GameRoom lowers maxClients for them).

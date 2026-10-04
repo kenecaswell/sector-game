@@ -1,35 +1,36 @@
-import { UPGRADE_ICON_COLORS, STRUCTURE_COLORS, STRUCTURE_DEFAULT_COLOR } from '../game/constants';
+import { UPGRADE_ICON_COLORS } from '../game/constants';
 import type { StructureType, UpgradeId } from '../types/shared';
+import { StructureIcon } from './StructureIcon';
+import { WeaponArt } from './WeaponIcon';
+import type { WeaponId } from './weaponIds';
 
-// Icons for the on-screen inventory. A structure is a tiny hexagonal slab in its type's color (like
-// the real ones, still a placeholder); each upgrade is drawn as a little picture of itself: a jet
-// engine with a blue flame (Booster), a tracked harvester (Harvester), a knight's breastplate
-// (Armor) and a jetpack (Jetpack). All are SVG in a 24 x 24 box centered on the origin.
+// Icons for the on-screen inventory and the Build menu. A structure is a small picture of its
+// building on a pad in the owner's color (StructureIcon); each upgrade is drawn as a little picture
+// of itself: a jet engine with a blue flame (Booster), a tracked harvester (Harvester), a knight's
+// breastplate (Armor) and a jetpack (Jetpack); and each weapon a picture of itself (WeaponIcon: a
+// Blaster, an Ion Cannon, an ammo pack). All are SVG in a 24 x 24 box centered on the origin.
 
 const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 export type ItemIconProps =
-    | { kind: 'structure'; id: StructureType; size?: number }
-    | { kind: 'upgrade'; id: UpgradeId; size?: number };
+    | { kind: 'structure'; id: StructureType; size?: number; teamColor?: string }
+    | { kind: 'upgrade'; id: UpgradeId; size?: number }
+    | { kind: 'weapon'; id: WeaponId; size?: number };
 
 export function ItemIcon(props: ItemIconProps) {
     const size = props.size ?? 30;
     return (
-        <svg width={size} height={size} viewBox="-12 -12 24 24" aria-hidden="true">
+        <svg
+            width={size}
+            height={size}
+            viewBox="-12 -12 24 24"
+            aria-hidden="true"
+            style={{ flexShrink: 0 }}
+        >
             {props.kind === 'structure' ? (
-                <>
-                    {/* Side face under a flat-top hexagon lid. */}
-                    <polygon
-                        points="-11,1 -5.5,6.5 5.5,6.5 11,1 11,4 5.5,9.5 -5.5,9.5 -11,4"
-                        fill="#3a3a3a"
-                    />
-                    <polygon
-                        points="-11,1 -5.5,-4.5 5.5,-4.5 11,1 5.5,6.5 -5.5,6.5"
-                        fill={css(STRUCTURE_COLORS[props.id] ?? STRUCTURE_DEFAULT_COLOR)}
-                        stroke="#1b1b1b"
-                        strokeWidth={1.2}
-                    />
-                </>
+                <StructureIcon type={props.id} teamColor={props.teamColor} />
+            ) : props.kind === 'weapon' ? (
+                <WeaponArt id={props.id} />
             ) : (
                 <UpgradeArt id={props.id} />
             )}

@@ -39,6 +39,7 @@ import {
     type StructureType,
 } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
+import { ART_CANVAS, SmokeEmitter, bakeStructure, smokeSources } from '../structures';
 import { isShallowWater } from '../terrain';
 import {
     BASE_CLAIM_RADIUS,
@@ -66,11 +67,6 @@ import {
     BIG_SHOT_SCALE,
     SMOOTHING_RATE,
     SNAP_DISTANCE,
-    STRUCTURE_BORDER_WIDTH,
-    STRUCTURE_COLORS,
-    STRUCTURE_DEFAULT_COLOR,
-    STRUCTURE_HEIGHT,
-    STRUCTURE_SIDE_DARKEN,
     BUILD_PREVIEW_OK_COLOR,
     BUILD_PREVIEW_BAD_COLOR,
     BUILD_PREVIEW_TAP_MS,
@@ -191,7 +187,7 @@ export class GameScene extends Phaser.Scene {
 
     private playerViews = new Map<string, PlayerView>();
     private projectileViews = new Map<string, ProjectileView>();
-    private structureSprites = new Map<string, Phaser.GameObjects.Graphics>();
+    private structureViews = new Map<string, StructureView>();
     private pickupViews = new Map<string, Phaser.GameObjects.Container>();
     private backpackViews = new Map<string, Phaser.GameObjects.Container>(); // only ever your own
     // Touch has no hover, so a refused build tap shows its red outline here for a moment.
@@ -251,7 +247,7 @@ export class GameScene extends Phaser.Scene {
         this.hoverKey = '';
         this.playerViews.clear();
         this.projectileViews.clear();
-        this.structureSprites.clear();
+        this.structureViews.clear();
         this.pickupViews.clear();
         this.backpackViews.clear();
         this.tapPreview = null;
@@ -1319,117 +1315,63 @@ export class GameScene extends Phaser.Scene {
     }
 
     /**
-     * A structure is a raised slab in the shape of its footprint (the 7-hex hexagon, or the clump of
-     * 3 hexes for a Guard Tower): side faces in the owner's team color (darkened), a top face in
-     * the structure type's color (STRUCTURE_COLORS), and a team-colored border. Placeholder until
-     * there's art per type. Drawn once — it never moves.
+     * A structure is its type's art (game/structures: a dome farm, a factory, a guard tower, a
+     * geothermal plant) on a pad in its owner's team color, baked once per type and owner color and
+     * shown as one image. A power plant also gets its smoke. It never moves, so it's sorted once:
+     * by the northmost ground corner of its footprint, not its middle, so anyone standing on it (its
+     * owner or a teammate walking through) or in front of it draws on top, and players behind it are
+     * covered by it.
      */
     private addStructureSprite(structure: StructureState): void {
-        if (this.structureSprites.has(structure.id)) return;
+        if (this.structureViews.has(structure.id) || !isStructureType(structure.type)) return;
+        const type = structure.type;
         const owner = this.room.state.players.get(structure.ownerId);
         const teamColor = owner
             ? Phaser.Display.Color.HexStringToColor(owner.color).color
             : 0xffffff;
-        const topColor = STRUCTURE_COLORS[structure.type] ?? STRUCTURE_DEFAULT_COLOR;
-        const compact =
-            isStructureType(structure.type) && STRUCTURE_SPECS[structure.type].hexes === 3;
-
-        const g = this.add.graphics();
-        const lift = (p: Point): Phaser.Math.Vector2 =>
-            new Phaser.Math.Vector2(p.x, p.y - STRUCTURE_HEIGHT);
-        let lowest: number[];
-        if (compact) {
-            lowest = this.drawCompactSlab(g, structure, teamColor, topColor);
-        } else {
-            const ground = structureCorners(structure.tileX, structure.tileY);
-            const top = ground.map(lift);
-
-            // Side faces: only the edges facing the viewer (their outward normal points down the
-            // screen) are visible. Corners go clockwise on screen, so the outward normal of edge
-            // a -> b is (b.y - a.y, a.x - b.x).
-            g.fillStyle(blendColors(teamColor, 0x000000, STRUCTURE_SIDE_DARKEN), 1);
-            for (let i = 0; i < 6; i++) {
-                const a = ground[i];
-                const b = ground[(i + 1) % 6];
-                if (a.x - b.x <= 0) continue;
-                g.fillPoints(
-                    [
-                        new Phaser.Math.Vector2(a.x, a.y),
-                        new Phaser.Math.Vector2(b.x, b.y),
-                        top[(i + 1) % 6],
-                        top[i],
-                    ],
-                    true
-                );
-            }
-            g.fillStyle(topColor, 1);
-            g.fillPoints(top, true);
-            g.lineStyle(STRUCTURE_BORDER_WIDTH, teamColor, 1);
-            g.strokePoints(top, true);
-            lowest = ground.map((p) => p.y);
-        }
-
-        // Sort by the slab's northmost ground corner, not its center: anyone standing on it (its
-        // owner or a teammate walking through) or in front of it draws on top; players behind it
-        // are covered by it.
-        g.setDepth(Math.min(...lowest));
-        this.structureSprites.set(structure.id, g);
-    }
-
-    /**
-     * Draws a Guard Tower's slab: three hexes raised together. Side faces go only on the outer
-     * edges that face the viewer, then the three tops, then the team-colored border on the outer
-     * edges only (so the hexes read as one piece). Returns the ground corners' y values, for depth.
-     */
-    private drawCompactSlab(
-        g: Phaser.GameObjects.Graphics,
-        structure: StructureState,
-        teamColor: number,
-        topColor: number
-    ): number[] {
         const hexes = structureHexes(structure);
-        const inside = new Set(hexes.map((h) => `${h.col},${h.row}`));
-        // Hex corner i to i + 1 faces the neighbor at index (i + 1) % 6 of hexNeighbors.
-        const outerEdges = (col: number, row: number) => {
-            const corners = hexCorners(col, row);
-            const around = hexNeighbors(col, row);
-            const edges: Array<{ a: Point; b: Point; faces: boolean }> = [];
-            for (let i = 0; i < 6; i++) {
-                const n = around[(i + 1) % 6];
-                if (inside.has(`${n.col},${n.row}`)) continue;
-                // Edges 0-2 are the ones whose outward normal points down the screen.
-                edges.push({ a: corners[i], b: corners[(i + 1) % 6], faces: i <= 2 });
-            }
-            return { corners, edges };
-        };
-        const v = (p: Point, up = 0) => new Phaser.Math.Vector2(p.x, p.y - up);
-
-        g.fillStyle(blendColors(teamColor, 0x000000, STRUCTURE_SIDE_DARKEN), 1);
-        for (const hex of hexes) {
-            for (const { a, b, faces } of outerEdges(hex.col, hex.row).edges) {
-                if (!faces) continue;
-                g.fillPoints([v(a), v(b), v(b, STRUCTURE_HEIGHT), v(a, STRUCTURE_HEIGHT)], true);
-            }
-        }
-        g.fillStyle(topColor, 1);
-        for (const hex of hexes) {
-            g.fillPoints(
-                outerEdges(hex.col, hex.row).corners.map((p) => v(p, STRUCTURE_HEIGHT)),
-                true
-            );
-        }
-        g.lineStyle(STRUCTURE_BORDER_WIDTH, teamColor, 1);
-        for (const hex of hexes) {
-            for (const { a, b } of outerEdges(hex.col, hex.row).edges) {
-                g.lineBetween(a.x, a.y - STRUCTURE_HEIGHT, b.x, b.y - STRUCTURE_HEIGHT);
-            }
-        }
-        return hexes.flatMap((h) => hexCorners(h.col, h.row).map((p) => p.y));
+        const centers = hexes.map((h) => hexCenter(h.col, h.row));
+        // The art is centered on the middle of the footprint: the center hex of 7, or the point
+        // where the 3 hexes of a Guard Tower meet.
+        const compact = STRUCTURE_SPECS[type].hexes === 3;
+        const middle = compact
+            ? {
+                  x: centers.reduce((sum, c) => sum + c.x, 0) / centers.length,
+                  y: centers.reduce((sum, c) => sum + c.y, 0) / centers.length,
+              }
+            : centers[0];
+        const at = project(middle.x, middle.y);
+        const key = bakeStructure(
+            this,
+            type,
+            teamColor,
+            compact ? centers.map((c) => ({ x: c.x - middle.x, y: c.y - middle.y })) : undefined
+        );
+        const depth = Math.min(
+            ...(compact
+                ? hexes.flatMap((h) => hexCorners(h.col, h.row).map((p) => p.y))
+                : structureCorners(structure.tileX, structure.tileY).map((p) => p.y))
+        );
+        const image = this.add
+            .image(at.x, at.y, key)
+            .setOrigin(
+                ART_CANVAS.originX / ART_CANVAS.width,
+                ART_CANVAS.originY / ART_CANVAS.height
+            )
+            .setDepth(depth);
+        const sources = smokeSources(type);
+        const smoke =
+            sources.length > 0
+                ? new SmokeEmitter(this, sources, at.x, at.y, depth + 0.5, hashString(structure.id))
+                : undefined;
+        this.structureViews.set(structure.id, { image, smoke });
     }
 
     private removeStructureSprite(id: string): void {
-        this.structureSprites.get(id)?.destroy();
-        this.structureSprites.delete(id);
+        const view = this.structureViews.get(id);
+        view?.image.destroy();
+        view?.smoke?.destroy();
+        this.structureViews.delete(id);
     }
 
     /**
@@ -1581,6 +1523,19 @@ export class GameScene extends Phaser.Scene {
         view.wx += (targetX - view.wx) * smoothing;
         view.wy += (targetY - view.wy) * smoothing;
     }
+}
+
+/** A structure on screen: its art, and its smoke if it has any. */
+interface StructureView {
+    image: Phaser.GameObjects.Image;
+    smoke?: SmokeEmitter;
+}
+
+/** A small number from a string (to vary things per structure, the same every time). */
+function hashString(text: string): number {
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+    return hash;
 }
 
 function blendColors(from: number, to: number, amount: number): number {

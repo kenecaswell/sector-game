@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
     DEFAULT_GAME_SETTINGS,
     GAME_NAME_MAX_LENGTH,
@@ -27,7 +27,7 @@ interface Choice<T> {
 }
 
 /**
- * Create game: the new game's name and settings (map size, teams, drop pods, match length), with
+ * Create game: the new game's name and settings (map size, teams, drop pods, guns, match length), with
  * the defaults from DEFAULT_GAME_SETTINGS. Creating it takes you to its lobby.
  */
 export function CreateGameScreen({
@@ -80,28 +80,6 @@ export function CreateGameScreen({
                     onChange={(value) => set('mapSize', value)}
                 />
                 <Choices
-                    legend="Teams"
-                    hint="On: players can pick a team color and play as allies. Off: everyone for themselves."
-                    name="teams"
-                    value={settings.teams}
-                    choices={[
-                        { value: false, label: 'Off' },
-                        { value: true, label: 'On' },
-                    ]}
-                    onChange={(value) => set('teams', value)}
-                />
-                <Choices
-                    legend="Drop pods"
-                    hint="Supply pods scattered on the map, with better odds for players behind."
-                    name="pods"
-                    value={settings.pods}
-                    choices={[
-                        { value: true, label: 'On' },
-                        { value: false, label: 'Off' },
-                    ]}
-                    onChange={(value) => set('pods', value)}
-                />
-                <Choices
                     legend="Game length"
                     name="matchMinutes"
                     value={settings.matchMinutes}
@@ -110,6 +88,24 @@ export function CreateGameScreen({
                         label: `${minutes} min`,
                     }))}
                     onChange={(value) => set('matchMinutes', value)}
+                />
+                <ToggleRow
+                    label="Teams"
+                    help="On: players can pick a team color and play as allies. Off: everyone for themselves."
+                    checked={settings.teams}
+                    onChange={(value) => set('teams', value)}
+                />
+                <ToggleRow
+                    label="Drop pods"
+                    help="Supply pods scattered on the map, with better odds for players behind."
+                    checked={settings.pods}
+                    onChange={(value) => set('pods', value)}
+                />
+                <ToggleRow
+                    label="Guns"
+                    help="On: players can fabricate guns and ammo, and find them in drop pods. Off: only Guard Towers shoot."
+                    checked={settings.guns}
+                    onChange={(value) => set('guns', value)}
                 />
 
                 {error && (
@@ -142,14 +138,12 @@ export function CreateGameScreen({
 
 function Choices<T extends string | number | boolean>({
     legend,
-    hint,
     name,
     value,
     choices,
     onChange,
 }: {
     legend: string;
-    hint?: string;
     name: string;
     value: T;
     choices: Choice<T>[];
@@ -158,11 +152,6 @@ function Choices<T extends string | number | boolean>({
     return (
         <fieldset className="menu-fieldset">
             <legend className="menu-label">{legend}</legend>
-            {hint && (
-                <div className="menu-muted" style={{ margin: '-4px 0 8px' }}>
-                    {hint}
-                </div>
-            )}
             <div className="menu-choices">
                 {choices.map((choice) => (
                     <label key={String(choice.value)} className="menu-choice">
@@ -177,5 +166,73 @@ function Choices<T extends string | number | boolean>({
                 ))}
             </div>
         </fieldset>
+    );
+}
+
+/**
+ * An on/off setting as an iPhone-style switch, with a [?] button that explains it. The switch is a
+ * `role="switch"` button named by the label. The help appears while a mouse is over [?], or
+ * pinned open by clicking or tapping it (so it works on touch and with the keyboard); clicking away,
+ * leaving it with Tab or pressing Esc closes it.
+ */
+function ToggleRow({
+    label,
+    help,
+    checked,
+    onChange,
+}: {
+    label: string;
+    help: string;
+    checked: boolean;
+    onChange: (value: boolean) => void;
+}) {
+    const id = useId();
+    const [hover, setHover] = useState(false);
+    const [pinned, setPinned] = useState(false);
+    const open = hover || pinned;
+
+    return (
+        <div className="menu-toggle-row">
+            <span id={`${id}-label`} className="menu-label menu-toggle-label">
+                {label}
+            </span>
+            <span className="menu-help">
+                <button
+                    type="button"
+                    className="menu-help-button"
+                    aria-label={`About ${label}`}
+                    aria-expanded={open}
+                    aria-describedby={open ? `${id}-help` : undefined}
+                    onPointerEnter={(e) => e.pointerType === 'mouse' && setHover(true)}
+                    onPointerLeave={() => setHover(false)}
+                    onClick={() => setPinned((value) => !value)}
+                    onBlur={() => setPinned(false)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape' && open) {
+                            e.stopPropagation();
+                            setHover(false);
+                            setPinned(false);
+                        }
+                    }}
+                >
+                    ?
+                </button>
+                {open && (
+                    <span id={`${id}-help`} role="tooltip" className="menu-tooltip">
+                        {help}
+                    </span>
+                )}
+            </span>
+            <button
+                type="button"
+                role="switch"
+                aria-checked={checked}
+                aria-labelledby={`${id}-label`}
+                className="menu-switch"
+                onClick={() => onChange(!checked)}
+            >
+                <span className="menu-switch-knob" />
+            </button>
+        </div>
     );
 }

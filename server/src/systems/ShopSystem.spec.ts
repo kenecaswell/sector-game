@@ -196,6 +196,31 @@ describe('ShopSystem — upgrades', () => {
     });
 });
 
+describe('ShopSystem — guns flag', () => {
+    it('with guns disabled, guns and ammo cannot be bought but everything else can', () => {
+        for (const id of ['basicGun', 'bigGun', 'ammo'] as const) {
+            const p = buyer();
+            expect(
+                ShopSystem.purchase(p, id, true, () => true, false),
+                id
+            ).toBe(false);
+            expect(p.materials, id).toBe(1000);
+            expect(p.gun).toBe('');
+            expect(p.ammo).toBe(0);
+        }
+        for (const id of ['booster', 'armor', 'expander', 'wings', 'guardTower', 'farm'] as const) {
+            expect(
+                ShopSystem.purchase(buyer(), id, true, () => true, false),
+                id
+            ).toBe(true);
+        }
+    });
+
+    it('with guns enabled (the default for the function), a gun can be bought', () => {
+        expect(ShopSystem.purchase(buyer(), 'basicGun', true, () => true, true)).toBe(true);
+    });
+});
+
 describe('ShopSystem — structures', () => {
     it('adds to the inventory, as many as you can pay for', () => {
         const p = buyer();

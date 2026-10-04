@@ -5,7 +5,9 @@ import {
     CHARACTER_IDS,
     SHOP_ITEMS,
     SHOP_ITEM_IDS,
+    MAX_PLAYERS,
     TEAMS,
+    TEAM_IDS,
     isShopItemId,
     activeUpgradeLevel,
     normalizePlayerName,
@@ -139,6 +141,11 @@ describe('catalogs', () => {
         }
     });
 
+    it('has a color for every seat in a game (MAX_PLAYERS), as two rows of five', () => {
+        expect(TEAM_IDS).toHaveLength(MAX_PLAYERS);
+        expect(TEAM_IDS.length % 5).toBe(0);
+    });
+
     it('team colors are all different', () => {
         const colors = Object.values(TEAMS).map((team) => team.color);
         expect(new Set(colors).size).toBe(colors.length);
@@ -164,6 +171,7 @@ describe('normalizeGameSettings', () => {
                 mapSize: 'large',
                 teams: true,
                 pods: false,
+                guns: true,
                 matchMinutes: 10,
             })
         ).toEqual({
@@ -171,6 +179,7 @@ describe('normalizeGameSettings', () => {
             mapSize: 'large',
             teams: true,
             pods: false,
+            guns: true,
             matchMinutes: 10,
         });
     });
@@ -182,10 +191,12 @@ describe('normalizeGameSettings', () => {
                 mapSize: 'huge',
                 teams: 'yes',
                 pods: 1,
+                guns: 'on',
                 matchMinutes: 8,
                 name: 5,
             })
         ).toEqual(DEFAULT_GAME_SETTINGS);
+        expect(DEFAULT_GAME_SETTINGS.guns).toBe(false); // guns are opt-in
         expect(normalizeGameSettings({ name: 'x'.repeat(50) }).name).toHaveLength(30);
         expect(normalizeGameSettings({ matchMinutes: 7 }).matchMinutes).toBe(7);
     });

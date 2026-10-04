@@ -10,6 +10,7 @@ const listing = (code: string, name: string, extra: Partial<GameListing> = {}): 
     mapSize: 'small',
     teams: false,
     pods: true,
+    guns: false,
     matchMinutes: 5,
     phase: 'lobby',
     players: 2,
@@ -33,7 +34,7 @@ describe('GamesScreen', () => {
         await userEvent.click(screen.getByRole('button', { name: /Create game/ }));
         expect(props.onCreate).toHaveBeenCalled();
         const ada = await screen.findByRole('button', { name: "Join Ada's game (K7QF)" });
-        expect(ada).toHaveTextContent('Small map · No teams · Drop pods · 5 min');
+        expect(ada).toHaveTextContent('Small map · No teams · Drop pods · No guns · 5 min');
         expect(ada).toHaveTextContent('In the lobby');
         await userEvent.click(ada);
         expect(props.onJoin).toHaveBeenCalledWith('K7QF');

@@ -62,8 +62,15 @@ async function withServer(scale, fn, env = {}) {
     }
 }
 
+/**
+ * Joins (or creates) a game. Guns are off unless a game asks for them, so the scenarios that use
+ * guns get a game with them on; pass `game: { guns: false }` for the real default.
+ */
 async function join(client, options) {
-    const room = await client.joinOrCreate('GameRoom', options);
+    const room = await client.joinOrCreate('GameRoom', {
+        ...options,
+        game: { guns: true, ...options?.game },
+    });
     if (!room.state?.phase) await new Promise((resolve) => room.onStateChange.once(resolve));
     room.inbox = [];
     room.gameOver = null;
@@ -640,6 +647,42 @@ async function pickups() {
     );
 }
 
+/** The guns setting: off by default, so guns and ammo can't be bought; on when the game asks. */
+async function gunsSetting() {
+    section('Guns game setting (off by default)');
+    await withServer(
+        0.05,
+        async () => {
+            const a = await join(new Client(URL), { game: { guns: false } });
+            const b = await join(new Client(URL));
+            check('a game created without guns says so', a.state.settings.guns === false);
+            await startMatch(a, b);
+            await buildFabricator(a);
+            const before = me(a).materials;
+            for (const itemId of ['basicGun', 'bigGun', 'ammo']) a.send('purchase', { itemId });
+            await sleep(300);
+            check(
+                'with a Fabricator and the materials, guns and ammo are still refused',
+                me(a).gun === '' && me(a).ammo === 0 && me(a).materials === before
+            );
+            a.send('purchase', { itemId: 'armor' });
+            await waitFor(() => me(a).armorLevel === 1, 2000);
+            check('upgrades can still be bought', me(a).armorLevel === 1);
+        },
+        { TERRAIN_COVERAGE: '0', PICKUPS: '0' }
+    );
+    await withServer(0.2, async () => {
+        const plain = await new Client(URL).joinOrCreate('GameRoom', {});
+        if (!plain.state?.phase) await new Promise((resolve) => plain.onStateChange.once(resolve));
+        check('a game created with no settings has guns off', plain.state.settings.guns === false);
+        const on = await new Client(URL).create('GameRoom', { game: { guns: true, name: 'Armed' } });
+        if (!on.state?.phase) await new Promise((resolve) => on.onStateChange.once(resolve));
+        check('the guns setting turns them on', on.state.settings.guns === true);
+        const listed = (await fetchGames()).find((g) => g.name === 'Armed');
+        check('the game list says whether a game has guns', listed?.guns === true);
+    });
+}
+
 /** GET /games on the test server. */
 function fetchGames() {
     return new Promise((resolve, reject) => {
@@ -1095,6 +1138,7 @@ async function edges() {
         await shop();
         await connection();
         await pickups();
+        await gunsSetting();
         await games();
         await bots();
         await backpacks();

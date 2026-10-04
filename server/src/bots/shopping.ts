@@ -3,6 +3,7 @@
 import type { BotProfile } from '../constants';
 import {
     SHOP_ITEMS,
+    isGunItem,
     ownsShopItem,
     upgradeLevel,
     type ShopCustomer,
@@ -15,6 +16,7 @@ export interface BotNeeds {
     nearTileCap: boolean; // it's within FARM_MARGIN hexes of its tile limit: time to buy a farm
     approachingTileCap: boolean; // within RESERVE_MARGIN: keep a farm's price in hand
     towersFull?: boolean; // at its Guard Tower limit: no more towers to buy
+    gunsDisabled?: boolean; // the game has no guns: it skips guns and ammo
 }
 
 // At its tile limit a bot can't claim, so it earns no materials, and a bot that has spent
@@ -28,7 +30,8 @@ export const RESERVE_MARGIN = 250;
  * The item a bot should buy now, or null to wait. Two things come before the shopping list:
  * a Fabricator when it has none (nothing else but structures can be bought without one), and a farm
  * when it's close to its tile limit (and, as it nears the limit, a farm's price is held back from
- * everything else). Then, low on ammo with a gun, ammo comes first. Otherwise it's
+ * everything else). Then, low on ammo with a gun, ammo comes first. With `gunsDisabled` it skips
+ * guns and ammo, and carries on with the rest of its list. Otherwise it's
  * the first entry of `shopPlan` not done yet (an upgrade listed k times is done at level k, a gun
  * once owned, the k-th structure entry once it has bought k plan structures): if it can afford
  * that, that's it; if not, it waits (`saveUp`) or tries the entries after it. With the list done
@@ -63,7 +66,7 @@ export function nextPurchase(
 
     // Without a Fabricator only structures can be bought, so skip gear.
     const gearLocked = !needs.hasFabricator;
-    if (!gearLocked && player.gun !== '' && player.ammo < profile.ammoLow) {
+    if (!needs.gunsDisabled && !gearLocked && player.gun !== '' && player.ammo < profile.ammoLow) {
         if (affordable('ammo')) return 'ammo';
         if (profile.saveUp) return null;
     }
@@ -71,6 +74,7 @@ export function nextPurchase(
     const upgradesSeen = new Map<string, number>();
     let structuresSeen = 0;
     for (const id of profile.shopPlan) {
+        if (needs.gunsDisabled && isGunItem(id)) continue; // not for sale in this game
         const item = SHOP_ITEMS[id];
         let done: boolean;
         if (item.upgrade) {

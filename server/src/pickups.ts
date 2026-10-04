@@ -35,6 +35,9 @@ export interface PickupContents {
 /** The parts of a player the roll looks at: their gun and upgrade levels. */
 export type PickupCollector = UpgradeHolder & { gun: string };
 
+/** The pod outcomes a game without guns leaves out. */
+const GUN_OUTCOMES: PickupOutcome[] = ['ammo', 'basicGun', 'bigGun'];
+
 export const STRUCTURE_ITEMS: StructureType[] = ['farm', 'fabricator', 'guardTower', 'power'];
 
 /**
@@ -71,17 +74,22 @@ function usable(outcome: PickupOutcome, collector: PickupCollector): boolean {
  * PICKUP_TIER_CHANCES. Outcomes they couldn't use are dropped and the rest share the chance, so a
  * pod always holds something useful. An upgrade is level 1 of one they don't have yet; a structure
  * is a random one of `structures` (all four unless the collector is at a limit, like Guard Towers).
+ * With `gunsEnabled` false (the game's `settings.guns` is off) ammo and guns are left out too.
  * `random` returns [0, 1).
  */
 export function rollPickup(
     tier: number,
     collector: PickupCollector,
     random: () => number = Math.random,
-    structures: readonly StructureType[] = STRUCTURE_ITEMS
+    structures: readonly StructureType[] = STRUCTURE_ITEMS,
+    gunsEnabled = true
 ): PickupContents {
     const row = PICKUP_TIER_CHANCES[Math.min(Math.max(tier, 0), PICKUP_TIER_CHANCES.length - 1)];
     const options = (Object.entries(row) as [PickupOutcome, number][]).filter(
-        ([outcome, weight]) => weight > 0 && usable(outcome, collector)
+        ([outcome, weight]) =>
+            weight > 0 &&
+            (gunsEnabled || !GUN_OUTCOMES.includes(outcome)) &&
+            usable(outcome, collector)
     );
     const total = options.reduce((sum, [, weight]) => sum + weight, 0);
     let roll = random() * total;

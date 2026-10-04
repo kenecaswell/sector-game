@@ -116,7 +116,8 @@ export function GameScreen() {
     const me = players.find((player) => player.id === sessionId);
     const nextStructure = structureToBuild(me?.structureInventory, selectedStructure);
     const canBuild = nextStructure !== undefined;
-    const hasGun = !!me?.gun;
+    const guns = settings?.guns ?? false; // the game's guns setting
+    const hasGun = guns && !!me?.gun;
     // Build mode only counts while there's something left to build.
     const buildArmed = buildModeArmed && canBuild;
 
@@ -208,7 +209,7 @@ export function GameScreen() {
         <div style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
             <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
 
-            <HUD me={me} phase={phase} phaseEndsAt={phaseEndsAt} />
+            <HUD me={me} phase={phase} phaseEndsAt={phaseEndsAt} guns={guns} />
             <NoticeStack notices={notices} />
             <ScoreBadge score={me ? scoreFor(me) : 0} />
             <RespawnOverlay
@@ -254,6 +255,7 @@ export function GameScreen() {
                     }}
                     onClose={() => setPanel('none')}
                     towerLimit={maxGuardTowers(settings?.mapSize ?? 'small')}
+                    guns={guns}
                 />
             )}
             {phase === 'playing' && showInventoryBar && (

@@ -7,13 +7,16 @@ interface HUDProps {
     me: PlayerState | undefined;
     phase: GamePhase;
     phaseEndsAt: number;
+    /** Whether the game has guns (the game's `guns` setting); without them no Gun or Ammo lines. Default true. */
+    guns?: boolean;
 }
 
 /**
  * Top-left stats: phase and time left, health, gun, ammo, tiles and materials. Structures and
- * upgrades are on the right, in the InventoryBar (moved there 2026-09-27).
+ * upgrades are on the right, in the InventoryBar (moved there 2026-09-27). Gun and ammo only
+ * show in a game with guns.
  */
-export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
+export function HUD({ me, phase, phaseEndsAt, guns = true }: HUDProps) {
     const secondsLeft = usePhaseCountdown(phaseEndsAt);
 
     return (
@@ -42,8 +45,12 @@ export function HUD({ me, phase, phaseEndsAt }: HUDProps) {
                     <div>
                         Health: {Math.max(0, Math.round(me.health))} / {me.maxHealth}
                     </div>
-                    <div>Gun: {GUN_NAMES[me.gun as GunId] ?? 'none'}</div>
-                    <div>Ammo: {me.ammo}</div>
+                    {guns && (
+                        <>
+                            <div>Gun: {GUN_NAMES[me.gun as GunId] ?? 'none'}</div>
+                            <div>Ammo: {me.ammo}</div>
+                        </>
+                    )}
                     <div style={me.tilesOwned >= me.tileCap ? { color: '#ff7675' } : undefined}>
                         Tiles: {me.tilesOwned} / {me.tileCap}
                     </div>

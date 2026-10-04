@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { ItemIcon } from './ItemIcon';
+import { isWeaponId } from './weaponIds';
 import type { PlayerState } from '../types/gameState';
 import type { GunId, ShopCategory, ShopItemId } from '../types/shared';
 import {
@@ -12,6 +14,7 @@ import {
 } from '../types/shared';
 
 const MADE_FLASH_MS = 700;
+const ICON_SIZE = 36; // the same as the structure rows in the Build menu
 
 // The Upgrades tab makes guns, ammo and upgrades (the old Fabricator menu). Structures are bought
 // on the Structures tab, which needs no Fabricator, so the first Fabricator can be bought.
@@ -20,6 +23,8 @@ const UPGRADES_TAB_CATEGORIES: ShopCategory[] = ['weapons', 'upgrades'];
 interface UpgradesPanelProps {
     player: PlayerState | undefined;
     onFabricate: (itemId: ShopItemId) => void;
+    /** Whether the game has guns (the game's `guns` setting); without them no Weapons, gun or ammo. Default true. */
+    guns?: boolean;
 }
 
 /**
@@ -27,10 +32,12 @@ interface UpgradesPanelProps {
  * `purchase` message keep their shop names in code): make guns, ammo and upgrades from materials.
  * Items are grouped by category, straight from the shared SHOP_ITEMS catalog. The server validates
  * every request; the buttons just avoid offering ones that would be rejected (not enough materials,
- * or `ownsShopItem`: an upgrade you already have or a gun that isn't better than yours).
+ * or `ownsShopItem`: an upgrade you already have or a gun that isn't better than yours). With
+ * `guns` false the Weapons section and your gun and ammo are left out.
  */
-export function UpgradesPanel({ player, onFabricate }: UpgradesPanelProps) {
+export function UpgradesPanel({ player, onFabricate, guns = true }: UpgradesPanelProps) {
     const materials = player?.materials ?? 0;
+    const categories = UPGRADES_TAB_CATEGORIES.filter((c) => guns || c !== 'weapons');
     const [madeId, setMadeId] = useState<ShopItemId | null>(null);
     const madeTimer = useRef<number | undefined>(undefined);
     useEffect(() => () => window.clearTimeout(madeTimer.current), []);
@@ -40,6 +47,13 @@ export function UpgradesPanel({ player, onFabricate }: UpgradesPanelProps) {
         setMadeId(itemId);
         window.clearTimeout(madeTimer.current);
         madeTimer.current = window.setTimeout(() => setMadeId(null), MADE_FLASH_MS);
+    };
+
+    /** The picture beside an item: the weapon's own, or the upgrade's. */
+    const iconFor = (itemId: ShopItemId) => {
+        if (isWeaponId(itemId)) return <ItemIcon kind="weapon" id={itemId} size={ICON_SIZE} />;
+        const upgrade = SHOP_ITEMS[itemId].upgrade;
+        return upgrade ? <ItemIcon kind="upgrade" id={upgrade} size={ICON_SIZE} /> : null;
     };
 
     const buttonFor = (itemId: ShopItemId) => {
@@ -72,23 +86,25 @@ export function UpgradesPanel({ player, onFabricate }: UpgradesPanelProps) {
 
     return (
         <div role="tabpanel" aria-label="Upgrades">
-            <div
-                style={{
-                    margin: '6px 0 10px',
-                    display: 'flex',
-                    gap: 16,
-                    fontWeight: 'bold',
-                }}
-            >
-                <span>Ammo: {player?.ammo ?? 0}</span>
-                <span>{GUN_NAMES[player?.gun as GunId] ?? 'No gun'}</span>
-            </div>
+            {guns && (
+                <div
+                    style={{
+                        margin: '6px 0 10px',
+                        display: 'flex',
+                        gap: 16,
+                        fontWeight: 'bold',
+                    }}
+                >
+                    <span>Ammo: {player?.ammo ?? 0}</span>
+                    <span>{GUN_NAMES[player?.gun as GunId] ?? 'No gun'}</span>
+                </div>
+            )}
 
             <div style={{ marginBottom: 10, opacity: 0.8 }}>
                 Fabricating is on your own time — the game keeps running.
             </div>
 
-            {UPGRADES_TAB_CATEGORIES.map((category) => (
+            {categories.map((category) => (
                 <section key={category} aria-label={SHOP_CATEGORY_NAMES[category]}>
                     <div
                         style={{
@@ -116,16 +132,19 @@ export function UpgradesPanel({ player, onFabricate }: UpgradesPanelProps) {
                                     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
                                 }}
                             >
-                                <div>
-                                    <div style={{ fontWeight: 'bold' }}>
-                                        {player
-                                            ? shopItemTitle(player, itemId)
-                                            : SHOP_ITEMS[itemId].name}
-                                    </div>
-                                    <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                        {player
-                                            ? shopItemDescription(player, itemId)
-                                            : SHOP_ITEMS[itemId].description}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    {iconFor(itemId)}
+                                    <div>
+                                        <div style={{ fontWeight: 'bold' }}>
+                                            {player
+                                                ? shopItemTitle(player, itemId)
+                                                : SHOP_ITEMS[itemId].name}
+                                        </div>
+                                        <div style={{ fontSize: 12, opacity: 0.7 }}>
+                                            {player
+                                                ? shopItemDescription(player, itemId)
+                                                : SHOP_ITEMS[itemId].description}
+                                        </div>
                                     </div>
                                 </div>
                                 {buttonFor(itemId)}

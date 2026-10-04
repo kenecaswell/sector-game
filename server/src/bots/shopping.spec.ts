@@ -120,6 +120,22 @@ describe('nextPurchase', () => {
         expect(nextPurchase(buyer({ materials: 100, gun: '', ammo: 0 }), list, 0)).toBe('expander');
     });
 
+    it('with guns disabled it skips guns and ammo and carries on down its list', () => {
+        const off = {
+            hasFabricator: true,
+            nearTileCap: false,
+            approachingTileCap: false,
+            gunsDisabled: true,
+        };
+        const list = plan(['basicGun', 'armor']);
+        expect(nextPurchase(buyer({ materials: 200 }), list, 0, off)).toBe('armor');
+        const armed = buyer({ materials: 100, gun: 'basic', ammo: 0 }); // would normally want ammo
+        expect(nextPurchase(armed, plan(['armor']), 0, off)).toBe('armor');
+        expect(nextPurchase(armed, plan(['armor']), 0)).toBe('ammo');
+        // Saving up for a gun it can't buy would wait forever.
+        expect(nextPurchase(buyer({ materials: 0 }), plan(['bigGun']), 0, off)).toBeNull();
+    });
+
     it('saving up, it waits for the next item; otherwise it takes something further down', () => {
         const rich = buyer({ materials: 100 });
         expect(nextPurchase(rich, plan(['bigGun', 'armor'], true), 0)).toBeNull();

@@ -39,7 +39,7 @@ cd client
 npm run dev
 ```
 
-Open http://localhost:5173 and click **Play**. On the game list, pick an open game or **Create game** (map size, teams, drop pods, game length). In the lobby, set your name, pick a character (and a team, if the game has teams on), and press **Ready**. The match starts 3 seconds after everyone in the game is ready (on your own, that's straight away).
+Open http://localhost:5173 and click **Play**. On the game list, pick an open game or **Create game** (map size, game length, and switches for teams, drop pods and guns). In the lobby, set your name, pick a character (and a team, if the game has teams on), and press **Ready**. The match starts 3 seconds after everyone in the game is ready (on your own, that's straight away).
 
 **Playing alone:** in the lobby, pick a difficulty under the player list and press **+ Add bot** once per opponent, then press **Ready**. Bots are always ready, so the match starts straight away.
 
@@ -88,7 +88,7 @@ Before committing, run `npm run build && npm run lint` in whichever folder you c
 
 Health check: `GET http://localhost:2567/health` returns `{"status":"ok"}`.
 
-Gameplay tunables (tick rate, speeds, damage, hex size, materials per claim, drop-pod odds per score tier, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
+Gameplay tunables (tick rate, speeds, damage, hex size, materials per claim, drop-pod odds per score tier, …) live in [`server/src/constants.ts`](server/src/constants.ts). Pickups are behind a feature flag there (`PICKUPS_ENABLED`); start the server with `PICKUPS=0` or `PICKUPS=1` to override it. **Guns are a per-game setting, off by default** (the **Guns** choice on Create game): with it off, players have no guns or ammo (not in the Build menu, not in drop pods, not bought by bots) and only Guard Towers shoot. The guns, ammo and shooting rules below describe a game with guns on. The client's render, smoothing and isometric settings are in [`client/src/game/constants.ts`](client/src/game/constants.ts); the hex/entity sizes there must match the server's.
 
 ### Testing on a phone or another machine
 
@@ -123,9 +123,9 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 ## How a match works
 
-0. **Pick a game** — **Play** on the start screen opens the game list: **Create game** at the top, a box to find a game by code or name, and the open games (lobbies first, then games in play, with player counts and settings). Joining one, or opening its link, takes you to its lobby. Creating one picks its settings: map size Small 64 × 64 (default), Big 80 × 80 or Large 96 × 96; teams off (default) or on; drop pods on (default) or off; game length 5 (default), 7 or 10 minutes.
+0. **Pick a game** — **Play** on the start screen opens the game list: **Create game** at the top, a box to find a game by code or name, and the open games (lobbies first, then games in play, with player counts and settings). Joining one, or opening its link, takes you to its lobby. Creating one picks its settings: map size Small 64 × 64 (default), Big 80 × 80 or Large 96 × 96; game length 5 (default), 7 or 10 minutes; then three on/off switches (each with a [?] that explains it): teams off (default) or on; drop pods on (default) or off; guns off (default) or on.
 1. **Lobby** — every player is listed. Click (or tap) your name to change it: 2–25 characters, anything goes. It's remembered for next time, and if someone already has it you get a "(1)" added. Next to your name are three choices:
-   - **Team** (games with teams on) or **Color** (teams off: any color nobody else has) — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
+   - **Team color** (games with teams on) or **Color** (teams off: any color nobody else has; taken ones are crossed out) — a swatch: click the square in your row to open a popup with the ten colors in two rows of five, and click one (`Esc` or clicking away closes it; arrow keys move between swatches; the swatches are larger on touch screens). Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
    - **Character** — your starting kit (default Farmer):
 
      | Character | Gun | Ammo | Materials | Structures | Upgrades |
@@ -137,7 +137,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      | Explorer | — | 0 | 15 | — | Armor 1 (200 health) |
 
      Each structure type has a job (see below); the power plant's is still to come. Only the Engineer starts with a Fabricator.
-   - **Ready** — press it when you're set (press again to cancel). Team and character are locked while you're ready.
+   - **Ready** — press it when you're set (press again to cancel). Team color and character are locked while you're ready.
 
    - **Bots** — under the player list, pick **Easy**, **Medium** or **Hard** and press **+ Add bot** for a computer-controlled player. Anyone in the lobby can change a bot's color (or team), character and difficulty, or remove it (✕). Bots count toward the 10 players and are always ready. They leave you alone near your own spawn. What each difficulty does is in [GAME_DESIGN → Bots](docs/GAME_DESIGN.md#bots-single-player).
 
@@ -168,6 +168,8 @@ The Fabricator offers your next level of each upgrade. Levels last the whole mat
 | Fabricator | 7 | 1000 | 100 (Engineer: 150) | Opens the Fabricator (any more only add points) |
 | Guard Tower | 3 touching | 500 | 50 | Shoots enemy players nearby with the Blaster, never runs out of ammo |
 | Power plant | 7 | 1000 | 100 (Scientist: 150) | Essential — its job is still to come |
+
+Each one has its own look, drawn in code: in a 2078 style: the **Farm** is a farm under a glass dome of hexagon panels, the **Fabricator** a sleek, slightly dingy fabrication hub (glowing bay, solar roof, capacitor banks, a robot arm), the **Guard Tower** a sentry tower on the old prison-tower plan (glass-and-composite cabin, solar canopy, automated rail gun), and the **Power plant** a stainless-steel geothermal plant with two stacks pouring dark smoke. They stand on a pad in the owner's team color. The art is cosmetic: it doesn't change how structures block movement, take hits or get placed.
 
 **Tile limit:** you can hold at most **500 hexes**, plus 500 for every farm you own. At the limit, walking over ground claims nothing (the HUD shows **Tiles: x / 500** and warns you), so build more farms. A 7-hex structure covers a hex and its 6 neighbors and a Guard Tower three hexes that touch; every one must be yours, on the map (not at the edge), and not under another structure. The structure is a slab inside its hexes; its top color shows its type (farm: pale green, fabricator: brown, Guard Tower: sandstone, power plant: pale blue) and its edge shows the owner's team. Enemies can't claim its hexes. Structures are solid: enemies can't walk through yours (they slide around it), but you and your teammates can.
 
@@ -219,7 +221,7 @@ The server simulates in flat top-down coordinates. The isometric look is purely 
 | `EADDRINUSE` on port 2567 | Another server instance is running. Stop it, or set a different `PORT` |
 | The match doesn't start | Every connected player has to press **Ready**. A newcomer joining (not ready yet) cancels the countdown |
 | Can't change team or character | You're ready — press **✓ Ready** again to un-ready, then change it |
-| Shooting does nothing | You need a gun: fabricate the Blaster in the **Fabricator** or find one in a drop pod (nobody starts armed), plus ammo |
+| Shooting does nothing | Guns are off by default: create the game with **Guns: On**. With guns on, you need a gun: fabricate the Blaster in the **Fabricator** or find one in a drop pod (nobody starts armed), plus ammo |
 | Results screen says "This room has closed." | Expected: finished rooms close after the results period. Choose **Play again** for a fresh lobby |
 | Server restarts mid-game and everyone is dropped | Expected: `npm run dev` restarts on any file change and rooms live in memory |
 

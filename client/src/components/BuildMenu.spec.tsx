@@ -32,6 +32,14 @@ function renderMenu(player: PlayerState | undefined, handlers: Partial<BuildMenu
 }
 
 describe('BuildMenu', () => {
+    it("shows each structure's picture on a pad in your color", () => {
+        renderMenu(makePlayer({ color: '#2ecc71' }));
+        for (const name of ['Farm', 'Fabricator', 'Guard Tower', 'Power plant']) {
+            const row = screen.getByRole('group', { name });
+            expect(row.querySelector('svg [fill="#2ecc71"]'), name).not.toBeNull();
+        }
+    });
+
     it('lists the four structures with their cost, points and health', () => {
         renderMenu(makePlayer({ materials: 0, character: 'robot' }));
         for (const name of ['Farm', 'Fabricator', 'Guard Tower', 'Power plant']) {
@@ -179,6 +187,16 @@ describe('BuildMenu', () => {
                 within(screen.getByRole('group', { name: 'Booster' })).getByRole('button')
             );
             expect(onFabricate).toHaveBeenCalledWith('booster');
+        });
+
+        it('without guns the Upgrades tab has no Weapons, and the Structures hint says so', () => {
+            const { unmount } = renderMenu(withFabricator(), { tab: 'upgrades', guns: false });
+            expect(screen.queryByRole('group', { name: 'Blaster' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('group', { name: 'Ammo pack' })).not.toBeInTheDocument();
+            expect(screen.getByRole('group', { name: 'Booster' })).toBeInTheDocument();
+            unmount();
+            renderMenu(makePlayer({ hasFabricator: false }), { guns: false });
+            expect(screen.getByText(/Upgrades tab \(upgrades\)/)).toBeInTheDocument();
         });
 
         it('keeps materials and the tile limit on show on both tabs', () => {
