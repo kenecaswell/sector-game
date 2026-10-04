@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { ItemIcon } from './ItemIcon';
+import { isWeaponId } from './weaponIds';
 import type { PlayerState } from '../types/gameState';
 import type { GunId, ShopCategory, ShopItemId } from '../types/shared';
 import {
@@ -12,6 +14,7 @@ import {
 } from '../types/shared';
 
 const MADE_FLASH_MS = 700;
+const ICON_SIZE = 36; // the same as the structure rows in the Build menu
 
 // The Upgrades tab makes guns, ammo and upgrades (the old Fabricator menu). Structures are bought
 // on the Structures tab, which needs no Fabricator, so the first Fabricator can be bought.
@@ -44,6 +47,13 @@ export function UpgradesPanel({ player, onFabricate, guns = true }: UpgradesPane
         setMadeId(itemId);
         window.clearTimeout(madeTimer.current);
         madeTimer.current = window.setTimeout(() => setMadeId(null), MADE_FLASH_MS);
+    };
+
+    /** The picture beside an item: the weapon's own, or the upgrade's. */
+    const iconFor = (itemId: ShopItemId) => {
+        if (isWeaponId(itemId)) return <ItemIcon kind="weapon" id={itemId} size={ICON_SIZE} />;
+        const upgrade = SHOP_ITEMS[itemId].upgrade;
+        return upgrade ? <ItemIcon kind="upgrade" id={upgrade} size={ICON_SIZE} /> : null;
     };
 
     const buttonFor = (itemId: ShopItemId) => {
@@ -122,16 +132,19 @@ export function UpgradesPanel({ player, onFabricate, guns = true }: UpgradesPane
                                     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
                                 }}
                             >
-                                <div>
-                                    <div style={{ fontWeight: 'bold' }}>
-                                        {player
-                                            ? shopItemTitle(player, itemId)
-                                            : SHOP_ITEMS[itemId].name}
-                                    </div>
-                                    <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                        {player
-                                            ? shopItemDescription(player, itemId)
-                                            : SHOP_ITEMS[itemId].description}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    {iconFor(itemId)}
+                                    <div>
+                                        <div style={{ fontWeight: 'bold' }}>
+                                            {player
+                                                ? shopItemTitle(player, itemId)
+                                                : SHOP_ITEMS[itemId].name}
+                                        </div>
+                                        <div style={{ fontSize: 12, opacity: 0.7 }}>
+                                            {player
+                                                ? shopItemDescription(player, itemId)
+                                                : SHOP_ITEMS[itemId].description}
+                                        </div>
                                     </div>
                                 </div>
                                 {buttonFor(itemId)}

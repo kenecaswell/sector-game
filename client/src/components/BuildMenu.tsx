@@ -211,7 +211,12 @@ export function BuildMenu({
                                     }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                        <ItemIcon kind="structure" id={type} size={28} />
+                                        <ItemIcon
+                                            kind="structure"
+                                            id={type}
+                                            size={36}
+                                            teamColor={player?.color}
+                                        />
                                         <div>
                                             <div style={{ fontWeight: 'bold' }}>{spec.name}</div>
                                             <div style={{ fontSize: 12, opacity: 0.7 }}>

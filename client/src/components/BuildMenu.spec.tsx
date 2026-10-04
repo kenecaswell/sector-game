@@ -32,6 +32,14 @@ function renderMenu(player: PlayerState | undefined, handlers: Partial<BuildMenu
 }
 
 describe('BuildMenu', () => {
+    it("shows each structure's picture on a pad in your color", () => {
+        renderMenu(makePlayer({ color: '#2ecc71' }));
+        for (const name of ['Farm', 'Fabricator', 'Guard Tower', 'Power plant']) {
+            const row = screen.getByRole('group', { name });
+            expect(row.querySelector('svg [fill="#2ecc71"]'), name).not.toBeNull();
+        }
+    });
+
     it('lists the four structures with their cost, points and health', () => {
         renderMenu(makePlayer({ materials: 0, character: 'robot' }));
         for (const name of ['Farm', 'Fabricator', 'Guard Tower', 'Power plant']) {

@@ -33,6 +33,16 @@ function show(
 afterEach(() => vi.useRealTimers());
 
 describe('InventoryBar', () => {
+    it("draws each structure's picture on a pad in your color", () => {
+        show({ color: '#3498db', structureInventory: ['farm', 'guardTower'] });
+        const slots = screen.getAllByRole('button');
+        expect(slots).toHaveLength(2);
+        for (const slot of slots) {
+            expect(slot.querySelector('svg [fill="#3498db"]')).not.toBeNull();
+            expect(slot.querySelector('svg [fill="#e74c3c"]')).toBeNull();
+        }
+    });
+
     it('shows nothing when you hold no structures or upgrades', () => {
         show({});
         expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
