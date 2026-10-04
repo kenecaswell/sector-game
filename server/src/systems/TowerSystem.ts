@@ -39,6 +39,7 @@ function update(state: GameState, now = Date.now()): void {
             if (!RespawnSystem.isAlive(player) || areAllies(state, tower.ownerId, player.id))
                 return;
             if (RespawnSystem.inSpawnSafeArea(player)) return; // nobody is shot as they respawn
+            if (RespawnSystem.inGrace(player, now)) return; // nor just after it
             const distance = screenDistance(from, player);
             if (distance > nearest || !hasLineOfSight(state, from, player)) return;
             nearest = distance;

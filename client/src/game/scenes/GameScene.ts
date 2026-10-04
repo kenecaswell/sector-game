@@ -117,6 +117,9 @@ export interface GameSceneInitData {
 
 // A rendered entity remembers its smoothed *world* (top-down) position; the
 // Phaser object itself sits at the projected screen position.
+// One full 50% -> 100% -> 50% blink of a player in their respawn grace period (ms).
+const GRACE_BLINK_MS = 300;
+
 interface PlayerView {
     container: Phaser.GameObjects.Container;
     nose: Phaser.GameObjects.Arc;
@@ -125,8 +128,10 @@ interface PlayerView {
     // Harvester. A separate scene object (not part of `container`) so it sits under every entity.
     ring: Phaser.GameObjects.Ellipse | null;
     ringRadius: number;
-    // Their spawn platform, on the ground at the hex they start and respawn on.
+    // Their spawn platform, on the ground at the hex they start and respawn on. With
+    // `respawnWhereDied` it moves to wherever they fall, which is where they come back.
     pad: Phaser.GameObjects.Graphics;
+    wasDown: boolean; // they were defeated last frame (the pad follows them until they are back)
     wx: number;
     wy: number;
 }
@@ -1205,6 +1210,7 @@ export class GameScene extends Phaser.Scene {
             ring: null,
             ringRadius: 0,
             pad,
+            wasDown: false,
             wx: player.x,
             wy: player.y,
         });
@@ -1239,7 +1245,38 @@ export class GameScene extends Phaser.Scene {
             view.ring = ring;
             view.ringRadius = player.claimRadius;
         }
-        view.ring.setPosition(at.x, at.y).setAlpha(view.container.alpha);
+        // The circle goes with its owner: gone while they're defeated, back when they respawn.
+        view.ring
+            .setPosition(at.x, at.y)
+            .setAlpha(view.container.alpha)
+            .setVisible(player.respawnAt === 0);
+    }
+
+    /**
+     * With the respawn-where-you-died flag on, a defeated player comes back where they fell, so
+     * their spawn platform goes there: it sits under them while they wait, and stays at the spot
+     * they reappear on (the server may nudge it off a mountain or an enemy structure, hence the
+     * frame after). With the flag off it stays on their spawn hex.
+     */
+    private movePadToDeath(view: PlayerView, player: PlayerState): void {
+        if (!this.room.state.respawnWhereDied) return;
+        const down = player.respawnAt > 0;
+        if (down || view.wasDown) {
+            const at = project(player.x, player.y);
+            view.pad.setPosition(at.x, at.y);
+        }
+        view.wasDown = down;
+    }
+
+    /**
+     * Opacity factor for a player in their respawn grace period (nothing can hurt them): a wave
+     * that goes from 50% to 100% and back every GRACE_BLINK_MS, quick enough to read as blinking,
+     * so everyone can see they're untouchable. 1 outside the grace period.
+     */
+    private graceAlpha(player: PlayerState): number {
+        const now = Date.now();
+        if (player.graceUntil <= now) return 1;
+        return 0.75 + 0.25 * Math.sin((now / GRACE_BLINK_MS) * 2 * Math.PI);
     }
 
     private removePlayerView(sessionId: string): void {
@@ -1499,10 +1536,10 @@ export class GameScene extends Phaser.Scene {
             // Defeated players are out of play until they respawn: not drawn (the camera stays
             // where you fell, and the respawn jump snaps rather than glides; see SNAP_DISTANCE).
             view.container.setVisible(player.respawnAt === 0);
+            this.movePadToDeath(view, player);
             // Disconnected players are frozen in place on the server, so keep drawing them, dimmed.
-            view.container.setAlpha(
-                player.connected || id === this.sessionId ? 1 : DISCONNECTED_ALPHA
-            );
+            const base = player.connected || id === this.sessionId ? 1 : DISCONNECTED_ALPHA;
+            view.container.setAlpha(base * this.graceAlpha(player));
             this.updateClaimRing(view, player, at);
 
             // Your own facing is drawn from local input so it never lags the mouse.

@@ -179,3 +179,15 @@ describe('TowerSystem — the spawn safe area', () => {
         expect(victim.health).toBe(victim.maxHealth - GUN_DAMAGE.basic);
     });
 });
+
+describe('TowerSystem — respawn grace', () => {
+    it("doesn't shoot a player who has just respawned", () => {
+        const { state, from } = towerWorld();
+        const foe = enemyAt(state, from, 200);
+        foe.graceUntil = NOW + 5000;
+        TowerSystem.update(state, NOW);
+        expect(state.projectiles.size).toBe(0);
+        TowerSystem.update(state, NOW + 5000);
+        expect(state.projectiles.size).toBe(1);
+    });
+});

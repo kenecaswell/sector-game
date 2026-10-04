@@ -1,5 +1,6 @@
 import { Player, type GameState } from '../state/GameState';
 import {
+    BOT_FIRE_INTERVAL_FACTOR,
     BOT_NAMES,
     BOT_START_DELAY_MS,
     BOT_PROFILES,
@@ -30,6 +31,7 @@ import { FARM_MARGIN, RESERVE_MARGIN, nextPurchase } from '../bots/shopping';
 import { LobbySystem } from './LobbySystem';
 import { CombatSystem } from './CombatSystem';
 import { ShopSystem } from './ShopSystem';
+import { RespawnSystem } from './RespawnSystem';
 import { StructureSystem } from './StructureSystem';
 import { UpgradeSystem } from './UpgradeSystem';
 import type { PlayerInput } from './MovementSystem';
@@ -171,6 +173,7 @@ function toward(from: { x: number; y: number }, x: number, y: number, speed: num
 function isFairGame(state: GameState, bot: Player, other: Player): boolean {
     if (other === bot || !other.connected || areAllies(state, bot.id, other.id)) return false;
     if (other.respawnAt > 0) return false; // defeated: out of play until they respawn
+    if (RespawnSystem.inGrace(other)) return false; // just respawned: left alone for a few seconds
     const spawn = { col: other.spawnTileX, row: other.spawnTileY };
     return hexDistance(hexOf(state, other.x, other.y), spawn) > BOT_SPAWN_MERCY_RADIUS;
 }
@@ -480,9 +483,11 @@ function shoot(
         brain.sightedAt = now;
     }
     if (now - brain.sightedAt < profile.reactionMs) return false;
-    // Never faster than its gun allows, whatever its difficulty says.
+    // Never faster than its gun allows, whatever its difficulty says, and then at half that rate
+    // (BOT_FIRE_INTERVAL_FACTOR).
     const gunInterval = GUN_FIRE_INTERVAL_MS[isGunId(bot.gun) ? bot.gun : 'basic'];
-    if (now - brain.lastShotAt < Math.max(profile.fireIntervalMs, gunInterval)) return false;
+    const interval = Math.max(profile.fireIntervalMs, gunInterval) * BOT_FIRE_INTERVAL_FACTOR;
+    if (now - brain.lastShotAt < interval) return false;
 
     const angle = aimAngle(bot, target, profile.lead) + aimWobble(profile.aimError, random);
     if (!CombatSystem.fire(state, bot, angle)) return false;

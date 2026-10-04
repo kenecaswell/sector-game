@@ -73,6 +73,9 @@ export class Player extends Schema implements PlayerState {
     @type('string') botDifficulty: string = ''; // a BotDifficulty, or '' for a person
     // Defeated: waiting to respawn until this server time (ms); 0 = alive. See RespawnSystem.
     @type('number') respawnAt: number = 0;
+    // Just respawned: until this server time (ms) nothing can hurt them and bots and towers ignore
+    // them (RESPAWN_GRACE_MS); 0 = no grace. The client pulses their opacity meanwhile.
+    @type('number') graceUntil: number = 0;
     // Server only (not synced): when the player was last told they're at their tile limit (ms).
     tileLimitNoticeAt: number = 0;
     // Server only (not synced): which spawn-line slot this player starts and respawns at.
@@ -194,9 +197,10 @@ export class GameState
     // Server only (not synced): whether a defeated player's gear drops in a backpack (the
     // BACKPACKS_ENABLED flag; off by default, so they keep it).
     dropBackpacks = false;
-    // Server only (not synced): whether a defeated player respawns where they fell (the
-    // RESPAWN_WHERE_DIED_ENABLED flag) rather than at their spawn spot.
-    respawnWhereDied = false;
+    // Whether a defeated player respawns where they fell (the RESPAWN_WHERE_DIED_ENABLED flag) rather
+    // than at their spawn spot. Synced, so the client can draw each player's spawn platform where
+    // they will come back.
+    @type('boolean') respawnWhereDied: boolean = false;
     // Server only (not synced): when the `playing` phase began (ms), so bots can wait a moment (BOT_START_DELAY_MS).
     playingStartedAt = 0;
     @type({ map: Structure }) structures = new MapSchema<Structure>();

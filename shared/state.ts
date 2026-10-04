@@ -45,6 +45,7 @@ export interface PlayerState {
     bot: boolean; // computer-controlled (see BotSystem on the server); always ready
     botDifficulty: string; // a BotDifficulty for a bot, '' for a person
     respawnAt: number; // defeated, respawning at this server time (ms); 0 = alive
+    graceUntil: number; // respawn grace: can't be hurt, and bots ignore them, until this server time (ms)
 }
 
 export interface TileState {
@@ -119,6 +120,7 @@ export interface GameStateShape {
     backpacks: ReadonlyMap<string, BackpackState>; // only your own
     tiles: readonly TileState[];
     mountains: readonly MountainPieceState[]; // how the mountain hexes group into mountains
+    respawnWhereDied: boolean; // defeated players respawn where they fell (so the client moves their spawn platform there)
     theme: string; // a TerrainThemeId: the match's color scheme, fixed for the match
     phase: GamePhaseStateShape;
     settings: GameSettingsState;

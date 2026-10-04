@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { RESPAWN_DELAY_MS, SPAWN_CLEAR_RADIUS, SPAWN_SAFE_RADIUS } from '../constants';
+import {
+    RESPAWN_DELAY_MS,
+    RESPAWN_GRACE_MS,
+    SPAWN_CLEAR_RADIUS,
+    SPAWN_SAFE_RADIUS,
+} from '../constants';
 import { hexCenter, hexDistance, inStructureFootprint, pixelToHex } from '../hex';
 import { Pickup, type GameState, type Player } from '../state/GameState';
 import {
@@ -298,5 +303,20 @@ describe('RespawnSystem — respawning where you died (the flag)', () => {
         RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
         const hex = pixelToHex(player.x, player.y);
         expect(inStructureFootprint(hex.col, hex.row, 40, 22)).toBe(false);
+    });
+});
+
+describe('RespawnSystem — the respawn grace period', () => {
+    it('starts when they come back and lasts RESPAWN_GRACE_MS', () => {
+        const state = world();
+        const player = geared(state);
+        RespawnSystem.defeat(state, player, NOW);
+        expect(RespawnSystem.inGrace(player, NOW)).toBe(false); // not while down
+        RespawnSystem.update(state, quiet, NOW + RESPAWN_DELAY_MS);
+        const back = NOW + RESPAWN_DELAY_MS;
+        expect(player.graceUntil).toBe(back + RESPAWN_GRACE_MS);
+        expect(RespawnSystem.inGrace(player, back)).toBe(true);
+        expect(RespawnSystem.inGrace(player, back + RESPAWN_GRACE_MS - 1)).toBe(true);
+        expect(RespawnSystem.inGrace(player, back + RESPAWN_GRACE_MS)).toBe(false);
     });
 });

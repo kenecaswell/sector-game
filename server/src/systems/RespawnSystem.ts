@@ -1,5 +1,5 @@
 import { Backpack, type GameState, type Player } from '../state/GameState';
-import { RESPAWN_DELAY_MS, SPAWN_SAFE_RADIUS } from '../constants';
+import { RESPAWN_DELAY_MS, RESPAWN_GRACE_MS, SPAWN_SAFE_RADIUS } from '../constants';
 import {
     hexCenter,
     hexDistance,
@@ -47,6 +47,11 @@ function inSpawnSafeArea(player: {
 }): boolean {
     const spawn = { col: player.spawnTileX, row: player.spawnTileY };
     return hexDistance(pixelToHex(player.x, player.y), spawn) <= SPAWN_SAFE_RADIUS;
+}
+
+/** Whether the player has just respawned and is still in their grace period (RESPAWN_GRACE_MS). */
+function inGrace(player: { graceUntil: number }, now = Date.now()): boolean {
+    return player.graceUntil > now;
 }
 
 /** Whether the player is in play (not waiting to respawn). */
@@ -136,7 +141,7 @@ function defeat(state: GameState, player: Player, now = Date.now()): Backpack | 
  * somewhere they can't stand (over a mountain or deep water, flying), or inside an enemy structure,
  * they come back on the nearest hex that's neither (`dropHex`, as for a backpack).
  */
-function respawn(state: GameState, player: Player): void {
+function respawn(state: GameState, player: Player, now = Date.now()): void {
     if (state.respawnWhereDied) {
         const under = pixelToHex(player.x, player.y);
         const hex = dropHex(state, player);
@@ -154,6 +159,7 @@ function respawn(state: GameState, player: Player): void {
     player.vy = 0;
     player.health = player.maxHealth;
     player.respawnAt = 0;
+    player.graceUntil = now + RESPAWN_GRACE_MS; // briefly untouchable
 }
 
 const GUN_RANK = { '': 0, basic: 1, big: 2 } as const;
@@ -196,7 +202,7 @@ function contentsLabel(pack: Backpack): string {
  */
 function update(state: GameState, notify: Notify, now = Date.now()): void {
     state.players.forEach((player) => {
-        if (!isAlive(player) && now >= player.respawnAt) respawn(state, player);
+        if (!isAlive(player) && now >= player.respawnAt) respawn(state, player, now);
     });
     if (state.phase.phase !== 'playing' || state.backpacks.size === 0) return;
 
@@ -221,4 +227,11 @@ function removeBackpacksOf(state: GameState, playerId: string): void {
     });
 }
 
-export const RespawnSystem = { isAlive, inSpawnSafeArea, defeat, update, removeBackpacksOf };
+export const RespawnSystem = {
+    isAlive,
+    inGrace,
+    inSpawnSafeArea,
+    defeat,
+    update,
+    removeBackpacksOf,
+};

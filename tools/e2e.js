@@ -823,6 +823,7 @@ async function backpacks() {
             b.send('selectCharacter', { characterId: 'robot' }); // Booster 1, equipped
             await sleep(300);
             await startMatch(a, b);
+            check('with RESPAWN_WHERE_DIED=0 the synced flag is off', a.state.respawnWhereDied === false);
             await buildFabricator(a); // the shooter fabricates a Blaster and ammo
             a.send('purchase', { itemId: 'basicGun' });
             a.send('purchase', { itemId: 'ammo' });
@@ -899,6 +900,10 @@ async function keepsGear() {
             a.send('purchase', { itemId: 'basicGun' });
             a.send('purchase', { itemId: 'ammo' });
             await waitFor(() => me(a).gun === 'basic' && me(a).ammo > 0, 2000);
+            check(
+                'the respawn-where-died flag is synced to clients (on by default)',
+                a.state.respawnWhereDied === true && b.state.respawnWhereDied === true
+            );
             const spawn = { x: me(b).x, y: me(b).y };
             await goTo(b, { x: spawn.x - 150, y: spawn.y });
             for (let i = 0; i < 4 && me(b).respawnAt === 0; i++) {

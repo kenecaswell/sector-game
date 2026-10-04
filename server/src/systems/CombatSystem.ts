@@ -103,6 +103,8 @@ function update(state: GameState, dt: number, broadcast: Broadcast): void {
             // Defeated players are out of play until they respawn: shots pass where they fell.
             if (toRemove.has(id) || !player.connected || !RespawnSystem.isAlive(player)) return;
             if (areAllies(state, proj.ownerId, player.id)) return;
+            // Just respawned: shots fly through them for a few seconds.
+            if (RespawnSystem.inGrace(player, now)) return;
             // A tower's shot passes through players in their spawn's safe area.
             if (proj.fromTower && RespawnSystem.inSpawnSafeArea(player)) return;
             if (!CollisionSystem.checkProjectilePlayerCollision(proj, player, prev)) return;

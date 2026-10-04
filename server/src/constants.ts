@@ -42,6 +42,9 @@ export const SHOT_TERRAIN_STEP = 10;
 // a whole match can be run in seconds, e.g. PHASE_TIME_SCALE=0.02 npm run dev. Leave it unset normally.
 const requestedScale = Number(process.env.PHASE_TIME_SCALE);
 export const PHASE_TIME_SCALE = requestedScale > 0 ? requestedScale : 1;
+// After respawning a player has this long (ms) when nothing can hurt them and bots and Guard Towers
+// ignore them (the client shows it as the player pulsing between 50% and 100% opacity).
+export const RESPAWN_GRACE_MS = 5_000 * PHASE_TIME_SCALE;
 // Once everyone in the lobby is ready (see LobbySystem).
 export const COUNTDOWN_DURATION_MS = 3_000 * PHASE_TIME_SCALE;
 // The `playing` phase lasts the game's own match length (settings.matchMinutes; PhaseSystem).
@@ -327,6 +330,11 @@ export const BOT_SPAWN_MERCY_RADIUS = SPAWN_SAFE_RADIUS;
 // Bots wait this long after the match starts before they do anything, so they don't get a head
 // start on people whose game screen is still appearing.
 export const BOT_START_DELAY_MS = 2_000 * PHASE_TIME_SCALE;
+
+// Bots fire this many times slower than their gun and difficulty allow (2026-10-03: they were too
+// good with guns; 2 means half the rate of fire). Applied in BotSystem to max(profile.fireIntervalMs,
+// the gun's GUN_FIRE_INTERVAL_MS).
+export const BOT_FIRE_INTERVAL_FACTOR = 2;
 
 // Bots are named "Bot <name>", the first of these no player in the room has (then "Bot 11", ...).
 export const BOT_NAMES = [

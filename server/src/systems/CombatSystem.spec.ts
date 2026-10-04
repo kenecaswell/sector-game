@@ -158,6 +158,21 @@ describe('CombatSystem — structures', () => {
     });
 });
 
+describe('CombatSystem — respawn grace', () => {
+    it("shots fly through a player who has just respawned, and hit them once it's over", () => {
+        const state = world();
+        addPlayer(state, 'a', 100, 100);
+        const target = addPlayer(state, 't');
+        target.graceUntil = Date.now() + 5000;
+        const shot = shootAt(state, 'a', target);
+        expect(target.health).toBe(target.maxHealth);
+        expect(state.projectiles.has(shot.id)).toBe(true); // it flew on
+        target.graceUntil = Date.now() - 1;
+        shootAt(state, 'a', target);
+        expect(target.health).toBe(target.maxHealth - GUN_DAMAGE.basic);
+    });
+});
+
 describe('CombatSystem — the two guns', () => {
     it('the Ion Cannon is double the Blaster: damage, fire rate and range', () => {
         expect(GUN_DAMAGE.big).toBe(2 * GUN_DAMAGE.basic);

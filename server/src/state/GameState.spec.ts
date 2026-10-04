@@ -40,6 +40,15 @@ describe('GameState schema', () => {
         expect(client.players.get('a')?.equippedUpgrade).toBe('booster');
     });
 
+    it('syncs the respawn-where-died flag, so clients can move spawn platforms to where players fall', () => {
+        const state = new GameState();
+        expect(state.respawnWhereDied).toBe(false);
+        state.respawnWhereDied = true;
+        const client = new GameState();
+        new Decoder(client).decode(new Encoder(state).encodeAll());
+        expect(client.respawnWhereDied).toBe(true);
+    });
+
     it("syncs each tile's terrain (sent once with the full state)", () => {
         const state = new GameState();
         for (const terrain of [TERRAIN.ground, TERRAIN.mountain, TERRAIN.water]) {
