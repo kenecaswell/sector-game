@@ -105,7 +105,7 @@ describe('LobbySystem — picks', () => {
     it('refuses junk values', () => {
         const state = new GameState();
         const p = addPlayer(state, 'a');
-        expect(LobbySystem.selectTeam(state, p, 'pink')).toBe(false);
+        expect(LobbySystem.selectTeam(state, p, 'magenta')).toBe(false);
         expect(LobbySystem.selectTeam(state, p, '__proto__')).toBe(false);
         expect(LobbySystem.selectCharacter(state, p, 'wizard')).toBe(false);
         expect(LobbySystem.setReady(state, p, 'yes')).toBe(false);
@@ -128,7 +128,10 @@ describe('LobbySystem — picks', () => {
         for (let i = 0; i < 10; i++) {
             teams.push(addPlayer(state, `p${i}`, 0, 0, LobbySystem.defaultTeam(state)).teamId);
         }
-        expect(teams).toEqual([...TEAM_IDS, TEAM_IDS[0], TEAM_IDS[1]]);
+        expect(teams).toEqual(TEAM_IDS); // ten players, ten colors
+        expect(addPlayer(state, 'p10', 0, 0, LobbySystem.defaultTeam(state)).teamId).toBe(
+            TEAM_IDS[0]
+        ); // an eleventh would double up (the room holds ten)
     });
 });
 

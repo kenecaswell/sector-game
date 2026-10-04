@@ -282,7 +282,8 @@ export interface GameOverEvent {
 // A team is a color: players who pick the same one are allies (no friendly fire, they can walk
 // through each other's structures and don't take each other's tiles). Tiles, materials and score
 // stay per player.
-export type TeamId = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'teal' | 'orange' | 'gray';
+export type TeamId =
+    'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'teal' | 'orange' | 'gray' | 'pink' | 'brown';
 
 export interface Team {
     id: TeamId;
@@ -299,8 +300,12 @@ export const TEAMS: Record<TeamId, Team> = {
     teal: { id: 'teal', name: 'Teal', color: '#1abc9c' },
     orange: { id: 'orange', name: 'Orange', color: '#e67e22' },
     gray: { id: 'gray', name: 'Gray', color: '#95a5a6' },
+    pink: { id: 'pink', name: 'Pink', color: '#fd79a8' },
+    brown: { id: 'brown', name: 'Brown', color: '#a0522d' },
 };
 
+// One color for each of the MAX_PLAYERS (10) players, so with teams off nobody has to share. The
+// lobby's color picker lays them out in two rows of five, in this order.
 export const TEAM_IDS = Object.keys(TEAMS) as TeamId[];
 
 export function isTeamId(value: unknown): value is TeamId {

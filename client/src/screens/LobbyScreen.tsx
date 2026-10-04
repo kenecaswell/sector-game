@@ -16,7 +16,6 @@ import {
     PLAYER_NAME_MIN_LENGTH,
     STRUCTURE_NAMES,
     TEAMS,
-    TEAM_IDS,
     isBotDifficulty,
     isCharacterId,
     isTeamId,
@@ -35,10 +34,12 @@ import { gamePath, navigate } from '../utils/route';
 import { MENU_CSS } from './menuStyles';
 import { MenuHeader } from './MenuHeader';
 import { MenuFooter } from './MenuFooter';
+import { COLOR_PICKER_CSS, ColorPicker } from '../components/ColorPicker';
 
 // Real CSS for what inline styles can't express (:hover, :disabled, the narrow-screen layout).
 // Selects use `appearance: none` with a drawn arrow: Safari otherwise ignores most of their styling
-// and draws its own glossy control. (Custom team/character pickers are planned to replace them.)
+// and draws its own glossy control. (The team color is a custom picker, components/ColorPicker.tsx;
+// a custom character picker is still planned.)
 // Class names are prefixed so they can't collide with anything else on the page.
 const LOBBY_CSS = `
 .lobby-row {
@@ -247,7 +248,7 @@ export function LobbyScreen() {
     return (
         <div className="menu-screen">
             <style>{MENU_CSS}</style>
-            <style>{LOBBY_CSS}</style>
+            <style>{LOBBY_CSS + COLOR_PICKER_CSS}</style>
             <NoticeStack notices={notices} />
             <div className="menu-column" style={{ width: 680 }}>
                 <MenuHeader
@@ -303,7 +304,7 @@ export function LobbyScreen() {
                 <div role="list" aria-label="Players">
                     <div className="lobby-row lobby-row--head" aria-hidden="true">
                         <div>Player</div>
-                        <div>{teams ? 'Team' : 'Color'}</div>
+                        <div>{teams ? 'Team color' : 'Color'}</div>
                         <div>Character</div>
                         <div />
                     </div>
@@ -414,7 +415,7 @@ function OwnRow({ player, teams, teamCounts, onTeam, onCharacter, onReady, onNam
                     player={player}
                     teams={teams}
                     teamCounts={teamCounts}
-                    label={teams ? 'Team' : 'Color'}
+                    label={teams ? 'Team color' : 'Color'}
                     title={lockedTitle}
                     disabled={locked}
                     onTeam={onTeam}
@@ -450,7 +451,10 @@ interface TeamSelectProps {
     onTeam: (teamId: TeamId) => void;
 }
 
-/** A player's team (teams on) or color (teams off: colors someone else has are taken). */
+/**
+ * A player's team (teams on) or color (teams off: colors someone else has are taken), as a swatch
+ * that opens the color picker.
+ */
 function TeamSelect({
     player,
     teams,
@@ -461,30 +465,16 @@ function TeamSelect({
     onTeam,
 }: TeamSelectProps) {
     return (
-        <select
-            className="lobby-select"
-            aria-label={label}
-            title={title}
+        <ColorPicker
             value={player.teamId}
+            heading={teams ? 'Team color' : 'Color'}
+            label={label}
+            counts={teamCounts}
+            exclusive={!teams}
+            title={title}
             disabled={disabled}
-            onChange={(e) => {
-                if (isTeamId(e.target.value)) onTeam(e.target.value);
-            }}
-            style={{ borderLeft: `6px solid ${player.color}` }}
-        >
-            {TEAM_IDS.map((id) => {
-                const count = teamCounts.get(id) ?? 0;
-                // Teams off: a color is yours alone, so one someone else has is taken.
-                const taken = !teams && count > 0 && id !== player.teamId;
-                return (
-                    <option key={id} value={id} disabled={taken}>
-                        {TEAMS[id].name}
-                        {teams && count > 0 ? ` (${count})` : ''}
-                        {taken ? ' (taken)' : ''}
-                    </option>
-                );
-            })}
-        </select>
+            onChange={onTeam}
+        />
     );
 }
 
@@ -554,7 +544,7 @@ function BotRow({ bot, teams, teamCounts, locked, onUpdate, onRemove }: BotRowPr
                     player={bot}
                     teams={teams}
                     teamCounts={teamCounts}
-                    label={`${teams ? 'Team' : 'Color'} for ${bot.name}`}
+                    label={`${teams ? 'Team color' : 'Color'} for ${bot.name}`}
                     title={title}
                     disabled={locked}
                     onTeam={(teamId) => onUpdate({ botId: bot.id, teamId })}

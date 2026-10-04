@@ -125,7 +125,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
 
 0. **Pick a game** — **Play** on the start screen opens the game list: **Create game** at the top, a box to find a game by code or name, and the open games (lobbies first, then games in play, with player counts and settings). Joining one, or opening its link, takes you to its lobby. Creating one picks its settings: map size Small 64 × 64 (default), Big 80 × 80 or Large 96 × 96; game length 5 (default), 7 or 10 minutes; then three on/off switches (each with a [?] that explains it): teams off (default) or on; drop pods on (default) or off; guns off (default) or on.
 1. **Lobby** — every player is listed. Click (or tap) your name to change it: 2–25 characters, anything goes. It's remembered for next time, and if someone already has it you get a "(1)" added. Next to your name are three choices:
-   - **Team** (games with teams on) or **Color** (teams off: any color nobody else has) — a color. Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
+   - **Team color** (games with teams on) or **Color** (teams off: any color nobody else has; taken ones are crossed out) — a swatch: click the square in your row to open a popup with the ten colors in two rows of five, and click one (`Esc` or clicking away closes it; arrow keys move between swatches; the swatches are larger on touch screens). Players who pick the same color are teammates: you can't shoot each other or each other's structures, you can walk through each other's structures, and you don't take each other's hexes. Scores stay per player; the results screen also shows team totals. Everyone starts on their own color.
    - **Character** — your starting kit (default Farmer):
 
      | Character | Gun | Ammo | Materials | Structures | Upgrades |
@@ -137,7 +137,7 @@ Your score is always shown at the top center. The mouse only aims and shoots. If
      | Explorer | — | 0 | 15 | — | Armor 1 (200 health) |
 
      Each structure type has a job (see below); the power plant's is still to come. Only the Engineer starts with a Fabricator.
-   - **Ready** — press it when you're set (press again to cancel). Team and character are locked while you're ready.
+   - **Ready** — press it when you're set (press again to cancel). Team color and character are locked while you're ready.
 
    - **Bots** — under the player list, pick **Easy**, **Medium** or **Hard** and press **+ Add bot** for a computer-controlled player. Anyone in the lobby can change a bot's color (or team), character and difficulty, or remove it (✕). Bots count toward the 10 players and are always ready. They leave you alone near your own spawn. What each difficulty does is in [GAME_DESIGN → Bots](docs/GAME_DESIGN.md#bots-single-player).
 

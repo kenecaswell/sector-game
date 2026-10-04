@@ -35,7 +35,7 @@ describe('scoresFromPlayers', () => {
     it("keeps valid team ids and blanks unknown ones (structure counts aren't known here)", () => {
         const [known, unknown] = scoresFromPlayers([
             makePlayer({ id: 'a', teamId: 'blue', score: 2 }),
-            makePlayer({ id: 'b', teamId: 'pink', score: 1 }),
+            makePlayer({ id: 'b', teamId: 'magenta', score: 1 }),
         ]);
         expect(known.teamId).toBe('blue');
         expect(unknown.teamId).toBe('');

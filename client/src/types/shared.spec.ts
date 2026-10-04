@@ -5,7 +5,9 @@ import {
     CHARACTER_IDS,
     SHOP_ITEMS,
     SHOP_ITEM_IDS,
+    MAX_PLAYERS,
     TEAMS,
+    TEAM_IDS,
     isShopItemId,
     activeUpgradeLevel,
     normalizePlayerName,
@@ -137,6 +139,11 @@ describe('catalogs', () => {
             expect(CHARACTERS[id].ammo).toBeGreaterThanOrEqual(0);
             expect(CHARACTERS[id].materials).toBeGreaterThanOrEqual(0);
         }
+    });
+
+    it('has a color for every seat in a game (MAX_PLAYERS), as two rows of five', () => {
+        expect(TEAM_IDS).toHaveLength(MAX_PLAYERS);
+        expect(TEAM_IDS.length % 5).toBe(0);
     });
 
     it('team colors are all different', () => {

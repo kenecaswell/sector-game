@@ -102,7 +102,8 @@ describe('LobbyScreen — your name', () => {
 describe('LobbyScreen — team, character and ready', () => {
     it('picks a team and a character', async () => {
         showLobby();
-        await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'blue');
+        await userEvent.click(screen.getByRole('button', { name: /^Team color:/ }));
+        await userEvent.click(screen.getByRole('radio', { name: 'Blue' }));
         await userEvent.selectOptions(
             screen.getByRole('combobox', { name: 'Character' }),
             'explorer'
@@ -111,9 +112,10 @@ describe('LobbyScreen — team, character and ready', () => {
         expect(connection.selectCharacter).toHaveBeenCalledWith('explorer');
     });
 
-    it("shows how many players are on each team and your character's kit", () => {
+    it("shows how many players are on each team and your character's kit", async () => {
         showLobby({ character: 'explorer' }, [makePlayer({ id: 'b', name: 'Bo', teamId: 'red' })]);
-        expect(screen.getByRole('option', { name: 'Red (2)' })).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: /^Team color:/ }));
+        expect(screen.getByRole('radio', { name: 'Red (2)' })).toBeInTheDocument();
         expect(screen.getByText('Explorer', { selector: 'strong' })).toBeInTheDocument(); // the card's title
         expect(screen.getByText('Armor 1')).toBeInTheDocument(); // the Explorer's kit, since 2026-09-29
     });
@@ -146,7 +148,7 @@ describe('LobbyScreen — team, character and ready', () => {
         unmount();
 
         showLobby({ ready: true });
-        expect(screen.getByRole('combobox', { name: 'Team' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: /^Team color:/ })).toBeDisabled();
         expect(screen.getByRole('combobox', { name: 'Character' })).toBeDisabled();
         expect(screen.getByRole('textbox', { name: 'Your name' })).toBeEnabled(); // names aren't locked
         await userEvent.click(screen.getByRole('button', { name: '✓ Ready' }));
@@ -201,20 +203,20 @@ describe('LobbyScreen — game settings', () => {
         expect(
             screen.getByText('Big map · Teams on · Drop pods · No guns · 10 min')
         ).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Team' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Team color:/ })).toBeInTheDocument();
     });
 
     it("with teams off, it's a color picker: colors other players have are taken", async () => {
         connection.settings = settings(false);
         showLobby({ teamId: 'red' }, [makePlayer({ id: 'b', name: 'Bo', teamId: 'blue' })]);
-        expect(screen.queryByRole('combobox', { name: 'Team' })).not.toBeInTheDocument();
-        const color = screen.getByRole('combobox', { name: 'Color' });
-        expect(screen.getByRole('option', { name: 'Blue (taken)' })).toBeDisabled();
-        expect(screen.getByRole('option', { name: 'Red' })).toBeEnabled(); // yours
-        await userEvent.selectOptions(color, 'green');
+        expect(screen.queryByRole('button', { name: /^Team color:/ })).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: /^Color:/ }));
+        expect(screen.getByRole('radio', { name: 'Blue (taken)' })).toBeDisabled();
+        expect(screen.getByRole('radio', { name: 'Red' })).toBeEnabled(); // yours
+        await userEvent.click(screen.getByRole('radio', { name: 'Green' }));
         expect(connection.selectTeam).toHaveBeenCalledWith('green');
         expect(screen.getByText(/Teams are off in this game/)).toBeInTheDocument();
-        // Bo's row has no team/color label (their dot shows it); only the picker's option says Blue.
+        // Bo's row has no team/color label (their dot shows it); the picker's swatch is only named Blue while it's open.
         expect(screen.queryByText('Blue')).not.toBeInTheDocument();
         expect(screen.getByText('© 2026 kenecaswell')).toBeInTheDocument();
     });
@@ -284,20 +286,18 @@ describe('LobbyScreen — bots', () => {
             'Robot'
         );
         expect(connection.updateBot).toHaveBeenCalledWith({ botId: 'bot-0', characterId: 'robot' });
-        await userEvent.selectOptions(
-            screen.getByRole('combobox', { name: 'Color for Bot Cassini' }),
-            'Teal'
-        );
+        await userEvent.click(screen.getByRole('button', { name: /^Color for Bot Cassini:/ }));
+        await userEvent.click(screen.getByRole('radio', { name: 'Teal' }));
         expect(connection.updateBot).toHaveBeenCalledWith({ botId: 'bot-0', teamId: 'teal' });
         await userEvent.click(screen.getByRole('button', { name: 'Remove Bot Cassini' }));
         expect(connection.removeBot).toHaveBeenCalledWith('bot-0');
     });
 
-    it('with teams off, a bot cannot take your color', () => {
+    it('with teams off, a bot cannot take your color', async () => {
         teamsOff();
         showLobby({ teamId: 'red' }, [bot()]);
-        const color = screen.getByRole('combobox', { name: 'Color for Bot Cassini' });
-        expect(within(color).getByRole('option', { name: 'Red (taken)' })).toBeDisabled();
+        await userEvent.click(screen.getByRole('button', { name: /^Color for Bot Cassini:/ }));
+        expect(screen.getByRole('radio', { name: 'Red (taken)' })).toBeDisabled();
     });
 
     it("bots don't count as players you're waiting for", () => {
@@ -310,6 +310,9 @@ describe('LobbyScreen — bots', () => {
         connection.phaseEndsAt = Date.now() + 3000;
         showLobby({ ready: true }, [bot()]);
         expect(screen.getByRole('combobox', { name: 'Difficulty for Bot Cassini' })).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: /^(Team color|Color) for Bot Cassini:/ })
+        ).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Remove Bot Cassini' })).toBeDisabled();
         expect(screen.getByRole('button', { name: '+ Add bot' })).toBeDisabled();
     });
