@@ -6,13 +6,18 @@
 //   node tools/character-sheet.js [--out dir] [--scale n]
 //   node tools/character-sheet.js --closeup SE,NW [--equip booster:3] [--armor 2] --scale 6
 //
-// Writes to `character-sheets/` (or --out), at --scale times the game's px (default 2):
+// Writes to `character-sheets/` (or --out), at --scale times the game's px (default 2). Characters
+// are in their own colors unless --team RRGGBB puts their suits in a team's color:
 //   characters.png          8 facings (N NE E SE S SW W NW) x 5 characters (Farmer, Scientist,
 //                           Explorer, Engineer, Robot); transparent, one 64x80 frame per cell
 //   characters-preview.png  the same on a light grid, for looking at
 //   upgrades.png            each character in the SE and NW views with each upgrade on: nothing,
 //                           Booster 1 and 3, Harvester 1 and 3, Armor 1 and 3, Jetpack
 //   upgrades-preview.png    the same on a light grid
+//   teams.png               every character in each of the ten team colors, facing SE
+//   walk.png                the walk cycle (standing, then its frames), per character, as: walking
+//                           east while aiming east; walking south while aiming east (legs follow
+//                           the movement, body the aim); walking west while aiming east (backing up)
 // --closeup instead draws only the named facings of the base sheet (optionally with an upgrade on,
 // for checking details at a large --scale) to closeup-preview.png.
 
@@ -31,6 +36,8 @@ const flag = (name, fallback) => {
 const outDir = path.resolve(flag('--out', path.join(root, 'character-sheets')));
 const SCALE = Number(flag('--scale', 2));
 const SS = 4; // supersampling per axis
+const teamFlag = flag('--team', '');
+const TEAM = teamFlag ? parseInt(teamFlag, 16) : undefined;
 
 // --- The art, bundled -------------------------------------------------------------------------
 
@@ -38,10 +45,17 @@ function loadArt() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'character-art-'));
     const bundle = path.join(dir, 'art.cjs');
     const rolldown = path.join(root, 'client', 'node_modules', '.bin', 'rolldown');
+    const entry = path.join(dir, 'entry.ts');
+    const src = path.join(root, 'client', 'src');
+    fs.writeFileSync(
+        entry,
+        `export * from '${path.join(src, 'game', 'characters', 'index.ts')}';\n` +
+            `export { TEAMS, TEAM_IDS } from '${path.join(src, 'types', 'shared.ts')}';\n`
+    );
     execFileSync(
         rolldown,
         [
-            path.join(root, 'client', 'src', 'game', 'characters', 'index.ts'),
+            entry,
             '--format',
             'cjs',
             '--file',
@@ -296,7 +310,12 @@ function main() {
     if (closeup) {
         const names = closeup.split(',');
         const [equipped, level] = flag('--equip', ':').split(':');
-        const loadout = { equipped, level: Number(level) || 1, armor: Number(flag('--armor', 0)) };
+        const loadout = {
+            equipped,
+            level: Number(level) || 1,
+            armor: Number(flag('--armor', 0)),
+            team: TEAM,
+        };
         const image = sheet(art, ids.length, names.length, (g, x, y, row, col) => {
             const dir = art.DIRECTIONS.find((d) => d.name === names[col]);
             art.drawCharacter(g, x, y, ids[row], dir.angle, loadout);
@@ -309,7 +328,7 @@ function main() {
     }
 
     const characters = sheet(art, ids.length, 8, (g, x, y, row, col) => {
-        art.drawCharacter(g, x, y, ids[row], art.DIRECTIONS[col].angle);
+        art.drawCharacter(g, x, y, ids[row], art.DIRECTIONS[col].angle, { team: TEAM });
     });
     write('characters', characters, [fw, fh]);
 
@@ -328,9 +347,35 @@ function main() {
     const upgrades = sheet(art, ids.length * views.length, loadouts.length, (g, x, y, row, col) => {
         const id = ids[Math.floor(row / views.length)];
         const angle = art.DIRECTIONS[views[row % views.length]].angle;
-        art.drawCharacter(g, x, y, id, angle, loadouts[col]);
+        art.drawCharacter(g, x, y, id, angle, { ...loadouts[col], team: TEAM });
     });
     write('upgrades', upgrades, [fw, fh]);
+
+    const teams = sheet(art, ids.length, art.TEAM_IDS.length, (g, x, y, row, col) => {
+        const team = parseInt(art.TEAMS[art.TEAM_IDS[col]].color.slice(1), 16);
+        art.drawCharacter(g, x, y, ids[row], art.DIRECTIONS[3].angle, { team });
+    });
+    write('teams', teams, [fw, fh]);
+
+    // Walking: each row is a character in one of three situations, each column a point in the
+    // stride (standing, then each walk frame). Facings: E 2, S 4, W 6.
+    const frames = art.STRIDE_FRAMES;
+    const situations = [
+        { legs: 2, reverse: false }, // walking the way it aims
+        { legs: 4, reverse: false }, // strafing: legs follow the walk, body the aim
+        { legs: 2, reverse: true }, // backing up: legs face the aim and the cycle runs backward
+    ];
+    const walk = sheet(art, ids.length * situations.length, frames + 1, (g, x, y, row, col) => {
+        const id = ids[Math.floor(row / situations.length)];
+        const { legs, reverse } = situations[row % situations.length];
+        const index = reverse ? frames - col : col - 1;
+        const stride = col === 0 ? art.STANDING : art.strideFrame(index);
+        art.drawCharacter(g, x, y, id, art.DIRECTIONS[2].angle, { team: TEAM ?? 0x3498db }, true, {
+            legAngle: art.DIRECTIONS[legs].angle,
+            stride,
+        });
+    });
+    write('walk', walk, [fw, fh]);
 }
 
 main();

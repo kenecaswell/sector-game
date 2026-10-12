@@ -25,7 +25,7 @@ export const BIG_SHOT_COLORS = { core: 0xfff2a8, stroke: 0xffb300, glow: 0xffe06
 // SCREEN_Y_SCALE, since speeds are measured on screen.
 export const ISO_SQUASH = SCREEN_Y_SCALE;
 export const HEX_DEPTH = 12; // screen px of the cliff face under each hex
-export const BODY_LIFT = 10; // screen px a player/projectile floats above the ground
+export const BODY_LIFT = 24; // screen px a projectile floats above the ground: about a character's chest
 
 // How often movement input is sent to the server. Sending faster than the
 // server's tick rate (20Hz = 50ms) wastes bandwidth since the server only

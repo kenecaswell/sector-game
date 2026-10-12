@@ -39,6 +39,21 @@ import {
     type StructureType,
 } from '../../types/shared';
 import { projectileVelocity } from '../../../../shared/projectiles';
+import {
+    CHARACTER_FRAME,
+    LEGS_FRAME,
+    MOVING_SPEED,
+    STRIDE_FRAMES,
+    advancePhase,
+    bakeBody,
+    bakeLegs,
+    bobOffset,
+    characterIdOf,
+    chooseLegs,
+    frameOfPhase,
+    loadoutOf,
+    nearestDirection,
+} from '../characters';
 import { ART_CANVAS, SmokeEmitter, bakeStructure, smokeSources } from '../structures';
 import { isShallowWater } from '../terrain';
 import {
@@ -115,10 +130,21 @@ export interface GameSceneInitData {
 // Phaser object itself sits at the projected screen position.
 // One full 50% -> 100% -> 50% blink of a player in their respawn grace period (ms).
 const GRACE_BLINK_MS = 300;
+// A Jetpack hovers: the body bobs this many px, once every 2π × HOVER_BOB_MS ms.
+const HOVER_BOB = 1.6;
+const HOVER_BOB_MS = 260;
+// How long a frame may spend drawing character frames ahead of time (ms).
+const WARM_UP_BUDGET_MS = 4;
 
 interface PlayerView {
     container: Phaser.GameObjects.Container;
-    nose: Phaser.GameObjects.Arc;
+    // The character is two images: the legs (facing the way they walk, mid-stride) and the body (the
+    // trunk, head and arms, facing the way they aim, with their upgrades).
+    legs: Phaser.GameObjects.Image;
+    body: Phaser.GameObjects.Image;
+    legsKey: string;
+    bodyKey: string;
+    stridePhase: number; // 0 to 1 around the walk cycle, advanced by the ground covered
     color: number;
     // Tinted circle on the ground showing the claim radius; exists only while the player owns the
     // Harvester. A separate scene object (not part of `container`) so it sits under every entity.
@@ -186,6 +212,8 @@ export class GameScene extends Phaser.Scene {
     private claimsDirty = true;
 
     private playerViews = new Map<string, PlayerView>();
+    // Character frames still to be drawn ahead of time (see warmUpCharacter), a few at a time.
+    private warmQueue: Array<() => void> = [];
     private projectileViews = new Map<string, ProjectileView>();
     private structureViews = new Map<string, StructureView>();
     private pickupViews = new Map<string, Phaser.GameObjects.Container>();
@@ -246,6 +274,7 @@ export class GameScene extends Phaser.Scene {
         this.renderedOwners = [];
         this.hoverKey = '';
         this.playerViews.clear();
+        this.warmQueue = [];
         this.projectileViews.clear();
         this.structureViews.clear();
         this.pickupViews.clear();
@@ -363,6 +392,7 @@ export class GameScene extends Phaser.Scene {
         this.updateAim();
         this.pollInput(time);
         this.updateFiring();
+        this.warmUp();
         this.updateEntities(dt);
 
         if (this.claimsDirty) {
@@ -1176,20 +1206,31 @@ export class GameScene extends Phaser.Scene {
         const color = Phaser.Display.Color.HexStringToColor(player.color || '#ffffff').color;
         const isSelf = player.id === this.sessionId;
 
-        const shadow = this.add.ellipse(
+        // The team color is a ring on the ground under their feet (the character art has no team
+        // color of its own); yours has a white edge.
+        const ring = this.add.ellipse(
             0,
             0,
-            PLAYER_RADIUS * 2,
-            PLAYER_RADIUS * 2 * ISO_SQUASH,
-            0x000000,
-            0.35
+            PLAYER_RADIUS * 2.3,
+            PLAYER_RADIUS * 2.3 * ISO_SQUASH,
+            color,
+            0.4
         );
-        const body = this.add.circle(0, -BODY_LIFT, PLAYER_RADIUS, color);
-        body.setStrokeStyle(isSelf ? 3 : 1, 0xffffff, isSelf ? 1 : 0.6);
-        const nose = this.add.circle(0, -BODY_LIFT, 4, 0xffffff);
+        ring.setStrokeStyle(isSelf ? 3 : 2, isSelf ? 0xffffff : color, 1);
+        const keys = this.characterKeys(player, color, this.facingOf(player), null, 0);
+        const legs = this.add.image(0, 0, keys.legs);
+        legs.setOrigin(
+            LEGS_FRAME.originX / LEGS_FRAME.width,
+            LEGS_FRAME.originY / LEGS_FRAME.height
+        );
+        const body = this.add.image(0, 0, keys.body);
+        body.setOrigin(
+            CHARACTER_FRAME.originX / CHARACTER_FRAME.width,
+            CHARACTER_FRAME.originY / CHARACTER_FRAME.height
+        );
 
         const start = project(player.x, player.y);
-        const container = this.add.container(start.x, start.y, [shadow, body, nose]);
+        const container = this.add.container(start.x, start.y, [ring, legs, body]);
         container.setDepth(start.y);
 
         // Their spawn platform: on the ground, above the claim tint and under every entity.
@@ -1201,7 +1242,11 @@ export class GameScene extends Phaser.Scene {
 
         this.playerViews.set(player.id, {
             container,
-            nose,
+            legs,
+            body,
+            legsKey: keys.legs,
+            bodyKey: keys.body,
+            stridePhase: 0,
             color,
             ring: null,
             ringRadius: 0,
@@ -1211,9 +1256,101 @@ export class GameScene extends Phaser.Scene {
             wy: player.y,
         });
         if (isSelf) {
+            this.warmUpCharacter(player, color);
             this.cameras.main.startFollow(container, true, 0.15, 0.15);
             this.cameras.main.centerOn(start.x, start.y); // start on the player, no fly-in from the corner
         }
+    }
+
+    /** Which way a player faces. Your own is drawn from local input so it never lags the mouse. */
+    private facingOf(player: PlayerState): number {
+        return player.id === this.sessionId ? this.aimAngle : player.angle;
+    }
+
+    /**
+     * The textures for a player's character, drawn the first time each is needed (game/characters):
+     * the legs for the way they walk (facing `legDirection` 0-7, at walk `frame`, -1 standing) and
+     * the body for the way they aim, with their upgrades and their team's color on the suit.
+     */
+    private characterKeys(
+        player: PlayerState,
+        team: number,
+        aim: number,
+        move: number | null,
+        phase: number
+    ): { legs: string; body: string; moving: boolean; reverse: boolean } {
+        const id = characterIdOf(player.character);
+        const loadout = { ...loadoutOf(player), team };
+        const aimDirection = nearestDirection(aim);
+        const { direction, reverse } = chooseLegs(aimDirection, move);
+        const walking = move !== null && loadout.equipped !== 'wings';
+        return {
+            legs: bakeLegs(this, id, direction, walking ? frameOfPhase(phase) : -1, loadout),
+            body: bakeBody(this, id, aimDirection, loadout),
+            moving: walking,
+            reverse,
+        };
+    }
+
+    /**
+     * Queues every frame of your own character (all eight facings, standing and each step of the
+     * walk) to be drawn a few per frame from the start of the match, instead of one at a time, with
+     * a small hitch each, the first time you walk or turn that way. Other players' frames are drawn
+     * when first seen.
+     */
+    private warmUpCharacter(player: PlayerState, team: number): void {
+        const id = characterIdOf(player.character);
+        const loadout = { ...loadoutOf(player), team };
+        for (let direction = 0; direction < 8; direction++) {
+            this.warmQueue.push(() => bakeBody(this, id, direction, loadout));
+            for (let frame = -1; frame < STRIDE_FRAMES; frame++) {
+                this.warmQueue.push(() => bakeLegs(this, id, direction, frame, loadout));
+            }
+        }
+    }
+
+    /** Draws queued frames until a small time budget is used (always at least one). */
+    private warmUp(): void {
+        const start = performance.now();
+        while (this.warmQueue.length > 0) {
+            this.warmQueue.shift()?.();
+            if (performance.now() - start > WARM_UP_BUDGET_MS) break;
+        }
+    }
+
+    /**
+     * Sets a player's character for this frame. The body faces their aim (yours from local input, so
+     * it never lags the mouse). The legs face the way they are walking, and their stride advances by
+     * the ground covered since last frame, so the feet keep pace with the speed (a Booster steps
+     * faster); walking away from the aim they face it and the stride runs backward. The body rises
+     * and dips with each step; under a Jetpack it bobs instead.
+     */
+    private animateCharacter(view: PlayerView, player: PlayerState, travelled: number): void {
+        const speed = Math.hypot(player.vx, player.vy);
+        const move =
+            speed > MOVING_SPEED ? nearestDirection(Math.atan2(player.vy, player.vx)) : null;
+        const aim = this.facingOf(player);
+
+        const walkingNow = move !== null;
+        const reverseHint = chooseLegs(nearestDirection(aim), move).reverse;
+        if (walkingNow && travelled < SNAP_DISTANCE) {
+            view.stridePhase = advancePhase(view.stridePhase, travelled, reverseHint ? -1 : 1);
+        }
+        const keys = this.characterKeys(player, view.color, aim, move, view.stridePhase);
+        if (keys.legs !== view.legsKey) {
+            view.legs.setTexture(keys.legs);
+            view.legsKey = keys.legs;
+        }
+        if (keys.body !== view.bodyKey) {
+            view.body.setTexture(keys.body);
+            view.bodyKey = keys.body;
+        }
+        const hover = player.equippedUpgrade === 'wings' && player.wingsLevel > 0;
+        view.body.setY(
+            hover
+                ? -HOVER_BOB * Math.sin(this.time.now / HOVER_BOB_MS)
+                : -bobOffset(view.stridePhase, keys.moving ? 1 : 0)
+        );
     }
 
     /**
@@ -1466,12 +1603,16 @@ export class GameScene extends Phaser.Scene {
             const view = this.playerViews.get(id);
             if (!view) return;
 
+            const fromX = view.wx;
+            const fromY = view.wy;
             this.chase(
                 view,
                 player.x + player.vx * EXTRAPOLATION_S,
                 player.y + player.vy * EXTRAPOLATION_S,
                 smoothing
             );
+            // Ground covered this frame, as it looks on screen.
+            const travelled = Math.hypot(view.wx - fromX, (view.wy - fromY) * ISO_SQUASH);
 
             const at = project(view.wx, view.wy);
             view.container.setPosition(at.x, at.y).setDepth(at.y);
@@ -1484,12 +1625,7 @@ export class GameScene extends Phaser.Scene {
             view.container.setAlpha(base * this.graceAlpha(player));
             this.updateClaimRing(view, player, at);
 
-            // Your own facing is drawn from local input so it never lags the mouse.
-            const facing = id === this.sessionId ? this.aimAngle : player.angle;
-            view.nose.setPosition(
-                Math.cos(facing) * PLAYER_RADIUS * 0.85,
-                Math.sin(facing) * PLAYER_RADIUS * 0.85 * ISO_SQUASH - BODY_LIFT
-            );
+            this.animateCharacter(view, player, travelled);
         });
 
         this.room.state.projectiles.forEach((projectile, id) => {

@@ -124,7 +124,7 @@ export function drawJetpack(rig: Rig, a: Anchors): void {
     rig.glow([0, v - 3.9, a.back.z + 2], 1.2, 0xffe27a, 1, { bias: 0.9 });
 }
 
-/** Armor: a chest plate; then shoulder and forearm guards; then shin guards and a helmet crest. */
+/** Armor: a chest plate; then shoulder and forearm guards; then a helmet crest (and shin guards, drawn with the legs). */
 export function drawArmor(rig: Rig, a: Anchors, level: number): void {
     const t = a.torso;
     if (a.head) {
@@ -183,11 +183,6 @@ export function drawArmor(rig: Rig, a: Anchors, level: number): void {
     }
     if (level >= 3) {
         if (a.head) {
-            for (const side of [-1, 1]) {
-                rig.tube([side * 3.6, 0.4, 4.6], [side * 3.6, 0.6, 12.4], 3.3, 3.4, STEEL, {
-                    bias: 0.5,
-                });
-            }
             const h = a.head;
             rig.rod([0, -h.rv + 1, h.z + h.rz - 2.4], [0, -1, h.z + h.rz + 0.2], 1.2, STEEL, {
                 bias: 0.5,

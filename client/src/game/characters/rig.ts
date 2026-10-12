@@ -45,12 +45,15 @@ export class Rig {
     readonly canvas: Canvas3D;
     readonly yaw: number;
     readonly lift: number;
+    /** A muted rig takes the same calls but draws nothing: a layer that isn't being drawn now. */
+    readonly muted: boolean;
 
     /** `lift`: how far the whole character floats above the ground (the Jetpack's hover). */
-    constructor(canvas: Canvas3D, yaw: number, lift = 0) {
+    constructor(canvas: Canvas3D, yaw: number, lift = 0, muted = false) {
         this.canvas = canvas;
         this.yaw = yaw;
         this.lift = lift;
+        this.muted = muted;
         this.fx = Math.cos(yaw);
         this.fy = Math.sin(yaw);
         this.rx = -Math.sin(yaw);
@@ -82,6 +85,7 @@ export class Rig {
     }
 
     private queue(center: V3, draw: () => void, bias = 0): void {
+        if (this.muted) return;
         const w = this.world(center);
         this.parts.push({ depth: w[1] + ISO_SQUASH * w[2] + bias, draw });
     }
@@ -314,6 +318,7 @@ export class Rig {
 
     /** The soft shadow on the ground under the character (drawn before everything else). */
     shadow(radius: number, alpha = 0.32): void {
+        if (this.muted) return;
         this.canvas.disc(0, 0, 0, radius * MODEL_SCALE, 0x000000, alpha);
         this.canvas.disc(0, 0, 0, radius * MODEL_SCALE * 0.62, 0x000000, alpha * 0.8);
     }
