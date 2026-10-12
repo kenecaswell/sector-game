@@ -20,6 +20,7 @@ cd server && npm run build
 | `bot-sim.js` | Headless bot-vs-bot matches (the in-game bots) on a virtual clock, printing each bot's score, hexes, kills, structures and kit, and the tick cost — for tuning `BOT_PROFILES`; not a pass/fail check | No | ~2 s per 5-minute match |
 | `bots.js` | Load bots (wandering WebSocket clients, not the in-game bots) for profiling a browser client; not a pass/fail check | Yes (yours) | as long as you run it |
 | `map-preview.js` | Renders generated maps to PNG, whole map top-down, one image per seed — for judging terrain generation; not a pass/fail check | No | ~1 s per map |
+| `character-sheet.js` | Draws the character sprite sheets to PNG: 8 facings x 5 characters, each upgrade on each character, every team color, and the walk cycle (it bundles `client/src/game/characters/` with the client's rolldown, so `client/node_modules` must be installed); not a pass/fail check | No | ~2 s |
 
 ```bash
 node tools/e2e.js
@@ -27,6 +28,8 @@ node tools/bot-sim.js easy,medium,hard 5 7   # difficulties, minutes, map seed [
 node tools/bots.js 4 120            # then profile the browser; see ARCHITECTURE.md, Performance pass
 node tools/map-preview.js           # seeds 1-6 into map-previews/ (git-ignored)
 node tools/map-preview.js 7 42 --out /tmp/maps   # chosen seeds, chosen folder
+node tools/character-sheet.js                    # character-sheets/: characters, upgrades, teams and walk PNGs (git-ignored)
+node tools/character-sheet.js --closeup SE,NW --equip booster:3 --armor 2 --scale 6   # chosen facings, large
 ```
 
 `e2e.js` needs `client/node_modules` installed (it borrows `colyseus.js`) and port 2598 free, or
